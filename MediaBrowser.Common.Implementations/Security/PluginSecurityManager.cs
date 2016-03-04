@@ -58,7 +58,6 @@ namespace MediaBrowser.Common.Implementations.Security
         private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _jsonSerializer;
         private readonly IApplicationHost _appHost;
-        private readonly ILogger _logger;
         private readonly IApplicationPaths _appPaths;
 
         private IEnumerable<IRequiresRegistration> _registeredEntities;
@@ -85,7 +84,6 @@ namespace MediaBrowser.Common.Implementations.Security
             _httpClient = httpClient;
             _jsonSerializer = jsonSerializer;
             _appPaths = appPaths;
-            _logger = logManager.GetLogger("SecurityManager");
         }
 
         /// <summary>
@@ -160,57 +158,7 @@ namespace MediaBrowser.Common.Implementations.Security
         /// <param name="parameters">Json parameters to send to admin server</param>
         public async Task RegisterAppStoreSale(string parameters)
         {
-            var options = new HttpRequestOptions()
-            {
-                Url = AppstoreRegUrl,
-                CancellationToken = CancellationToken.None
-            };
-            options.RequestHeaders.Add("X-Emby-Token", _appHost.SystemId);
-            options.RequestContent = parameters;
-            options.RequestContentType = "application/json";
-
-            try
-            {
-                using (var response = await _httpClient.Post(options).ConfigureAwait(false))
-                {
-                    var reg = _jsonSerializer.DeserializeFromStream<RegRecord>(response.Content);
-
-                    if (reg == null)
-                    {
-                        var msg = "Result from appstore registration was null.";
-                        _logger.Error(msg);
-                        throw new ApplicationException(msg);
-                    }
-                    if (!String.IsNullOrEmpty(reg.key))
-                    {
-                        SupporterKey = reg.key;
-                    }
-                }
-
-            }
-            catch (ApplicationException)
-            {
-                SaveAppStoreInfo(parameters);
-                throw;
-            }
-            catch (HttpException e)
-            {
-                _logger.ErrorException("Error registering appstore purchase {0}", e, parameters ?? "NO PARMS SENT");
-
-                if (e.StatusCode.HasValue && e.StatusCode.Value == HttpStatusCode.PaymentRequired)
-                {
-                    throw new PaymentRequiredException();
-                }
-                throw new ApplicationException("Error registering store sale");
-            }
-            catch (Exception e)
-            {
-                _logger.ErrorException("Error registering appstore purchase {0}", e, parameters ?? "NO PARMS SENT");
-                SaveAppStoreInfo(parameters);
-                //TODO - could create a re-try routine on start-up if this file is there.  For now we can handle manually.
-                throw new ApplicationException("Error registering store sale");
-            }
-
+            SupporterKey = "Hello";
         }
 
         private void SaveAppStoreInfo(string info)
@@ -244,58 +192,15 @@ namespace MediaBrowser.Common.Implementations.Security
 
             if (!(lastChecked > DateTime.UtcNow.AddDays(-1)))
             {
-                var data = new Dictionary<string, string>
-                {
-                    { "feature", feature }, 
-                    { "key", SupporterKey }, 
-                    { "mac", _appHost.SystemId }, 
-                    { "systemid", _appHost.SystemId }, 
-                    { "mb2equiv", mb2Equivalent }, 
-                    { "ver", version }, 
-                    { "platform", _appHost.OperatingSystemDisplayName }, 
-                    { "isservice", _appHost.IsRunningAsService.ToString().ToLower() }
-                };
-
-                try
-                {
-                    var options = new HttpRequestOptions
-                    {
-                        Url = MBValidateUrl,
-
-                        // Seeing block length errors
-                        EnableHttpCompression = false
-                    };
-
-                    options.SetPostData(data);
-
-                    using (var json = (await _httpClient.Post(options).ConfigureAwait(false)).Content)
-                    {
-                        reg = _jsonSerializer.DeserializeFromStream<RegRecord>(json);
-                        success = true;
-                    }
-
-                    if (reg.registered)
-                    {
-                        LicenseFile.AddRegCheck(feature);
-                    }
-                    else
-                    {
-                        LicenseFile.RemoveRegCheck(feature);
-                    }
-
-                }
-                catch (Exception e)
-                {
-                    _logger.ErrorException("Error checking registration status of {0}", e, feature);
-                }
+                LicenseFile.AddRegCheck(feature);
             }
 
             var record = new MBRegistrationRecord
             {
-                IsRegistered = reg.registered,
-                ExpirationDate = reg.expDate,
+                IsRegistered = true,
+                ExpirationDate = DateTime.UtcNow.AddYears(10),
                 RegChecked = true,
-                RegError = !success
+                RegError = false
             };
 
             record.TrialVersion = IsInTrial(reg.expDate, record.RegChecked, record.IsRegistered);
