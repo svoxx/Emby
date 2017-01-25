@@ -1,21 +1,25 @@
-define([], function () {
+define(['dom'], function (dom) {
+    'use strict';
 
     function loadImage(elem, url) {
 
         if (elem.tagName !== "IMG") {
 
-            var tmp = new Image();
+            elem.style.backgroundImage = "url('" + url + "')";
+            return Promise.resolve();
 
-            tmp.onload = function () {
-                elem.style.backgroundImage = "url('" + url + "')";
-            };
-            tmp.src = url;
-
-        } else {
-            elem.setAttribute("src", url);
         }
+        return loadImageIntoImg(elem, url);
+    }
 
-        return Promise.resolve(elem);
+    function loadImageIntoImg(elem, url) {
+        return new Promise(function (resolve, reject) {
+
+            dom.addEventListener(elem, 'load', resolve, {
+                once: true
+            });
+            elem.setAttribute("src", url);
+        });
     }
 
     return {

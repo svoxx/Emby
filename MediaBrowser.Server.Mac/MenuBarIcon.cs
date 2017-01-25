@@ -1,11 +1,10 @@
 ﻿using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Localization;
 using MediaBrowser.Model.Logging;
-using MediaBrowser.Server.Startup.Common.Browser;
 using System;
 using MonoMac.Foundation;
 using MonoMac.AppKit;
+using Emby.Server.Implementations.Browser;
 
 namespace MediaBrowser.Server.Mac
 {
@@ -88,17 +87,17 @@ namespace MediaBrowser.Server.Mac
 
 		private void Community(NSObject sender)
 		{
-			BrowserLauncher.OpenCommunity(Logger);
+			BrowserLauncher.OpenCommunity(MainClass.AppHost);
 		}
 
 		private void Configure(NSObject sender)
 		{
-			BrowserLauncher.OpenDashboard(MainClass.AppHost, Logger);
+			BrowserLauncher.OpenDashboard(MainClass.AppHost);
 		}
 
 		private void Browse(NSObject sender)
 		{
-			BrowserLauncher.OpenWebClient(MainClass.AppHost, Logger);
+			BrowserLauncher.OpenWebClient(MainClass.AppHost);
 		}
 
 		public void Terminate() 

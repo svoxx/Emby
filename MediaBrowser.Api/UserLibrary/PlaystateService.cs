@@ -4,11 +4,11 @@ using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
-using ServiceStack;
 using System;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -234,22 +234,26 @@ namespace MediaBrowser.Api.UserLibrary
         private readonly IUserDataManager _userDataRepository;
         private readonly ILibraryManager _libraryManager;
         private readonly ISessionManager _sessionManager;
+        private readonly ISessionContext _sessionContext;
+        private readonly IAuthorizationContext _authContext;
 
-        public PlaystateService(IUserManager userManager, IUserDataManager userDataRepository, ILibraryManager libraryManager, ISessionManager sessionManager)
+        public PlaystateService(IUserManager userManager, IUserDataManager userDataRepository, ILibraryManager libraryManager, ISessionManager sessionManager, ISessionContext sessionContext, IAuthorizationContext authContext)
         {
             _userManager = userManager;
             _userDataRepository = userDataRepository;
             _libraryManager = libraryManager;
             _sessionManager = sessionManager;
+            _sessionContext = sessionContext;
+            _authContext = authContext;
         }
 
         /// <summary>
         /// Posts the specified request.
         /// </summary>
         /// <param name="request">The request.</param>
-        public object Post(MarkPlayedItem request)
+        public async Task<object> Post(MarkPlayedItem request)
         {
-            var result = MarkPlayed(request).Result;
+            var result = await MarkPlayed(request).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
@@ -265,7 +269,7 @@ namespace MediaBrowser.Api.UserLibrary
                 datePlayed = DateTime.ParseExact(request.DatePlayed, "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
             }
 
-            var session = await GetSession().ConfigureAwait(false);
+            var session = await GetSession(_sessionContext).ConfigureAwait(false);
 
             var dto = await UpdatePlayedStatus(user, request.Id, true, datePlayed).ConfigureAwait(false);
 
@@ -285,7 +289,7 @@ namespace MediaBrowser.Api.UserLibrary
         /// <param name="request">The request.</param>
         public void Post(OnPlaybackStart request)
         {
-            var queueableMediaTypes = (request.QueueableMediaTypes ?? string.Empty);
+            var queueableMediaTypes = request.QueueableMediaTypes ?? string.Empty;
 
             Post(new ReportPlaybackStart
             {
@@ -303,7 +307,7 @@ namespace MediaBrowser.Api.UserLibrary
 
         public void Post(ReportPlaybackStart request)
         {
-            request.SessionId = GetSession().Result.Id;
+            request.SessionId = GetSession(_sessionContext).Result.Id;
 
             var task = _sessionManager.OnPlaybackStart(request);
 
@@ -335,12 +339,7 @@ namespace MediaBrowser.Api.UserLibrary
 
         public void Post(ReportPlaybackProgress request)
         {
-            if (!string.IsNullOrWhiteSpace(request.PlaySessionId))
-            {
-                ApiEntryPoint.Instance.PingTranscodingJob(request.PlaySessionId);
-            }
-
-            request.SessionId = GetSession().Result.Id;
+            request.SessionId = GetSession(_sessionContext).Result.Id;
 
             var task = _sessionManager.OnPlaybackProgress(request);
 
@@ -349,7 +348,7 @@ namespace MediaBrowser.Api.UserLibrary
 
         public void Post(PingPlaybackSession request)
         {
-            ApiEntryPoint.Instance.PingTranscodingJob(request.PlaySessionId);
+            ApiEntryPoint.Instance.PingTranscodingJob(request.PlaySessionId, null);
         }
 
         /// <summary>
@@ -374,10 +373,10 @@ namespace MediaBrowser.Api.UserLibrary
 
             if (!string.IsNullOrWhiteSpace(request.PlaySessionId))
             {
-                ApiEntryPoint.Instance.KillTranscodingJobs(AuthorizationContext.GetAuthorizationInfo(Request).DeviceId, request.PlaySessionId, s => true);
+                ApiEntryPoint.Instance.KillTranscodingJobs(_authContext.GetAuthorizationInfo(Request).DeviceId, request.PlaySessionId, s => true);
             }
 
-            request.SessionId = GetSession().Result.Id;
+            request.SessionId = GetSession(_sessionContext).Result.Id;
 
             var task = _sessionManager.OnPlaybackStopped(request);
 
@@ -399,7 +398,7 @@ namespace MediaBrowser.Api.UserLibrary
         {
             var user = _userManager.GetUserById(request.UserId);
 
-            var session = await GetSession().ConfigureAwait(false);
+            var session = await GetSession(_sessionContext).ConfigureAwait(false);
 
             var dto = await UpdatePlayedStatus(user, request.Id, false, null).ConfigureAwait(false);
 
@@ -434,7 +433,7 @@ namespace MediaBrowser.Api.UserLibrary
                 await item.MarkUnplayed(user).ConfigureAwait(false);
             }
 
-            return _userDataRepository.GetUserDataDto(item, user);
+            return await _userDataRepository.GetUserDataDto(item, user).ConfigureAwait(false);
         }
     }
 }

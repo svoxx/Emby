@@ -1,14 +1,15 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.XbmcMetadata.Parsers;
 using MediaBrowser.XbmcMetadata.Savers;
-using System.IO;
 using System.Linq;
 using System.Threading;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.XbmcMetadata.Providers
 {
@@ -17,12 +18,16 @@ namespace MediaBrowser.XbmcMetadata.Providers
     {
         private readonly ILogger _logger;
         private readonly IConfigurationManager _config;
+        private readonly IProviderManager _providerManager;
+        protected IXmlReaderSettingsFactory XmlReaderSettingsFactory { get; private set; }
 
-        public BaseVideoNfoProvider(IFileSystem fileSystem, ILogger logger, IConfigurationManager config)
+        public BaseVideoNfoProvider(IFileSystem fileSystem, ILogger logger, IConfigurationManager config, IProviderManager providerManager, IXmlReaderSettingsFactory xmlReaderSettingsFactory)
             : base(fileSystem)
         {
             _logger = logger;
             _config = config;
+            _providerManager = providerManager;
+            XmlReaderSettingsFactory = xmlReaderSettingsFactory;
         }
 
         protected override void Fetch(MetadataResult<T> result, string path, CancellationToken cancellationToken)
@@ -31,7 +36,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
             {
                 Item = result.Item
             };
-            new MovieNfoParser(_logger, _config).Fetch(tmpItem, path, cancellationToken);
+            new MovieNfoParser(_logger, _config, _providerManager, FileSystem, XmlReaderSettingsFactory).Fetch(tmpItem, path, cancellationToken);
 
             result.Item = (T)tmpItem.Item;
             result.People = tmpItem.People;

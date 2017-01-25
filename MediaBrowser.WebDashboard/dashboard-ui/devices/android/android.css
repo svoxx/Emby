@@ -1,7 +1,15 @@
-﻿.libraryViewNav {
-    box-shadow: 0px 3px 6px rgba(0, 0, 0, 0.2);
+﻿.libraryMenuButtonText {
+    font-weight: 500 !important;
 }
 
-    .libraryViewNav a, paper-tab {
-        font-weight: 500 !important;
+@media all and (min-width: 300px) {
+
+    .libraryViewNav, .emby-tabs-slider {
+        display: flex;
+        flex-grow: 1;
     }
+
+    .emby-tab-button {
+        flex-grow: 1;
+    }
+}

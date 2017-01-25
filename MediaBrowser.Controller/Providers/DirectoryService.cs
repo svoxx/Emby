@@ -4,8 +4,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CommonIO;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.Controller.Providers
 {
@@ -17,13 +18,16 @@ namespace MediaBrowser.Controller.Providers
         private readonly ConcurrentDictionary<string, Dictionary<string, FileSystemMetadata>> _cache =
             new ConcurrentDictionary<string, Dictionary<string, FileSystemMetadata>>(StringComparer.OrdinalIgnoreCase);
 
-		public DirectoryService(ILogger logger, IFileSystem fileSystem)
+        private readonly ConcurrentDictionary<string, FileSystemMetadata> _fileCache =
+        new ConcurrentDictionary<string, FileSystemMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        public DirectoryService(ILogger logger, IFileSystem fileSystem)
         {
             _logger = logger;
 			_fileSystem = fileSystem;
         }
 
-		public DirectoryService(IFileSystem fileSystem)
+        public DirectoryService(IFileSystem fileSystem)
             : this(new NullLogger(), fileSystem)
         {
         }
@@ -72,7 +76,7 @@ namespace MediaBrowser.Controller.Providers
                         entries[item.FullName] = item;
                     }
                 }
-                catch (DirectoryNotFoundException)
+                catch (IOException)
                 {
                 }
 
@@ -101,14 +105,19 @@ namespace MediaBrowser.Controller.Providers
 
         public FileSystemMetadata GetFile(string path)
         {
-            var directory = Path.GetDirectoryName(path);
+            FileSystemMetadata file;
+            if (!_fileCache.TryGetValue(path, out file))
+            {
+                file = _fileSystem.GetFileInfo(path);
 
-            var dict = GetFileSystemDictionary(directory, false);
+                if (file != null)
+                {
+                    _fileCache.TryAdd(path, file);
+                }
+            }
 
-            FileSystemMetadata entry;
-            dict.TryGetValue(path, out entry);
-
-            return entry;
+            return file;
+            //return _fileSystem.GetFileInfo(path);
         }
 
         public IEnumerable<FileSystemMetadata> GetDirectories(string path)

@@ -8,10 +8,12 @@ using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Controller.TV;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -67,6 +69,9 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
     }
 
     [Route("/Shows/Upcoming", "GET", Summary = "Gets a list of upcoming episodes")]
@@ -115,6 +120,9 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
     }
 
     [Route("/Shows/{Id}/Similar", "GET", Summary = "Finds tv shows similar to a given one.")]
@@ -123,7 +131,7 @@ namespace MediaBrowser.Api
     }
 
     [Route("/Shows/{Id}/Episodes", "GET", Summary = "Gets episodes for a tv season")]
-    public class GetEpisodes : IReturn<ItemsResult>, IHasItemFields
+    public class GetEpisodes : IReturn<ItemsResult>, IHasItemFields, IHasDtoOptions
     {
         /// <summary>
         /// Gets or sets the user id.
@@ -173,10 +181,23 @@ namespace MediaBrowser.Api
         /// <value>The limit.</value>
         [ApiMember(Name = "Limit", Description = "Optional. The maximum number of records to return", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public int? Limit { get; set; }
+
+        [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableImages { get; set; }
+
+        [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? ImageTypeLimit { get; set; }
+
+        [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
     }
 
     [Route("/Shows/{Id}/Seasons", "GET", Summary = "Gets seasons for a tv series")]
-    public class GetSeasons : IReturn<ItemsResult>, IHasItemFields
+    public class GetSeasons : IReturn<ItemsResult>, IHasItemFields, IHasDtoOptions
     {
         /// <summary>
         /// Gets or sets the user id.
@@ -206,6 +227,19 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "AdjacentTo", Description = "Optional. Return items that are siblings of a supplied item.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string AdjacentTo { get; set; }
+
+        [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableImages { get; set; }
+
+        [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? ImageTypeLimit { get; set; }
+
+        [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
     }
 
     /// <summary>
@@ -231,6 +265,7 @@ namespace MediaBrowser.Api
         private readonly IItemRepository _itemRepo;
         private readonly IDtoService _dtoService;
         private readonly ITVSeriesManager _tvSeriesManager;
+        private readonly IAuthorizationContext _authContext;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TvShowsService" /> class.
@@ -238,7 +273,7 @@ namespace MediaBrowser.Api
         /// <param name="userManager">The user manager.</param>
         /// <param name="userDataManager">The user data repository.</param>
         /// <param name="libraryManager">The library manager.</param>
-        public TvShowsService(IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IItemRepository itemRepo, IDtoService dtoService, ITVSeriesManager tvSeriesManager)
+        public TvShowsService(IUserManager userManager, IUserDataManager userDataManager, ILibraryManager libraryManager, IItemRepository itemRepo, IDtoService dtoService, ITVSeriesManager tvSeriesManager, IAuthorizationContext authContext)
         {
             _userManager = userManager;
             _userDataManager = userDataManager;
@@ -246,6 +281,7 @@ namespace MediaBrowser.Api
             _itemRepo = itemRepo;
             _dtoService = dtoService;
             _tvSeriesManager = tvSeriesManager;
+            _authContext = authContext;
         }
 
         /// <summary>
@@ -253,48 +289,74 @@ namespace MediaBrowser.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetSimilarShows request)
+        public async Task<object> Get(GetSimilarShows request)
         {
-            var dtoOptions = GetDtoOptions(request);
-
-            var result = SimilarItemsHelper.GetSimilarItemsResult(dtoOptions, _userManager,
-                _itemRepo,
-                _libraryManager,
-                _userDataManager,
-                _dtoService,
-                Logger,
-                request, item => item is Series,
-                SimilarItemsHelper.GetSimiliarityScore);
+            var result = await GetSimilarItemsResult(request).ConfigureAwait(false);
 
             return ToOptimizedSerializedResultUsingCache(result);
         }
 
-        public object Get(GetUpcomingEpisodes request)
+        private async Task<QueryResult<BaseItemDto>> GetSimilarItemsResult(BaseGetSimilarItemsFromItem request)
+        {
+            var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
+
+            var item = string.IsNullOrEmpty(request.Id) ?
+                (!string.IsNullOrWhiteSpace(request.UserId) ? user.RootFolder :
+                _libraryManager.RootFolder) : _libraryManager.GetItemById(request.Id);
+
+            var dtoOptions = GetDtoOptions(_authContext, request);
+
+            var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                Limit = request.Limit,
+                IncludeItemTypes = new[]
+                {
+                        typeof(Series).Name
+                },
+                SimilarTo = item,
+                DtoOptions = dtoOptions
+
+            }).ToList();
+
+            var result = new QueryResult<BaseItemDto>
+            {
+                Items = (await _dtoService.GetBaseItemDtos(itemsResult, dtoOptions, user).ConfigureAwait(false)).ToArray(),
+
+                TotalRecordCount = itemsResult.Count
+            };
+
+            return result;
+        }
+
+        public async Task<object> Get(GetUpcomingEpisodes request)
         {
             var user = _userManager.GetUserById(request.UserId);
 
-            var minPremiereDate = DateTime.Now.Date.AddDays(-1).ToUniversalTime();
+            var minPremiereDate = DateTime.Now.Date.ToUniversalTime().AddDays(-1);
 
-            var parentIds = string.IsNullOrWhiteSpace(request.ParentId) ? new string[] { } : new[] { request.ParentId };
+            var parentIdGuid = string.IsNullOrWhiteSpace(request.ParentId) ? (Guid?)null : new Guid(request.ParentId);
 
-            var itemsResult = _libraryManager.GetItemsResult(new InternalItemsQuery(user)
+            var options = GetDtoOptions(_authContext, request);
+
+            var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { typeof(Episode).Name },
                 SortBy = new[] { "PremiereDate", "AirTime", "SortName" },
                 SortOrder = SortOrder.Ascending,
                 MinPremiereDate = minPremiereDate,
                 StartIndex = request.StartIndex,
-                Limit = request.Limit
+                Limit = request.Limit,
+                ParentId = parentIdGuid,
+                Recursive = true,
+                DtoOptions = options
 
-            }, parentIds);
+            }).ToList();
 
-            var options = GetDtoOptions(request);
-
-            var returnItems = _dtoService.GetBaseItemDtos(itemsResult.Items, options, user).ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(itemsResult, options, user).ConfigureAwait(false)).ToArray();
 
             var result = new ItemsResult
             {
-                TotalRecordCount = itemsResult.TotalRecordCount,
+                TotalRecordCount = itemsResult.Count,
                 Items = returnItems
             };
 
@@ -306,7 +368,7 @@ namespace MediaBrowser.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetNextUpEpisodes request)
+        public async Task<object> Get(GetNextUpEpisodes request)
         {
             var result = _tvSeriesManager.GetNextUp(new NextUpQuery
             {
@@ -319,9 +381,9 @@ namespace MediaBrowser.Api
 
             var user = _userManager.GetUserById(request.UserId);
 
-            var options = GetDtoOptions(request);
+            var options = GetDtoOptions(_authContext, request);
 
-            var returnItems = _dtoService.GetBaseItemDtos(result.Items, options, user).ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(result.Items, options, user).ConfigureAwait(false)).ToArray();
 
             return ToOptimizedSerializedResultUsingCache(new ItemsResult
             {
@@ -354,7 +416,7 @@ namespace MediaBrowser.Api
             return items;
         }
 
-        public object Get(GetSeasons request)
+        public async Task<object> Get(GetSeasons request)
         {
             var user = _userManager.GetUserById(request.UserId);
 
@@ -365,27 +427,18 @@ namespace MediaBrowser.Api
                 throw new ResourceNotFoundException("No series exists with Id " + request.Id);
             }
 
-            var seasons = series.GetSeasons(user);
-
-            if (request.IsSpecialSeason.HasValue)
+            var seasons = (await series.GetItems(new InternalItemsQuery(user)
             {
-                var val = request.IsSpecialSeason.Value;
+                IsMissing = request.IsMissing,
+                IsVirtualUnaired = request.IsVirtualUnaired,
+                IsSpecialSeason = request.IsSpecialSeason,
+                AdjacentTo = request.AdjacentTo
 
-                seasons = seasons.Where(i => i.IsSpecialSeason == val);
-            }
+            }).ConfigureAwait(false)).Items.OfType<Season>();
 
-            seasons = FilterVirtualSeasons(request, seasons);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            // This must be the last filter
-            if (!string.IsNullOrEmpty(request.AdjacentTo))
-            {
-                seasons = UserViewBuilder.FilterForAdjacency(seasons, request.AdjacentTo)
-                    .Cast<Season>();
-            }
-
-            var dtoOptions = GetDtoOptions(request);
-
-            var returnItems = _dtoService.GetBaseItemDtos(seasons, dtoOptions, user)
+            var returnItems = (await _dtoService.GetBaseItemDtos(seasons, dtoOptions, user).ConfigureAwait(false))
                 .ToArray();
 
             return new ItemsResult
@@ -395,35 +448,7 @@ namespace MediaBrowser.Api
             };
         }
 
-        private IEnumerable<Season> FilterVirtualSeasons(GetSeasons request, IEnumerable<Season> items)
-        {
-            if (request.IsMissing.HasValue && request.IsVirtualUnaired.HasValue)
-            {
-                var isMissing = request.IsMissing.Value;
-                var isVirtualUnaired = request.IsVirtualUnaired.Value;
-
-                if (!isMissing && !isVirtualUnaired)
-                {
-                    return items.Where(i => !i.IsMissingOrVirtualUnaired);
-                }
-            }
-
-            if (request.IsMissing.HasValue)
-            {
-                var val = request.IsMissing.Value;
-                items = items.Where(i => i.IsMissingSeason == val);
-            }
-
-            if (request.IsVirtualUnaired.HasValue)
-            {
-                var val = request.IsVirtualUnaired.Value;
-                items = items.Where(i => i.IsVirtualUnaired == val);
-            }
-
-            return items;
-        }
-
-        public object Get(GetEpisodes request)
+        public async Task<object> Get(GetEpisodes request)
         {
             var user = _userManager.GetUserById(request.UserId);
 
@@ -449,7 +474,16 @@ namespace MediaBrowser.Api
                     throw new ResourceNotFoundException("No series exists with Id " + request.Id);
                 }
 
-                episodes = series.GetEpisodes(user, request.Season.Value);
+                var season = series.GetSeasons(user).FirstOrDefault(i => i.IndexNumber == request.Season.Value);
+
+                if (season == null)
+                {
+                    episodes = new List<Episode>();
+                }
+                else
+                {
+                    episodes = series.GetSeasonEpisodes(season, user);
+                }
             }
             else
             {
@@ -490,14 +524,13 @@ namespace MediaBrowser.Api
                 returnItems = UserViewBuilder.FilterForAdjacency(returnItems, request.AdjacentTo);
             }
 
-            var returnList = _libraryManager.ReplaceVideosWithPrimaryVersions(returnItems)
-                .ToList();
+            var returnList = returnItems.ToList();
 
             var pagedItems = ApplyPaging(returnList, request.StartIndex, request.Limit);
 
-            var dtoOptions = GetDtoOptions(request);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var dtos = _dtoService.GetBaseItemDtos(pagedItems, dtoOptions, user)
+            var dtos = (await _dtoService.GetBaseItemDtos(pagedItems, dtoOptions, user).ConfigureAwait(false))
                 .ToArray();
 
             return new ItemsResult

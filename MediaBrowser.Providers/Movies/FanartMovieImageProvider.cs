@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -17,17 +16,18 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
-using MediaBrowser.Controller.Channels;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.LiveTv;
-using MediaBrowser.Model.Channels;
 using MediaBrowser.Providers.TV;
 
 namespace MediaBrowser.Providers.Movies
 {
-    public class FanartMovieImageProvider : IRemoteImageProvider, IHasChangeMonitor, IHasOrder
+    public class FanartMovieImageProvider : IRemoteImageProvider, IHasOrder
     {
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
         private readonly IServerConfigurationManager _config;
@@ -35,7 +35,7 @@ namespace MediaBrowser.Providers.Movies
         private readonly IFileSystem _fileSystem;
         private readonly IJsonSerializer _json;
 
-        private const string FanArtBaseUrl = "http://webservice.fanart.tv/v3/movies/{1}?api_key={0}";
+        private const string FanArtBaseUrl = "https://webservice.fanart.tv/v3/movies/{1}?api_key={0}";
         // &client_key=52c813aa7b8c8b3bb87f4797532a2f8c
 
         internal static FanartMovieImageProvider Current;
@@ -62,30 +62,13 @@ namespace MediaBrowser.Providers.Movies
 
         public bool Supports(IHasImages item)
         {
-            //var channelItem = item as IChannelMediaItem;
-
-            //if (channelItem != null)
-            //{
-            //    if (channelItem.ContentType == ChannelMediaContentType.Movie)
-            //    {
-            //        return true;
-            //    }
-            //    if (channelItem.ContentType == ChannelMediaContentType.MovieExtra)
-            //    {
-            //        if (channelItem.ExtraType == ExtraType.Trailer)
-            //        {
-            //            return true;
-            //        }
-            //    }
-            //}
-
             // Supports images for tv movies
-            //var tvProgram = item as LiveTvProgram;
-            //if (tvProgram != null && tvProgram.IsMovie)
-            //{
-            //    return true;
-            //}
-            
+            var tvProgram = item as LiveTvProgram;
+            if (tvProgram != null && tvProgram.IsMovie)
+            {
+                return true;
+            }
+
             return item is Movie || item is BoxSet || item is MusicVideo;
         }
 
@@ -135,7 +118,7 @@ namespace MediaBrowser.Providers.Movies
                 {
                     // No biggie. Don't blow up
                 }
-                catch (DirectoryNotFoundException)
+                catch (IOException)
                 {
                     // No biggie. Don't blow up
                 }
@@ -189,6 +172,7 @@ namespace MediaBrowser.Providers.Movies
             PopulateImages(list, obj.moviebackground, ImageType.Backdrop, 1920, 1080);
         }
 
+        private Regex _regex_http = new Regex("^http://");
         private void PopulateImages(List<RemoteImageInfo> list, List<Image> images, ImageType type, int width, int height)
         {
             if (images == null)
@@ -212,7 +196,7 @@ namespace MediaBrowser.Providers.Movies
                         Width = width,
                         Height = height,
                         ProviderName = Name,
-                        Url = url,
+                        Url = _regex_http.Replace(url, "https://", 1),
                         Language = i.lang
                     };
 
@@ -238,36 +222,8 @@ namespace MediaBrowser.Providers.Movies
             return _httpClient.GetResponse(new HttpRequestOptions
             {
                 CancellationToken = cancellationToken,
-                Url = url,
-                ResourcePool = FanartArtistProvider.Current.FanArtResourcePool
+                Url = url
             });
-        }
-
-        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService, DateTime date)
-        {
-            var options = FanartSeriesProvider.Current.GetFanartOptions();
-            if (!options.EnableAutomaticUpdates)
-            {
-                return false;
-            }
-
-            var id = item.GetProviderId(MetadataProviders.Tmdb);
-            if (string.IsNullOrEmpty(id))
-            {
-                id = item.GetProviderId(MetadataProviders.Imdb);
-            }
-
-            if (!string.IsNullOrEmpty(id))
-            {
-                // Process images
-                var path = GetFanartJsonPath(id);
-
-                var fileInfo = _fileSystem.GetFileInfo(path);
-
-                return !fileInfo.Exists || _fileSystem.GetLastWriteTimeUtc(fileInfo) > date;
-            }
-
-            return false;
         }
 
         /// <summary>
@@ -329,11 +285,12 @@ namespace MediaBrowser.Providers.Movies
                 {
                     Url = url,
                     ResourcePool = FanartArtistProvider.Current.FanArtResourcePool,
-                    CancellationToken = cancellationToken
+                    CancellationToken = cancellationToken,
+                    BufferContent = true
 
                 }).ConfigureAwait(false))
                 {
-                    using (var fileStream = _fileSystem.GetFileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                    using (var fileStream = _fileSystem.GetFileStream(path, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                     {
                         await response.CopyToAsync(fileStream).ConfigureAwait(false);
                     }

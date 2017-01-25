@@ -1,11 +1,12 @@
-﻿(function () {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function load(page, device, capabilities) {
 
         if (capabilities.SupportsContentUploading) {
-            $('#fldCameraUploadPath', page).show();
+            $('#fldCameraUploadPath', page).removeClass('hide');
         } else {
-            $('#fldCameraUploadPath', page).hide();
+            $('#fldCameraUploadPath', page).addClass('hide');
         }
 
         $('#txtCustomName', page).val(device.CustomName || '');
@@ -92,4 +93,4 @@
         loadData(page);
     });
 
-})();
+});

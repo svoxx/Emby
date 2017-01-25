@@ -1,12 +1,14 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery', 'fnchecked'], function ($) {
+    'use strict';
 
     function loadPage(page, config, languages) {
 
         $('#chkSubtitlesMovies', page).checked(config.DownloadMovieSubtitles);
         $('#chkSubtitlesEpisodes', page).checked(config.DownloadEpisodeSubtitles);
 
-        $('#chkSkipIfGraphicalSubsPresent', page).checked(config.SkipIfGraphicalSubtitlesPresent);
+        $('#chkSkipIfGraphicalSubsPresent', page).checked(config.SkipIfEmbeddedSubtitlesPresent);
         $('#chkSkipIfAudioTrackPresent', page).checked(config.SkipIfAudioTrackMatches);
+        $('#chkRequirePerfectMatch', page).checked(config.RequirePerfectMatch);
 
         $('#txtOpenSubtitleUsername', page).val(config.OpenSubtitlesUsername);
         $('#txtOpenSubtitlePassword', page).val('');
@@ -24,10 +26,10 @@
 
             var culture = languages[i];
 
-            html += '<paper-checkbox class="chkLang" data-lang="' + culture.ThreeLetterISOLanguageName.toLowerCase() + '">' + culture.DisplayName + '</paper-checkbox>';
+            html += '<label><input type="checkbox" is="emby-checkbox" class="chkLang" data-lang="' + culture.ThreeLetterISOLanguageName.toLowerCase() + '" /><span>' + culture.DisplayName + '</span></label>';
         }
 
-        $('.downloadLanguages', page).html(html).trigger('create');
+        $('.downloadLanguages', page).html(html);
 
         var langs = config.DownloadLanguages || [];
 
@@ -48,8 +50,9 @@
             config.DownloadMovieSubtitles = $('#chkSubtitlesMovies', form).checked();
             config.DownloadEpisodeSubtitles = $('#chkSubtitlesEpisodes', form).checked();
 
-            config.SkipIfGraphicalSubtitlesPresent = $('#chkSkipIfGraphicalSubsPresent', form).checked();
+            config.SkipIfEmbeddedSubtitlesPresent = $('#chkSkipIfGraphicalSubsPresent', form).checked();
             config.SkipIfAudioTrackMatches = $('#chkSkipIfAudioTrackPresent', form).checked();
+            config.RequirePerfectMatch = $('#chkRequirePerfectMatch', form).checked();
 
             config.OpenSubtitlesUsername = $('#txtOpenSubtitleUsername', form).val();
 
@@ -97,4 +100,4 @@
 
     });
 
-})(jQuery, document, window);
+});

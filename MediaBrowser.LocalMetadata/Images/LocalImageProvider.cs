@@ -6,9 +6,10 @@ using MediaBrowser.Model.Entities;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.LocalMetadata.Images
 {
@@ -133,7 +134,7 @@ namespace MediaBrowser.LocalMetadata.Images
             }
             
             var imagePrefix = item.FileNameWithoutExtension + "-";
-            var isInMixedFolder = item.IsInMixedFolder;
+            var isInMixedFolder = item.DetectIsInMixedFolder();
 
             PopulatePrimaryImages(item, images, files, imagePrefix, isInMixedFolder);
 

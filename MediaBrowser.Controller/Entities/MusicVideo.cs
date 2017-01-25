@@ -1,23 +1,13 @@
 ﻿using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
-using MediaBrowser.Model.Entities;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.Serialization;
-using MediaBrowser.Model.Users;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Controller.Entities
 {
-    public class MusicVideo : Video, IHasArtist, IHasMusicGenres, IHasProductionLocations, IHasBudget, IHasLookupInfo<MusicVideoInfo>
+    public class MusicVideo : Video, IHasArtist, IHasMusicGenres, IHasBudget, IHasLookupInfo<MusicVideoInfo>
     {
-        /// <summary>
-        /// Gets or sets the album.
-        /// </summary>
-        /// <value>The album.</value>
-        public string Album { get; set; }
-
         /// <summary>
         /// Gets or sets the budget.
         /// </summary>
@@ -29,12 +19,10 @@ namespace MediaBrowser.Controller.Entities
         /// </summary>
         /// <value>The revenue.</value>
         public double? Revenue { get; set; }
-        public List<string> ProductionLocations { get; set; }
         public List<string> Artists { get; set; }
 
         public MusicVideo()
         {
-            ProductionLocations = new List<string>();
             Artists = new List<string>();
         }
 
@@ -47,13 +35,13 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        [IgnoreDataMember]
+        protected override bool SupportsIsInMixedFolderDetection
         {
-            return this.GetProviderId(MetadataProviders.Tmdb) ?? this.GetProviderId(MetadataProviders.Imdb) ?? base.CreateUserDataKey();
+            get
+            {
+                return true;
+            }
         }
 
         public override UnratedItem GetBlockUnratedType()
@@ -84,7 +72,7 @@ namespace MediaBrowser.Controller.Entities
                 else
                 {
                     // Try to get the year from the folder name
-                    if (!IsInMixedFolder)
+                    if (!DetectIsInMixedFolder())
                     {
                         info = LibraryManager.ParseName(System.IO.Path.GetFileName(ContainingFolderPath));
 

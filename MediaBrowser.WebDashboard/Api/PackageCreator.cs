@@ -1,6 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Localization;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 using System;
@@ -9,43 +7,37 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using CommonIO;
 using MediaBrowser.Controller.Net;
-using WebMarkupMin.Core;
-using WebMarkupMin.Core.Minifiers;
-using WebMarkupMin.Core.Settings;
+using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.WebDashboard.Api
 {
     public class PackageCreator
     {
         private readonly IFileSystem _fileSystem;
-        private readonly ILocalizationManager _localization;
         private readonly ILogger _logger;
         private readonly IServerConfigurationManager _config;
-        private readonly IJsonSerializer _jsonSerializer;
+        private readonly IMemoryStreamFactory _memoryStreamFactory;
 
-        public PackageCreator(IFileSystem fileSystem, ILocalizationManager localization, ILogger logger, IServerConfigurationManager config, IJsonSerializer jsonSerializer)
+        public PackageCreator(IFileSystem fileSystem, ILogger logger, IServerConfigurationManager config, IMemoryStreamFactory memoryStreamFactory)
         {
             _fileSystem = fileSystem;
-            _localization = localization;
             _logger = logger;
             _config = config;
-            _jsonSerializer = jsonSerializer;
+            _memoryStreamFactory = memoryStreamFactory;
         }
 
         public async Task<Stream> GetResource(string path,
             string mode,
             string localizationCulture,
-            string appVersion,
-            bool enableMinification)
+            string appVersion)
         {
             Stream resourceStream;
 
             if (path.Equals("css/all.css", StringComparison.OrdinalIgnoreCase))
             {
-                resourceStream = await GetAllCss(enableMinification).ConfigureAwait(false);
-                enableMinification = false;
+                resourceStream = await GetAllCss().ConfigureAwait(false);
             }
             else
             {
@@ -60,21 +52,7 @@ namespace MediaBrowser.WebDashboard.Api
                 {
                     if (IsCoreHtml(path))
                     {
-                        resourceStream = await ModifyHtml(resourceStream, mode, appVersion, localizationCulture, enableMinification).ConfigureAwait(false);
-                    }
-                }
-                else if (IsFormat(path, "js"))
-                {
-                    if (path.IndexOf(".min.", StringComparison.OrdinalIgnoreCase) == -1 && path.IndexOf("bower_components", StringComparison.OrdinalIgnoreCase) == -1)
-                    {
-                        resourceStream = await ModifyJs(resourceStream, enableMinification).ConfigureAwait(false);
-                    }
-                }
-                else if (IsFormat(path, "css"))
-                {
-                    if (path.IndexOf(".min.", StringComparison.OrdinalIgnoreCase) == -1 && path.IndexOf("bower_components", StringComparison.OrdinalIgnoreCase) == -1)
-                    {
-                        resourceStream = await ModifyCss(resourceStream, enableMinification).ConfigureAwait(false);
+                        resourceStream = await ModifyHtml(path, resourceStream, mode, appVersion, localizationCulture).ConfigureAwait(false);
                     }
                 }
             }
@@ -119,11 +97,11 @@ namespace MediaBrowser.WebDashboard.Api
         {
             var rootPath = DashboardUIPath;
 
-            var fullPath = Path.Combine(rootPath, virtualPath.Replace('/', Path.DirectorySeparatorChar));
+            var fullPath = Path.Combine(rootPath, virtualPath.Replace('/', _fileSystem.DirectorySeparatorChar));
 
             try
             {
-                fullPath = Path.GetFullPath(fullPath);
+                fullPath = _fileSystem.GetFullPath(fullPath);
             }
             catch (Exception ex)
             {
@@ -137,86 +115,6 @@ namespace MediaBrowser.WebDashboard.Api
             }
 
             return fullPath;
-        }
-
-        public async Task<Stream> ModifyCss(Stream sourceStream, bool enableMinification)
-        {
-            using (sourceStream)
-            {
-                string content;
-
-                using (var memoryStream = new MemoryStream())
-                {
-                    await sourceStream.CopyToAsync(memoryStream).ConfigureAwait(false);
-
-                    content = Encoding.UTF8.GetString(memoryStream.ToArray());
-
-                    if (enableMinification)
-                    {
-                        try
-                        {
-                            var result = new KristensenCssMinifier().Minify(content, false, Encoding.UTF8);
-
-                            if (result.Errors.Count > 0)
-                            {
-                                _logger.Error("Error minifying css: " + result.Errors[0].Message);
-                            }
-                            else
-                            {
-                                content = result.MinifiedContent;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.ErrorException("Error minifying css", ex);
-                        }
-                    }
-                }
-
-                var bytes = Encoding.UTF8.GetBytes(content);
-
-                return new MemoryStream(bytes);
-            }
-        }
-
-        public async Task<Stream> ModifyJs(Stream sourceStream, bool enableMinification)
-        {
-            using (sourceStream)
-            {
-                string content;
-
-                using (var memoryStream = new MemoryStream())
-                {
-                    await sourceStream.CopyToAsync(memoryStream).ConfigureAwait(false);
-
-                    content = Encoding.UTF8.GetString(memoryStream.ToArray());
-
-                    if (enableMinification)
-                    {
-                        try
-                        {
-                            var result = new CrockfordJsMinifier().Minify(content, false, Encoding.UTF8);
-
-                            if (result.Errors.Count > 0)
-                            {
-                                _logger.Error("Error minifying javascript: " + result.Errors[0].Message);
-                            }
-                            else
-                            {
-                                content = result.MinifiedContent;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.ErrorException("Error minifying javascript", ex);
-                        }
-                    }
-                }
-
-                var bytes = Encoding.UTF8.GetBytes(content);
-
-                return new MemoryStream(bytes);
-            }
         }
 
         public bool IsCoreHtml(string path)
@@ -238,110 +136,74 @@ namespace MediaBrowser.WebDashboard.Api
         /// <summary>
         /// Modifies the HTML by adding common meta tags, css and js.
         /// </summary>
-        /// <param name="sourceStream">The source stream.</param>
-        /// <param name="mode">The mode.</param>
-        /// <param name="appVersion">The application version.</param>
-        /// <param name="localizationCulture">The localization culture.</param>
-        /// <param name="enableMinification">if set to <c>true</c> [enable minification].</param>
         /// <returns>Task{Stream}.</returns>
-        public async Task<Stream> ModifyHtml(Stream sourceStream, string mode, string appVersion, string localizationCulture, bool enableMinification)
+        public async Task<Stream> ModifyHtml(string path, Stream sourceStream, string mode, string appVersion, string localizationCulture)
         {
             using (sourceStream)
             {
                 string html;
 
-                using (var memoryStream = new MemoryStream())
+                using (var memoryStream = _memoryStreamFactory.CreateNew())
                 {
                     await sourceStream.CopyToAsync(memoryStream).ConfigureAwait(false);
 
-                    html = Encoding.UTF8.GetString(memoryStream.ToArray());
+                    var originalBytes = memoryStream.ToArray();
+
+                    html = Encoding.UTF8.GetString(originalBytes, 0, originalBytes.Length);
 
                     if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
                     {
-                        html = ModifyForCordova(html);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(path) && !string.Equals(path, "index.html", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var index = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+                        if (index != -1)
+                        {
+                            html = html.Substring(index);
+                            index = html.IndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+                            if (index != -1)
+                            {
+                                html = html.Substring(0, index+7);
+                            }
+                        }
+                        var mainFile = _fileSystem.ReadAllText(GetDashboardResourcePath("index.html"));
+
+                        html = ReplaceFirst(mainFile, "<div class=\"mainAnimatedPages skinBody\"></div>", "<div class=\"mainAnimatedPages skinBody hide\">" + html + "</div>");
                     }
 
                     if (!string.IsNullOrWhiteSpace(localizationCulture))
                     {
                         var lang = localizationCulture.Split('-').FirstOrDefault();
 
-                        html = html.Replace("<html>", "<html data-culture=\"" + localizationCulture + "\" lang=\"" + lang + "\">");
+                        html = html.Replace("<html", "<html data-culture=\"" + localizationCulture + "\" lang=\"" + lang + "\"");
                     }
-
-                    if (enableMinification)
-                    {
-                        try
-                        {
-                            var minifier = new HtmlMinifier(new HtmlMinificationSettings
-                            {
-                                AttributeQuotesRemovalMode = HtmlAttributeQuotesRemovalMode.KeepQuotes,
-                                RemoveOptionalEndTags = false,
-                                RemoveTagsWithoutContent = false
-                            });
-                            var result = minifier.Minify(html, false);
-
-                            if (result.Errors.Count > 0)
-                            {
-                                _logger.Error("Error minifying html: " + result.Errors[0].Message);
-                            }
-                            else
-                            {
-                                html = result.MinifiedContent;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.ErrorException("Error minifying html", ex);
-                        }
-                    }
-
-                    html = html.Replace("<body>", "<body><paper-drawer-panel class=\"mainDrawerPanel mainDrawerPanelPreInit\" forceNarrow><div class=\"mainDrawer\" drawer></div><div class=\"mainDrawerPanelContent\" main><!--<div class=\"pageContainer\">")
-                        .Replace("</body>", "</div>--></div></paper-drawer-panel></body>");
                 }
 
                 html = html.Replace("<head>", "<head>" + GetMetaTags(mode) + GetCommonCss(mode, appVersion));
+
+                // Disable embedded scripts from plugins. We'll run them later once resources have loaded
+                if (html.IndexOf("<script", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    html = html.Replace("<script", "<!--<script");
+                    html = html.Replace("</script>", "</script>-->");
+                }
 
                 html = html.Replace("</body>", GetCommonJavascript(mode, appVersion) + "</body>");
 
                 var bytes = Encoding.UTF8.GetBytes(html);
 
-                return new MemoryStream(bytes);
+                return _memoryStreamFactory.CreateNew(bytes);
             }
         }
 
-        private string ModifyForCordova(string html)
+        public string ReplaceFirst(string text, string search, string replace)
         {
-            // Replace CORDOVA_REPLACE_SUPPORTER_SUBMIT_START
-            html = ReplaceBetween(html, "<!--CORDOVA_REPLACE_SUPPORTER_SUBMIT_START-->", "<!--CORDOVA_REPLACE_SUPPORTER_SUBMIT_END-->", "<i class=\"fa fa-check\"></i><span>${ButtonPurchase}</span>");
-
-            return html;
-        }
-
-        private string ReplaceBetween(string html, string startToken, string endToken, string newHtml)
-        {
-            var start = html.IndexOf(startToken, StringComparison.OrdinalIgnoreCase);
-
-            if (start == -1)
+            int pos = text.IndexOf(search, StringComparison.OrdinalIgnoreCase);
+            if (pos < 0)
             {
-                return html;
+                return text;
             }
-
-            var end = html.IndexOf(endToken, start, StringComparison.OrdinalIgnoreCase);
-
-            if (end == -1)
-            {
-                return html;
-            }
-
-            string result = html.Substring(start, end - start);
-            html = html.Replace(result, newHtml);
-
-            return ReplaceBetween(html, startToken, endToken, newHtml);
-        }
-
-        private string GetLocalizationToken(string phrase)
-        {
-            return "${" + phrase + "}";
+            return text.Substring(0, pos) + replace + text.Substring(pos + search.Length);
         }
 
         /// <summary>
@@ -354,11 +216,14 @@ namespace MediaBrowser.WebDashboard.Api
 
             if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
             {
-                sb.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src * 'unsafe-inline' 'unsafe-eval' data:;\">");
+                sb.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: file: filesystem: ws: wss:;\">");
+            }
+            else
+            {
+                sb.Append("<meta http-equiv=\"X-UA-Compatibility\" content=\"IE=Edge\">");
             }
 
             sb.Append("<link rel=\"manifest\" href=\"manifest.json\">");
-            sb.Append("<meta http-equiv=\"X-UA-Compatibility\" content=\"IE=Edge\">");
             sb.Append("<meta name=\"format-detection\" content=\"telephone=no\">");
             sb.Append("<meta name=\"msapplication-tap-highlight\" content=\"no\">");
             sb.Append("<meta name=\"viewport\" content=\"user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width\">");
@@ -378,13 +243,14 @@ namespace MediaBrowser.WebDashboard.Api
             sb.Append("<meta property=\"fb:app_id\" content=\"1618309211750238\">");
 
             // http://developer.apple.com/library/ios/#DOCUMENTATION/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html
-            sb.Append("<link rel=\"apple-touch-icon\" href=\"css/images/touchicon.png\">");
-            sb.Append("<link rel=\"apple-touch-icon\" sizes=\"72x72\" href=\"css/images/touchicon72.png\">");
-            sb.Append("<link rel=\"apple-touch-icon\" sizes=\"114x114\" href=\"css/images/touchicon114.png\">");
+            sb.Append("<link rel=\"apple-touch-icon\" href=\"touchicon.png\">");
+            sb.Append("<link rel=\"apple-touch-icon\" sizes=\"72x72\" href=\"touchicon72.png\">");
+            sb.Append("<link rel=\"apple-touch-icon\" sizes=\"114x114\" href=\"touchicon114.png\">");
             sb.Append("<link rel=\"apple-touch-startup-image\" href=\"css/images/iossplash.png\">");
             sb.Append("<link rel=\"shortcut icon\" href=\"css/images/favicon.ico\">");
-            sb.Append("<meta name=\"msapplication-TileImage\" content=\"css/images/touchicon144.png\">");
+            sb.Append("<meta name=\"msapplication-TileImage\" content=\"touchicon144.png\">");
             sb.Append("<meta name=\"msapplication-TileColor\" content=\"#333333\">");
+            sb.Append("<meta name=\"theme-color\" content=\"#43A047\">");
 
             return sb.ToString();
         }
@@ -436,14 +302,7 @@ namespace MediaBrowser.WebDashboard.Api
 
             var files = new List<string>();
 
-            if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
-            {
-                files.Add("bower_components/requirejs/require.js");
-            }
-            else
-            {
-                files.Add("bower_components" + version + "/requirejs/require.js");
-            }
+            files.Add("bower_components/requirejs/require.js" + versionString);
 
             files.Add("scripts/site.js" + versionString);
 
@@ -452,15 +311,7 @@ namespace MediaBrowser.WebDashboard.Api
                 files.Insert(0, "cordova.js");
             }
 
-            var tags = files.Select(s =>
-            {
-                if (s.IndexOf("require", StringComparison.OrdinalIgnoreCase) == -1)
-                {
-                    return string.Format("<script src=\"{0}\" async></script>", s);
-                }
-                return string.Format("<script src=\"{0}\"></script>", s);
-
-            }).ToArray();
+            var tags = files.Select(s => string.Format("<script src=\"{0}\" defer></script>", s)).ToArray();
 
             builder.Append(string.Join(string.Empty, tags));
 
@@ -471,9 +322,9 @@ namespace MediaBrowser.WebDashboard.Api
         /// Gets all CSS.
         /// </summary>
         /// <returns>Task{Stream}.</returns>
-        private async Task<Stream> GetAllCss(bool enableMinification)
+        private async Task<Stream> GetAllCss()
         {
-            var memoryStream = new MemoryStream();
+            var memoryStream = _memoryStreamFactory.CreateNew();
 
             var files = new[]
                                   {
@@ -489,7 +340,7 @@ namespace MediaBrowser.WebDashboard.Api
             {
                 var path = GetDashboardResourcePath(file);
 
-                using (var fs = _fileSystem.GetFileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, true))
+                using (var fs = _fileSystem.GetFileStream(path, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true))
                 {
                     using (var streamReader = new StreamReader(fs))
                     {
@@ -501,27 +352,6 @@ namespace MediaBrowser.WebDashboard.Api
             }
 
             var css = builder.ToString();
-
-            if (enableMinification)
-            {
-                try
-                {
-                    var result = new KristensenCssMinifier().Minify(builder.ToString(), false, Encoding.UTF8);
-
-                    if (result.Errors.Count > 0)
-                    {
-                        _logger.Error("Error minifying css: " + result.Errors[0].Message);
-                    }
-                    else
-                    {
-                        css = result.MinifiedContent;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.ErrorException("Error minifying css", ex);
-                }
-            }
 
             var bytes = Encoding.UTF8.GetBytes(css);
             memoryStream.Write(bytes, 0, bytes.Length);
@@ -537,7 +367,7 @@ namespace MediaBrowser.WebDashboard.Api
         /// <returns>Task{Stream}.</returns>
         private Stream GetRawResourceStream(string path)
         {
-            return _fileSystem.GetFileStream(GetDashboardResourcePath(path), FileMode.Open, FileAccess.Read, FileShare.ReadWrite, true);
+            return _fileSystem.GetFileStream(GetDashboardResourcePath(path), FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true);
         }
 
     }

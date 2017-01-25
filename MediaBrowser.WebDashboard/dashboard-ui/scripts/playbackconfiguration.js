@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function loadPage(page, config) {
 
@@ -27,12 +28,29 @@
         return false;
     }
 
+    function getTabs() {
+        return [
+        {
+            href: 'cinemamodeconfiguration.html',
+            name: Globalize.translate('TabCinemaMode')
+        },
+         {
+             href: 'playbackconfiguration.html',
+             name: Globalize.translate('TabResumeSettings')
+         },
+         {
+             href: 'streamingsettings.html',
+             name: Globalize.translate('TabStreaming')
+         }];
+    }
+
     $(document).on('pageinit', "#playbackConfigurationPage", function () {
 
         $('.playbackConfigurationForm').off('submit', onSubmit).on('submit', onSubmit);
 
     }).on('pageshow', "#playbackConfigurationPage", function () {
 
+        LibraryMenu.setTabs('playback', 1, getTabs);
         Dashboard.showLoadingMsg();
 
         var page = this;
@@ -45,4 +63,4 @@
 
     });
 
-})(jQuery, document, window);
+});

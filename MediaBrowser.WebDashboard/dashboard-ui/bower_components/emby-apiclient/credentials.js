@@ -1,4 +1,5 @@
-﻿define(['events', 'appStorage'], function (Events, appStorage) {
+﻿define(['events', 'appStorage'], function (events, appStorage) {
+    'use strict';
 
     return function (key) {
 
@@ -33,7 +34,7 @@
                 self.clear();
             }
 
-            Events.trigger(self, 'credentialsupdated');
+            events.trigger(self, 'credentialsupdated');
         }
 
         self.clear = function () {
@@ -57,7 +58,7 @@
             }
 
             var existing = list.filter(function (s) {
-                return s.Id == server.Id;
+                return s.Id === server.Id;
             })[0];
 
             if (existing) {
@@ -95,7 +96,6 @@
                 if (server.ConnectServerId) {
                     existing.ConnectServerId = server.ConnectServerId;
                 }
-                existing.DateLastLocalConnection = Math.max(existing.DateLastLocalConnection || 0, server.DateLastLocalConnection || 0);
 
                 return existing;
             }
@@ -110,7 +110,7 @@
             server.Users = server.Users || [];
 
             var existing = server.Users.filter(function (s) {
-                return s.Id == user.Id;
+                return s.Id === user.Id;
             })[0];
 
             if (existing) {

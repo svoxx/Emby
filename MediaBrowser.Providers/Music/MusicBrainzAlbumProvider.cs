@@ -7,6 +7,7 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Providers;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -14,6 +15,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using MediaBrowser.Model.Serialization;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.Providers.Music
 {
@@ -24,12 +27,18 @@ namespace MediaBrowser.Providers.Music
         private readonly IHttpClient _httpClient;
         private readonly IApplicationHost _appHost;
         private readonly ILogger _logger;
+        private readonly IJsonSerializer _json;
+        private readonly IXmlReaderSettingsFactory _xmlSettings;
 
-        public MusicBrainzAlbumProvider(IHttpClient httpClient, IApplicationHost appHost, ILogger logger)
+        public static string MusicBrainzBaseUrl = "https://www.musicbrainz.org";
+
+        public MusicBrainzAlbumProvider(IHttpClient httpClient, IApplicationHost appHost, ILogger logger, IJsonSerializer json, IXmlReaderSettingsFactory xmlSettings)
         {
             _httpClient = httpClient;
             _appHost = appHost;
             _logger = logger;
+            _json = json;
+            _xmlSettings = xmlSettings;
             Current = this;
         }
 
@@ -42,7 +51,7 @@ namespace MediaBrowser.Providers.Music
 
             if (!string.IsNullOrEmpty(releaseId))
             {
-                url = string.Format("http://www.musicbrainz.org/ws/2/release/?query=reid:{0}", releaseId);
+                url = string.Format("/ws/2/release/?query=reid:{0}", releaseId);
             }
             else
             {
@@ -50,7 +59,7 @@ namespace MediaBrowser.Providers.Music
 
                 if (!string.IsNullOrWhiteSpace(artistMusicBrainzId))
                 {
-                    url = string.Format("http://www.musicbrainz.org/ws/2/release/?query=\"{0}\" AND arid:{1}",
+                    url = string.Format("/ws/2/release/?query=\"{0}\" AND arid:{1}",
                         WebUtility.UrlEncode(searchInfo.Name),
                         artistMusicBrainzId);
                 }
@@ -58,7 +67,7 @@ namespace MediaBrowser.Providers.Music
                 {
                     isNameSearch = true;
 
-                    url = string.Format("http://www.musicbrainz.org/ws/2/release/?query=\"{0}\" AND artist:\"{1}\"",
+                    url = string.Format("/ws/2/release/?query=\"{0}\" AND artist:\"{1}\"",
                        WebUtility.UrlEncode(searchInfo.Name),
                        WebUtility.UrlEncode(searchInfo.GetAlbumArtist()));
                 }
@@ -66,56 +75,50 @@ namespace MediaBrowser.Providers.Music
 
             if (!string.IsNullOrWhiteSpace(url))
             {
-                var doc = await GetMusicBrainzResponse(url, isNameSearch, cancellationToken).ConfigureAwait(false);
-
-                return GetResultsFromResponse(doc);
+                using (var stream = await GetMusicBrainzResponse(url, isNameSearch, cancellationToken).ConfigureAwait(false))
+                {
+                    return GetResultsFromResponse(stream);
+                }
             }
 
             return new List<RemoteSearchResult>();
         }
 
-        private IEnumerable<RemoteSearchResult> GetResultsFromResponse(XmlDocument doc)
+        private List<RemoteSearchResult> GetResultsFromResponse(Stream stream)
         {
-            var ns = new XmlNamespaceManager(doc.NameTable);
-            ns.AddNamespace("mb", "http://musicbrainz.org/ns/mmd-2.0#");
-
-            var list = new List<RemoteSearchResult>();
-
-            var nodes = doc.SelectNodes("//mb:release-list/mb:release", ns);
-
-            if (nodes != null)
+            using (var oReader = new StreamReader(stream, Encoding.UTF8))
             {
-                foreach (var node in nodes.Cast<XmlNode>())
+                var settings = _xmlSettings.Create(false);
+
+                settings.CheckCharacters = false;
+                settings.IgnoreProcessingInstructions = true;
+                settings.IgnoreComments = true;
+
+                using (var reader = XmlReader.Create(oReader, settings))
                 {
-                    if (node.Attributes != null)
+                    var results = ReleaseResult.Parse(reader);
+
+                    return results.Select(i =>
                     {
-                        string name = null;
-
-                        string mbzId = node.Attributes["id"].Value;
-
-                        var nameNode = node.SelectSingleNode("//mb:title", ns);
-
-                        if (nameNode != null)
+                        var result = new RemoteSearchResult
                         {
-                            name = nameNode.InnerText;
+                            Name = i.Title,
+                            ProductionYear = i.Year
+                        };
+
+                        if (!string.IsNullOrWhiteSpace(i.ReleaseId))
+                        {
+                            result.SetProviderId(MetadataProviders.MusicBrainzAlbum, i.ReleaseId);
+                        }
+                        if (!string.IsNullOrWhiteSpace(i.ReleaseGroupId))
+                        {
+                            result.SetProviderId(MetadataProviders.MusicBrainzReleaseGroup, i.ReleaseGroupId);
                         }
 
-                        if (!string.IsNullOrWhiteSpace(mbzId) && !string.IsNullOrWhiteSpace(name))
-                        {
-                            var result = new RemoteSearchResult
-                            {
-                                Name = name
-                            };
-
-                            result.SetProviderId(MetadataProviders.MusicBrainzAlbum, mbzId);
-
-                            list.Add(result);
-                        }
-                    }
+                        return result;
+                    }).ToList();
                 }
             }
-
-            return list;
         }
 
         public async Task<MetadataResult<MusicAlbum>> GetMetadata(AlbumInfo id, CancellationToken cancellationToken)
@@ -134,16 +137,22 @@ namespace MediaBrowser.Providers.Music
 
                 var releaseResult = await GetReleaseResult(artistMusicBrainzId, id.GetAlbumArtist(), id.Name, cancellationToken).ConfigureAwait(false);
 
-                if (!string.IsNullOrEmpty(releaseResult.ReleaseId))
+                if (releaseResult != null)
                 {
-                    releaseId = releaseResult.ReleaseId;
-                    result.HasMetadata = true;
-                }
+                    if (!string.IsNullOrEmpty(releaseResult.ReleaseId))
+                    {
+                        releaseId = releaseResult.ReleaseId;
+                        result.HasMetadata = true;
+                    }
 
-                if (!string.IsNullOrEmpty(releaseResult.ReleaseGroupId))
-                {
-                    releaseGroupId = releaseResult.ReleaseGroupId;
-                    result.HasMetadata = true;
+                    if (!string.IsNullOrEmpty(releaseResult.ReleaseGroupId))
+                    {
+                        releaseGroupId = releaseResult.ReleaseGroupId;
+                        result.HasMetadata = true;
+                    }
+
+                    result.Item.ProductionYear = releaseResult.Year;
+                    result.Item.Overview = releaseResult.Overview;
                 }
             }
 
@@ -197,57 +206,209 @@ namespace MediaBrowser.Providers.Music
 
         private async Task<ReleaseResult> GetReleaseResult(string albumName, string artistId, CancellationToken cancellationToken)
         {
-            var url = string.Format("http://www.musicbrainz.org/ws/2/release/?query=\"{0}\" AND arid:{1}",
+            var url = string.Format("/ws/2/release/?query=\"{0}\" AND arid:{1}",
                 WebUtility.UrlEncode(albumName),
                 artistId);
 
-            var doc = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
+            using (var stream = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false))
+            {
+                using (var oReader = new StreamReader(stream, Encoding.UTF8))
+                {
+                    var settings = _xmlSettings.Create(false);
 
-            return GetReleaseResult(doc);
+                    settings.CheckCharacters = false;
+                    settings.IgnoreProcessingInstructions = true;
+                    settings.IgnoreComments = true;
+
+                    using (var reader = XmlReader.Create(oReader, settings))
+                    {
+                        return ReleaseResult.Parse(reader).FirstOrDefault();
+                    }
+                }
+            }
         }
 
         private async Task<ReleaseResult> GetReleaseResultByArtistName(string albumName, string artistName, CancellationToken cancellationToken)
         {
-            var url = string.Format("http://www.musicbrainz.org/ws/2/release/?query=\"{0}\" AND artist:\"{1}\"",
+            var url = string.Format("/ws/2/release/?query=\"{0}\" AND artist:\"{1}\"",
                 WebUtility.UrlEncode(albumName),
                 WebUtility.UrlEncode(artistName));
 
-            var doc = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
-
-            return GetReleaseResult(doc);
-        }
-
-        private ReleaseResult GetReleaseResult(XmlDocument doc)
-        {
-            var ns = new XmlNamespaceManager(doc.NameTable);
-            ns.AddNamespace("mb", "http://musicbrainz.org/ns/mmd-2.0#");
-
-            var result = new ReleaseResult
+            using (var stream = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false))
             {
+                using (var oReader = new StreamReader(stream, Encoding.UTF8))
+                {
+                    var settings = _xmlSettings.Create(false);
 
-            };
+                    settings.CheckCharacters = false;
+                    settings.IgnoreProcessingInstructions = true;
+                    settings.IgnoreComments = true;
 
-            var releaseIdNode = doc.SelectSingleNode("//mb:release-list/mb:release/@id", ns);
-
-            if (releaseIdNode != null)
-            {
-                result.ReleaseId = releaseIdNode.Value;
+                    using (var reader = XmlReader.Create(oReader, settings))
+                    {
+                        return ReleaseResult.Parse(reader).FirstOrDefault();
+                    }
+                }
             }
-
-            var releaseGroupIdNode = doc.SelectSingleNode("//mb:release-list/mb:release/mb:release-group/@id", ns);
-
-            if (releaseGroupIdNode != null)
-            {
-                result.ReleaseGroupId = releaseGroupIdNode.Value;
-            }
-
-            return result;
         }
 
         private class ReleaseResult
         {
             public string ReleaseId;
             public string ReleaseGroupId;
+            public string Title;
+            public string Overview;
+            public int? Year;
+
+            public static List<ReleaseResult> Parse(XmlReader reader)
+            {
+                reader.MoveToContent();
+                reader.Read();
+
+                // Loop through each element
+                while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+                {
+                    if (reader.NodeType == XmlNodeType.Element)
+                    {
+                        switch (reader.Name)
+                        {
+                            case "release-list":
+                                {
+                                    if (reader.IsEmptyElement)
+                                    {
+                                        reader.Read();
+                                        continue;
+                                    }
+                                    using (var subReader = reader.ReadSubtree())
+                                    {
+                                        return ParseReleaseList(subReader);
+                                    }
+                                }
+                            default:
+                                {
+                                    reader.Skip();
+                                    break;
+                                }
+                        }
+                    }
+                    else
+                    {
+                        reader.Read();
+                    }
+                }
+
+                return new List<ReleaseResult>();
+            }
+
+            private static List<ReleaseResult> ParseReleaseList(XmlReader reader)
+            {
+                var list = new List<ReleaseResult>();
+
+                reader.MoveToContent();
+                reader.Read();
+
+                // Loop through each element
+                while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+                {
+                    if (reader.NodeType == XmlNodeType.Element)
+                    {
+                        switch (reader.Name)
+                        {
+                            case "release":
+                                {
+                                    if (reader.IsEmptyElement)
+                                    {
+                                        reader.Read();
+                                        continue;
+                                    }
+                                    var releaseId = reader.GetAttribute("id");
+
+                                    using (var subReader = reader.ReadSubtree())
+                                    {
+                                        var release = ParseRelease(subReader, releaseId);
+                                        if (release != null)
+                                        {
+                                            list.Add(release);
+                                        }
+                                    }
+                                    break;
+                                }
+                            default:
+                                {
+                                    reader.Skip();
+                                    break;
+                                }
+                        }
+                    }
+                    else
+                    {
+                        reader.Read();
+                    }
+                }
+
+                return list;
+            }
+
+            private static ReleaseResult ParseRelease(XmlReader reader, string releaseId)
+            {
+                var result = new ReleaseResult
+                {
+                    ReleaseId = releaseId
+                };
+
+                reader.MoveToContent();
+                reader.Read();
+
+                // http://stackoverflow.com/questions/2299632/why-does-xmlreader-skip-every-other-element-if-there-is-no-whitespace-separator
+
+                // Loop through each element
+                while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+                {
+                    if (reader.NodeType == XmlNodeType.Element)
+                    {
+                        switch (reader.Name)
+                        {
+                            case "title":
+                                {
+                                    result.Title = reader.ReadElementContentAsString();
+                                    break;
+                                }
+                            case "date":
+                                {
+                                    var val = reader.ReadElementContentAsString();
+                                    DateTime date;
+                                    if (DateTime.TryParse(val, out date))
+                                    {
+                                        result.Year = date.Year;
+                                    }
+                                    break;
+                                }
+                            case "annotation":
+                                {
+                                    result.Overview = reader.ReadElementContentAsString();
+                                    break;
+                                }
+                            case "release-group":
+                                {
+                                    result.ReleaseGroupId = reader.GetAttribute("id");
+                                    reader.Skip();
+                                    break;
+                                }
+                            default:
+                                {
+                                    reader.Skip();
+                                    break;
+                                }
+                        }
+                    }
+                    else
+                    {
+                        reader.Read();
+                    }
+                }
+
+                return result;
+            }
         }
 
         /// <summary>
@@ -258,21 +419,158 @@ namespace MediaBrowser.Providers.Music
         /// <returns>Task{System.String}.</returns>
         private async Task<string> GetReleaseGroupId(string releaseEntryId, CancellationToken cancellationToken)
         {
-            var url = string.Format("http://www.musicbrainz.org/ws/2/release-group/?query=reid:{0}", releaseEntryId);
+            var url = string.Format("/ws/2/release-group/?query=reid:{0}", releaseEntryId);
 
-            var doc = await GetMusicBrainzResponse(url, false, cancellationToken).ConfigureAwait(false);
+            using (var stream = await GetMusicBrainzResponse(url, false, cancellationToken).ConfigureAwait(false))
+            {
+                using (var oReader = new StreamReader(stream, Encoding.UTF8))
+                {
+                    var settings = _xmlSettings.Create(false);
 
-            var ns = new XmlNamespaceManager(doc.NameTable);
-            ns.AddNamespace("mb", "http://musicbrainz.org/ns/mmd-2.0#");
-            var node = doc.SelectSingleNode("//mb:release-group-list/mb:release-group/@id", ns);
+                    settings.CheckCharacters = false;
+                    settings.IgnoreProcessingInstructions = true;
+                    settings.IgnoreComments = true;
 
-            return node != null ? node.Value : null;
+                    using (var reader = XmlReader.Create(oReader, settings))
+                    {
+                        reader.MoveToContent();
+                        reader.Read();
+
+                        // Loop through each element
+                        while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+                        {
+                            if (reader.NodeType == XmlNodeType.Element)
+                            {
+                                switch (reader.Name)
+                                {
+                                    case "release-group-list":
+                                        {
+                                            if (reader.IsEmptyElement)
+                                            {
+                                                reader.Read();
+                                                continue;
+                                            }
+                                            using (var subReader = reader.ReadSubtree())
+                                            {
+                                                return GetFirstReleaseGroupId(subReader);
+                                            }
+                                        }
+                                    default:
+                                        {
+                                            reader.Skip();
+                                            break;
+                                        }
+                                }
+                            }
+                            else
+                            {
+                                reader.Read();
+                            }
+                        }
+                        return null;
+                    }
+                }
+            }
+        }
+
+        private string GetFirstReleaseGroupId(XmlReader reader)
+        {
+            reader.MoveToContent();
+            reader.Read();
+
+            // Loop through each element
+            while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+            {
+                if (reader.NodeType == XmlNodeType.Element)
+                {
+                    switch (reader.Name)
+                    {
+                        case "release-group":
+                            {
+                                return reader.GetAttribute("id");
+                            }
+                        default:
+                            {
+                                reader.Skip();
+                                break;
+                            }
+                    }
+                }
+                else
+                {
+                    reader.Read();
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
         /// The _music brainz resource pool
         /// </summary>
         private readonly SemaphoreSlim _musicBrainzResourcePool = new SemaphoreSlim(1, 1);
+
+        private long _lastMbzUrlQueryTicks = 0;
+        private List<MbzUrl> _mbzUrls = null;
+        private MbzUrl _chosenUrl;
+
+        private async Task<MbzUrl> GetMbzUrl()
+        {
+            if (_chosenUrl == null || _mbzUrls == null || (DateTime.UtcNow.Ticks - _lastMbzUrlQueryTicks) > TimeSpan.FromHours(12).Ticks)
+            {
+                var urls = await RefreshMzbUrls().ConfigureAwait(false);
+
+                if (urls.Count > 1)
+                {
+                    _chosenUrl = urls[new Random().Next(0, urls.Count)];
+                }
+                else
+                {
+                    _chosenUrl = urls[0];
+                }
+            }
+
+            return _chosenUrl;
+        }
+
+        private async Task<List<MbzUrl>> RefreshMzbUrls()
+        {
+            List<MbzUrl> list;
+
+            try
+            {
+                var options = new HttpRequestOptions
+                {
+                    Url = "https://mb3admin.com/admin/service/standards/musicBrainzUrls",
+                    UserAgent = _appHost.Name + "/" + _appHost.ApplicationVersion
+                };
+
+                using (var stream = await _httpClient.Get(options).ConfigureAwait(false))
+                {
+                    var results = _json.DeserializeFromStream<List<MbzUrl>>(stream);
+
+                    list = results;
+                }
+                _lastMbzUrlQueryTicks = DateTime.UtcNow.Ticks;
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorException("Error getting music brainz info", ex);
+
+                list = new List<MbzUrl>
+                {
+                    new MbzUrl
+                    {
+                        url = MusicBrainzBaseUrl,
+                        throttleMs = 1000
+                    }
+                };
+            }
+
+            _mbzUrls = list.ToList();
+
+            return list;
+        }
 
         /// <summary>
         /// Gets the music brainz response.
@@ -281,31 +579,30 @@ namespace MediaBrowser.Providers.Music
         /// <param name="isSearch">if set to <c>true</c> [is search].</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{XmlDocument}.</returns>
-        internal async Task<XmlDocument> GetMusicBrainzResponse(string url, bool isSearch, CancellationToken cancellationToken)
+        internal async Task<Stream> GetMusicBrainzResponse(string url, bool isSearch, CancellationToken cancellationToken)
         {
-            // MusicBrainz is extremely adamant about limiting to one request per second
+            var urlInfo = await GetMbzUrl().ConfigureAwait(false);
+            var throttleMs = urlInfo.throttleMs;
 
-            await Task.Delay(1000, cancellationToken).ConfigureAwait(false);
+            if (throttleMs > 0)
+            {
+                // MusicBrainz is extremely adamant about limiting to one request per second
+                _logger.Debug("Throttling MusicBrainz by {0}ms", throttleMs.ToString(CultureInfo.InvariantCulture));
+                await Task.Delay(throttleMs, cancellationToken).ConfigureAwait(false);
+            }
 
-            var doc = new XmlDocument();
+            url = urlInfo.url.TrimEnd('/') + url;
 
             var options = new HttpRequestOptions
             {
                 Url = url,
                 CancellationToken = cancellationToken,
                 UserAgent = _appHost.Name + "/" + _appHost.ApplicationVersion,
-                ResourcePool = _musicBrainzResourcePool
+                ResourcePool = _musicBrainzResourcePool,
+                BufferContent = throttleMs > 0
             };
 
-            using (var xml = await _httpClient.Get(options).ConfigureAwait(false))
-            {
-                using (var oReader = new StreamReader(xml, Encoding.UTF8))
-                {
-                    doc.Load(oReader);
-                }
-            }
-
-            return doc;
+            return await _httpClient.Get(options).ConfigureAwait(false);
         }
 
         public int Order
@@ -316,6 +613,12 @@ namespace MediaBrowser.Providers.Music
         public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
         {
             throw new NotImplementedException();
+        }
+
+        internal class MbzUrl
+        {
+            public string url { get; set; }
+            public int throttleMs { get; set; }
         }
     }
 }

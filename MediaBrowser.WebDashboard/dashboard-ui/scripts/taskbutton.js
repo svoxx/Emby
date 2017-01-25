@@ -1,175 +1,149 @@
-﻿$.fn.taskButton = function (options) {
+﻿define(['userSettings', 'emby-button'], function (userSettings) {
+    'use strict';
 
-    function pollTasks(button) {
+    return function (options) {
 
-        ApiClient.getScheduledTasks({
+        var button = options.button;
 
-            IsEnabled: true
+        function pollTasks() {
 
-        }).then(function (tasks) {
+            ApiClient.getScheduledTasks({
 
-            updateTasks(button, tasks);
-        });
+                IsEnabled: true
 
-    }
+            }).then(updateTasks);
+        }
 
-    function updateTasks(button, tasks) {
+        function updateTasks(tasks) {
 
-        var task = tasks.filter(function (t) {
+            var task = tasks.filter(function (t) {
 
-            return t.Key == options.taskKey;
+                return t.Key == options.taskKey;
 
-        })[0];
+            })[0];
+
+            if (options.panel) {
+                if (task) {
+                    options.panel.classList.remove('hide');
+                } else {
+                    options.panel.classList.add('hide');
+                }
+            }
+
+            if (!task) {
+                return;
+            }
+
+            if (task.State == 'Idle') {
+                button.removeAttribute('disabled');
+            } else {
+                button.setAttribute('disabled', 'disabled');
+            }
+
+            button.setAttribute('data-taskid', task.Id);
+
+            var progress = (task.CurrentProgressPercentage || 0).toFixed(1);
+
+            if (options.progressElem) {
+                options.progressElem.value = progress;
+
+                if (task.State == 'Running') {
+                    options.progressElem.classList.remove('hide');
+                } else {
+                    options.progressElem.classList.add('hide');
+                }
+            }
+
+            if (options.lastResultElem) {
+                var lastResult = task.LastExecutionResult ? task.LastExecutionResult.Status : '';
+
+                if (lastResult == "Failed") {
+                    options.lastResultElem.html('<span style="color:#FF0000;">(' + Globalize.translate('LabelFailed') + ')</span>');
+                }
+                else if (lastResult == "Cancelled") {
+                    options.lastResultElem.html('<span style="color:#0026FF;">(' + Globalize.translate('LabelCancelled') + ')</span>');
+                }
+                else if (lastResult == "Aborted") {
+                    options.lastResultElem.html('<span style="color:#FF0000;">' + Globalize.translate('LabelAbortedByServerShutdown') + '</span>');
+                } else {
+                    options.lastResultElem.html(lastResult);
+                }
+            }
+        }
+
+        function onScheduledTaskMessageConfirmed(id) {
+            ApiClient.startScheduledTask(id).then(pollTasks);
+        }
+
+        function onButtonClick() {
+
+            var button = this;
+            var taskId = button.getAttribute('data-taskid');
+            onScheduledTaskMessageConfirmed(taskId);
+        }
+
+        function onSocketOpen() {
+            startInterval();
+        }
+
+        function onSocketMessage(e, msg) {
+            if (msg.MessageType == "ScheduledTasksInfo") {
+
+                var tasks = msg.Data;
+
+                updateTasks(tasks);
+            }
+        }
+
+        var pollInterval;
+
+        function onPollIntervalFired() {
+
+            if (!ApiClient.isWebSocketOpen()) {
+                pollTasks();
+            }
+        }
+
+        function startInterval() {
+            if (ApiClient.isWebSocketOpen()) {
+                ApiClient.sendWebSocketMessage("ScheduledTasksInfoStart", "1000,1000");
+            }
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
+            pollInterval = setInterval(onPollIntervalFired, 5000);
+        }
+
+        function stopInterval() {
+            if (ApiClient.isWebSocketOpen()) {
+                ApiClient.sendWebSocketMessage("ScheduledTasksInfoStop");
+            }
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
+        }
 
         if (options.panel) {
-            if (task) {
-                $(options.panel).show();
-            } else {
-                $(options.panel).hide();
-            }
+            options.panel.classList.add('hide');
         }
 
-        if (!task) {
-            return;
-        }
+        if (options.mode == 'off') {
 
-        if (task.State == 'Idle') {
-            $(button).removeAttr('disabled');
-        } else {
-            $(button).attr('disabled', 'disabled');
-        }
+            button.removeEventListener('click', onButtonClick);
+            Events.off(ApiClient, 'websocketmessage', onSocketMessage);
+            Events.off(ApiClient, 'websocketopen', onSocketOpen);
+            stopInterval();
 
-        $(button).attr('data-taskid', task.Id);
-
-        var progress = (task.CurrentProgressPercentage || 0).toFixed(1);
-
-        if (options.progressElem) {
-            options.progressElem.value = progress;
-
-            if (task.State == 'Running') {
-                options.progressElem.classList.remove('hide');
-            } else {
-                options.progressElem.classList.add('hide');
-            }
-        }
-
-        if (options.lastResultElem) {
-            var lastResult = task.LastExecutionResult ? task.LastExecutionResult.Status : '';
-
-            if (lastResult == "Failed") {
-                options.lastResultElem.html('<span style="color:#FF0000;">' + Globalize.translate('LabelFailed') + '</span>');
-            }
-            else if (lastResult == "Cancelled") {
-                options.lastResultElem.html('<span style="color:#0026FF;">' + Globalize.translate('LabelCancelled') + '</span>');
-            }
-            else if (lastResult == "Aborted") {
-                options.lastResultElem.html('<span style="color:#FF0000;">' + Globalize.translate('LabelAbortedByServerShutdown') + '</span>');
-            } else {
-                options.lastResultElem.html(lastResult);
-            }
-        }
-    }
-
-    function onScheduledTaskMessageConfirmed(instance, id) {
-        ApiClient.startScheduledTask(id).then(function () {
-
-            pollTasks(instance);
-        });
-    }
-
-    function onButtonClick() {
-
-        var button = this;
-        var id = button.getAttribute('data-taskid');
-
-        var key = 'scheduledTaskButton' + options.taskKey;
-        var expectedValue = new Date().getMonth() + '5';
-
-        if (appStorage.getItem(key) == expectedValue) {
-            onScheduledTaskMessageConfirmed(button, id);
         } else {
 
-            var msg = Globalize.translate('ConfirmMessageScheduledTaskButton');
-            msg += '<br/>';
-            msg += '<div style="margin-top:1em;">';
-            msg += '<a class="clearLink" href="scheduledtasks.html"><paper-button style="color:#3f51b5!important;margin:0;">' + Globalize.translate('ButtonScheduledTasks') + '</paper-button></a>';
-            msg += '</div>';
+            button.addEventListener('click', onButtonClick);
 
-            require(['confirm'], function (confirm) {
+            pollTasks();
 
-                confirm(msg, Globalize.translate('HeaderConfirmation')).then(function () {
-                    appStorage.setItem(key, expectedValue);
-                    onScheduledTaskMessageConfirmed(button, id);
-                });
+            startInterval();
 
-            });
+            Events.on(ApiClient, 'websocketmessage', onSocketMessage);
+            Events.on(ApiClient, 'websocketopen', onSocketOpen);
         }
-    }
-
-    function onSocketOpen() {
-        startInterval();
-    }
-
-    function onSocketMessage(e, msg) {
-        if (msg.MessageType == "ScheduledTasksInfo") {
-
-            var tasks = msg.Data;
-
-            updateTasks(self, tasks);
-        }
-    }
-
-    var self = this;
-    var pollInterval;
-
-    function onPollIntervalFired() {
-
-        if (!ApiClient.isWebSocketOpen()) {
-            pollTasks(self);
-        }
-    }
-
-    function startInterval() {
-        if (ApiClient.isWebSocketOpen()) {
-            ApiClient.sendWebSocketMessage("ScheduledTasksInfoStart", "1000,1000");
-        }
-        if (pollInterval) {
-            clearInterval(pollInterval);
-        }
-        pollInterval = setInterval(onPollIntervalFired, 5000);
-    }
-
-    function stopInterval() {
-        if (ApiClient.isWebSocketOpen()) {
-            ApiClient.sendWebSocketMessage("ScheduledTasksInfoStop");
-        }
-        if (pollInterval) {
-            clearInterval(pollInterval);
-        }
-    }
-
-    if (options.panel) {
-        $(options.panel).hide();
-    }
-
-    if (options.mode == 'off') {
-
-        this.off('click', onButtonClick);
-        Events.off(ApiClient, 'websocketmessage', onSocketMessage);
-        Events.off(ApiClient, 'websocketopen', onSocketOpen);
-        stopInterval();
-
-    } else if (this.length) {
-
-        this.on('click', onButtonClick);
-
-        pollTasks(self);
-
-        startInterval();
-
-        Events.on(ApiClient, 'websocketmessage', onSocketMessage);
-        Events.on(ApiClient, 'websocketopen', onSocketOpen);
-    }
-
-    return this;
-};
+    };
+});

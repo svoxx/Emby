@@ -1,4 +1,5 @@
-﻿define(['paper-checkbox', 'paper-input'], function () {
+﻿define(['jQuery','emby-checkbox', 'listViewStyle', 'emby-input', 'emby-select'], function ($) {
+    'use strict';
 
     return function (page, providerId, options) {
 
@@ -29,7 +30,16 @@
                     page.querySelector('.listingsSection').classList.add('hide');
                 }
 
+                page.querySelector('.chkAllTuners').checked = info.EnableAllTuners;
+
+                if (page.querySelector('.chkAllTuners').checked) {
+                    page.querySelector('.selectTunersSection').classList.add('hide');
+                } else {
+                    page.querySelector('.selectTunersSection').classList.remove('hide');
+                }
+
                 setCountry(info);
+                refreshTunerDevices(page, info, config.TunerHosts);
             });
         }
 
@@ -91,6 +101,7 @@
                 var info = {
                     Type: 'SchedulesDirect',
                     Username: page.querySelector('.txtUser').value,
+                    EnableAllTuners: true,
                     Password: CryptoJS.SHA1(page.querySelector('.txtPass').value).toString()
                 };
 
@@ -147,6 +158,12 @@
                 info.ZipCode = page.querySelector('.txtZipCode').value;
                 info.Country = $('#selectCountry', page).val();
                 info.ListingsId = selectedListingsId;
+                info.EnableAllTuners = page.querySelector('.chkAllTuners').checked;
+                info.EnabledTuners = info.EnableAllTuners ? [] : $('.chkTuner', page).get().filter(function (i) {
+                    return i.checked;
+                }).map(function (i) {
+                    return i.getAttribute('data-id');
+                });
 
                 ApiClient.ajax({
                     type: "POST",
@@ -181,7 +198,7 @@
                 return;
             }
 
-            Dashboard.showModalLoadingMsg();
+            Dashboard.showLoadingMsg();
 
             ApiClient.ajax({
                 type: "GET",
@@ -204,7 +221,7 @@
                     $('#selectListing', page).val(listingsId);
                 }
 
-                Dashboard.hideModalLoadingMsg();
+                Dashboard.hideLoadingMsg();
 
             }, function (result) {
 
@@ -212,8 +229,56 @@
                     message: Globalize.translate('ErrorGettingTvLineups')
                 });
                 refreshListings('');
-                Dashboard.hideModalLoadingMsg();
+                Dashboard.hideLoadingMsg();
             });
+        }
+
+        function getTunerName(providerId) {
+
+            providerId = providerId.toLowerCase();
+
+            switch (providerId) {
+
+                case 'm3u':
+                    return 'M3U Playlist';
+                case 'hdhomerun':
+                    return 'HDHomerun';
+                case 'satip':
+                    return 'DVB';
+                default:
+                    return 'Unknown';
+            }
+        }
+
+        function refreshTunerDevices(page, providerInfo, devices) {
+
+            var html = '';
+
+            for (var i = 0, length = devices.length; i < length; i++) {
+
+                var device = devices[i];
+
+                html += '<div class="listItem">';
+
+                var enabledTuners = providerInfo.EnabledTuners || [];
+                var isChecked = providerInfo.EnableAllTuners || enabledTuners.indexOf(device.Id) != -1;
+                var checkedAttribute = isChecked ? ' checked' : '';
+                html += '<label class="checkboxContainer listItemCheckboxContainer"><input type="checkbox" is="emby-checkbox" data-id="' + device.Id + '" class="chkTuner" ' + checkedAttribute + '/><span></span></label>';
+
+                html += '<div class="listItemBody two-line">';
+                html += '<div class="listItemBodyText">';
+                html += device.FriendlyName || getTunerName(device.Type);
+                html += '</div>';
+
+                html += '<div class="listItemBodyText secondary">';
+                html += device.Url;
+                html += '</div>';
+                html += '</div>';
+
+                html += '</div>';
+            }
+
+            page.querySelector('.tunerList').innerHTML = html;
         }
 
         self.submit = function () {
@@ -248,6 +313,14 @@
 
             $('.txtZipCode', page).on('change', function () {
                 refreshListings(this.value);
+            });
+
+            page.querySelector('.chkAllTuners').addEventListener('change', function (e) {
+                if (e.target.checked) {
+                    page.querySelector('.selectTunersSection').classList.add('hide');
+                } else {
+                    page.querySelector('.selectTunersSection').classList.remove('hide');
+                }
             });
 
             $('.createAccountHelp', page).html(Globalize.translate('MessageCreateAccountAt', '<a href="http://www.schedulesdirect.org" target="_blank">http://www.schedulesdirect.org</a>'));

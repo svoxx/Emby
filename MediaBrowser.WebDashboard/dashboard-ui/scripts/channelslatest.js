@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define([], function () {
+    'use strict';
 
     function reloadItems(page) {
 
@@ -26,12 +27,12 @@
     pageIdOn('pageinit', "channelsPage", function () {
 
         var page = this;
-        var pages = page.querySelector('neon-animated-pages');
+        var mdlTabs = page.querySelector('.libraryViewNav');
 
-        pages.addEventListener('tabchange', function (e) {
-            loadTab(page, parseInt(e.target.selected));
+        mdlTabs.addEventListener('tabchange', function (e) {
+            loadTab(page, parseInt(e.detail.selectedTabIndex));
         });
 
     });
 
-})(jQuery, document);
+});

@@ -1,87 +1,81 @@
-﻿(function ($, document) {
+﻿define(['components/categorysyncbuttons', 'components/groupedcards', 'cardBuilder', 'apphost', 'imageLoader'], function (categorysyncbuttons, groupedcards, cardBuilder, appHost, imageLoader) {
+    'use strict';
 
     function getView() {
 
         return 'Thumb';
     }
 
-    function loadLatest(page) {
+    function getLatestPromise(context, params) {
 
         Dashboard.showLoadingMsg();
 
         var userId = Dashboard.getCurrentUserId();
 
-        var parentId = LibraryMenu.getTopParentId();
-
-        var limit = 30;
-
-        if (AppInfo.hasLowImageBandwidth) {
-            limit = 16;
-        }
+        var parentId = params.topParentId;
 
         var options = {
 
             IncludeItemTypes: "Episode",
-            Limit: limit,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Limit: 30,
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             ParentId: parentId,
             ImageTypeLimit: 1,
-            EnableImageTypes: "Primary,Backdrop,Banner,Thumb"
+            EnableImageTypes: "Primary,Backdrop,Thumb"
         };
 
-        ApiClient.getJSON(ApiClient.getUrl('Users/' + userId + '/Items/Latest', options)).then(function (items) {
-
-            var view = getView();
-            var html = '';
-
-            if (view == 'ThumbCard') {
-
-                html += LibraryBrowser.getPosterViewHtml({
-                    items: items,
-                    shape: "backdrop",
-                    preferThumb: true,
-                    inheritThumb: false,
-                    showUnplayedIndicator: false,
-                    showChildCountIndicator: true,
-                    overlayText: false,
-                    showParentTitle: true,
-                    lazy: true,
-                    showTitle: true,
-                    cardLayout: true
-                });
-
-            } else if (view == 'Thumb') {
-
-                html += LibraryBrowser.getPosterViewHtml({
-                    items: items,
-                    shape: "backdrop",
-                    preferThumb: true,
-                    inheritThumb: false,
-                    showParentTitle: false,
-                    showUnplayedIndicator: false,
-                    showChildCountIndicator: true,
-                    overlayText: false,
-                    centerText: true,
-                    lazy: true,
-                    showTitle: false,
-                    overlayPlayButton: AppInfo.enableAppLayouts
-                });
-            }
-
-            var elem = page.querySelector('#latestEpisodes');
-            elem.innerHTML = html;
-            ImageLoader.lazyChildren(elem);
-
-            Dashboard.hideLoadingMsg();
-            LibraryBrowser.setLastRefreshed(page);
-        });
+        return ApiClient.getJSON(ApiClient.getUrl('Users/' + userId + '/Items/Latest', options));
     }
 
-    window.TvPage.renderLatestTab = function (page, tabContent) {
+    function loadLatest(context, params, promise) {
 
-        if (LibraryBrowser.needsRefresh(tabContent)) {
-            loadLatest(tabContent);
-        }
+        promise.then(function (items) {
+
+            var html = '';
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+            var cardLayout = supportsImageAnalysis;
+
+            html += cardBuilder.getCardsHtml({
+                items: items,
+                shape: "backdrop",
+                preferThumb: true,
+                showTitle: true,
+                showSeriesYear: true,
+                showParentTitle: true,
+                overlayText: false,
+                cardLayout: cardLayout,
+                showUnplayedIndicator: false,
+                showChildCountIndicator: true,
+                centerText: !cardLayout,
+                lazy: true,
+                overlayPlayButton: true,
+                vibrant: supportsImageAnalysis,
+                lines: 2
+            });
+
+            var elem = context.querySelector('#latestEpisodes');
+            elem.innerHTML = html;
+            imageLoader.lazyChildren(elem);
+
+            Dashboard.hideLoadingMsg();
+        });
+    }
+    return function (view, params, tabContent) {
+
+        var self = this;
+
+        categorysyncbuttons.init(tabContent);        var latestPromise;
+
+        self.preRender = function () {
+            latestPromise = getLatestPromise(view, params);
+        };
+
+        self.renderTab = function () {
+
+            loadLatest(tabContent, params, latestPromise);
+        };
+
+        tabContent.querySelector('#latestEpisodes').addEventListener('click', groupedcards.onItemsContainerClick);
     };
-
-})(jQuery, document);
+});

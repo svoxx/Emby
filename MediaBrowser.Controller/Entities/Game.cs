@@ -1,26 +1,21 @@
 ﻿using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Users;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Controller.Entities
 {
-    public class Game : BaseItem, IHasTrailers, IHasThemeMedia, IHasTags, IHasScreenshots, ISupportsPlaceHolders, IHasLookupInfo<GameInfo>
+    public class Game : BaseItem, IHasTrailers, IHasScreenshots, ISupportsPlaceHolders, IHasLookupInfo<GameInfo>
     {
-        public List<Guid> ThemeSongIds { get; set; }
-        public List<Guid> ThemeVideoIds { get; set; }
-
         public Game()
         {
             MultiPartGameFiles = new List<string>();
             RemoteTrailers = new List<MediaUrl>();
             LocalTrailerIds = new List<Guid>();
             RemoteTrailerIds = new List<Guid>();
-            ThemeSongIds = new List<Guid>();
-            ThemeVideoIds = new List<Guid>();
         }
 
         public List<Guid> LocalTrailerIds { get; set; }
@@ -33,6 +28,18 @@ namespace MediaBrowser.Controller.Entities
                    locationType != LocationType.Virtual;
         }
 
+        [IgnoreDataMember]
+        public override bool EnableRefreshOnDateModifiedChange
+        {
+            get { return true; }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsThemeMedia
+        {
+            get { return true; }
+        }
+
         /// <summary>
         /// Gets or sets the remote trailers.
         /// </summary>
@@ -43,6 +50,7 @@ namespace MediaBrowser.Controller.Entities
         /// Gets the type of the media.
         /// </summary>
         /// <value>The type of the media.</value>
+        [IgnoreDataMember]
         public override string MediaType
         {
             get { return Model.Entities.MediaType.Game; }
@@ -77,20 +85,21 @@ namespace MediaBrowser.Controller.Entities
         /// </summary>
         public List<string> MultiPartGameFiles { get; set; }
 
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
+            var list = base.GetUserDataKeys();
             var id = this.GetProviderId(MetadataProviders.Gamesdb);
 
             if (!string.IsNullOrEmpty(id))
             {
-                return "Game-Gamesdb-" + id;
+                list.Insert(0, "Game-Gamesdb-" + id);
             }
-            return base.CreateUserDataKey();
+            return list;
         }
 
         public override IEnumerable<string> GetDeletePaths()
         {
-            if (!IsInMixedFolder)
+            if (!DetectIsInMixedFolder())
             {
                 return new[] { System.IO.Path.GetDirectoryName(Path) };
             }

@@ -1,17 +1,19 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Common.Net;
+﻿using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Controller.Dlna;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Serialization;
-using ServiceStack;
 using System.Collections.Generic;
-using CommonIO;
+using System.Threading.Tasks;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Controller.Net;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.Playback.Progressive
 {
@@ -33,16 +35,12 @@ namespace MediaBrowser.Api.Playback.Progressive
     /// </summary>
     public class AudioService : BaseProgressiveStreamingService
     {
-        public AudioService(IServerConfigurationManager serverConfig, IUserManager userManager, ILibraryManager libraryManager, IIsoManager isoManager, IMediaEncoder mediaEncoder, IFileSystem fileSystem, IDlnaManager dlnaManager, ISubtitleEncoder subtitleEncoder, IDeviceManager deviceManager, IMediaSourceManager mediaSourceManager, IZipClient zipClient, IJsonSerializer jsonSerializer, IImageProcessor imageProcessor, IHttpClient httpClient) : base(serverConfig, userManager, libraryManager, isoManager, mediaEncoder, fileSystem, dlnaManager, subtitleEncoder, deviceManager, mediaSourceManager, zipClient, jsonSerializer, imageProcessor, httpClient)
-        {
-        }
-
         /// <summary>
         /// Gets the specified request.
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetAudioStream request)
+        public Task<object> Get(GetAudioStream request)
         {
             return ProcessRequest(request, false);
         }
@@ -52,7 +50,7 @@ namespace MediaBrowser.Api.Playback.Progressive
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Head(GetAudioStream request)
+        public Task<object> Head(GetAudioStream request)
         {
             return ProcessRequest(request, true);
         }
@@ -73,9 +71,13 @@ namespace MediaBrowser.Api.Playback.Progressive
                 audioTranscodeParams.Add("-ac " + state.OutputAudioChannels.Value.ToString(UsCulture));
             }
 
-            if (state.OutputAudioSampleRate.HasValue)
+            // opus will fail on 44100
+            if (!string.Equals(state.OutputAudioCodec, "opus", global::System.StringComparison.OrdinalIgnoreCase))
             {
-                audioTranscodeParams.Add("-ar " + state.OutputAudioSampleRate.Value.ToString(UsCulture));
+                if (state.OutputAudioSampleRate.HasValue)
+                {
+                    audioTranscodeParams.Add("-ar " + state.OutputAudioSampleRate.Value.ToString(UsCulture));
+                }
             }
 
             const string vn = " -vn";
@@ -91,6 +93,10 @@ namespace MediaBrowser.Api.Playback.Progressive
                 vn,
                 string.Join(" ", audioTranscodeParams.ToArray()),
                 outputPath).Trim();
+        }
+
+        public AudioService(IServerConfigurationManager serverConfig, IUserManager userManager, ILibraryManager libraryManager, IIsoManager isoManager, IMediaEncoder mediaEncoder, IFileSystem fileSystem, IDlnaManager dlnaManager, ISubtitleEncoder subtitleEncoder, IDeviceManager deviceManager, IMediaSourceManager mediaSourceManager, IZipClient zipClient, IJsonSerializer jsonSerializer, IAuthorizationContext authorizationContext, IImageProcessor imageProcessor) : base(serverConfig, userManager, libraryManager, isoManager, mediaEncoder, fileSystem, dlnaManager, subtitleEncoder, deviceManager, mediaSourceManager, zipClient, jsonSerializer, authorizationContext, imageProcessor)
+        {
         }
     }
 }

@@ -1,4 +1,8 @@
-﻿.ui-body-b h1, .ui-body-b h2 {
+﻿.background-theme-b .backgroundContainer.withBackdrop {
+    background: rgba(6, 6, 6, .86) !important;
+}
+
+.ui-body-b h1, .ui-body-b h2 {
     color: #E53A35;
 }
 
@@ -11,10 +15,6 @@
     color: #AC3326 !important;
 }
 
-paper-button[raised].more {
-    background: #AC3326;
-}
-
 .channelTimeslotHeader, .timeslotHeader {
     background: #cc3333 !important;
 }
@@ -23,7 +23,7 @@ paper-button[raised].more {
     border-right-color: #cc3333 !important;
 }
 
-paper-tabs #selectionBar, .playedIndicator {
+.playedIndicator {
     background-color: #cc3333 !important;
 }
 
@@ -39,6 +39,7 @@ paper-tabs #selectionBar, .playedIndicator {
     position: absolute;
     left: 0px;
     top: 0px;
+    pointer-events: none;
 }
 
 .snowflake {

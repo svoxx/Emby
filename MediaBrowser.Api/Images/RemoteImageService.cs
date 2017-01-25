@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Dto;
@@ -9,14 +8,16 @@ using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.Images
 {
@@ -233,21 +234,18 @@ namespace MediaBrowser.Api.Images
 
             try
             {
-                using (var reader = new StreamReader(pointerCachePath))
-                {
-                    contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
-                }
+                contentPath = _fileSystem.ReadAllText(pointerCachePath);
 
-				if (_fileSystem.FileExists(contentPath))
-                {
-                    return ToStaticFileResult(contentPath);
-                }
+                if (_fileSystem.FileExists(contentPath))
+				{
+				    return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
+				}
             }
-            catch (DirectoryNotFoundException)
+            catch (FileNotFoundException)
             {
                 // Means the file isn't cached yet
             }
-            catch (FileNotFoundException)
+            catch (IOException)
             {
                 // Means the file isn't cached yet
             }
@@ -255,14 +253,11 @@ namespace MediaBrowser.Api.Images
             await DownloadImage(request.ImageUrl, urlHash, pointerCachePath).ConfigureAwait(false);
 
             // Read the pointer file again
-            using (var reader = new StreamReader(pointerCachePath))
-            {
-                contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
-            }
+            contentPath = _fileSystem.ReadAllText(pointerCachePath);
 
-            return ToStaticFileResult(contentPath);
+            return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
         }
-        
+
         /// <summary>
         /// Downloads the image.
         /// </summary>
@@ -274,7 +269,8 @@ namespace MediaBrowser.Api.Images
         {
             var result = await _httpClient.GetResponse(new HttpRequestOptions
             {
-                Url = url
+                Url = url,
+                BufferContent = false
 
             }).ConfigureAwait(false);
 
@@ -285,17 +281,14 @@ namespace MediaBrowser.Api.Images
 			_fileSystem.CreateDirectory(Path.GetDirectoryName(fullCachePath));
             using (var stream = result.Content)
             {
-                using (var filestream = _fileSystem.GetFileStream(fullCachePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                using (var filestream = _fileSystem.GetFileStream(fullCachePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                 {
                     await stream.CopyToAsync(filestream).ConfigureAwait(false);
                 }
             }
 
 			_fileSystem.CreateDirectory(Path.GetDirectoryName(pointerCachePath));
-            using (var writer = new StreamWriter(pointerCachePath))
-            {
-                await writer.WriteAsync(fullCachePath).ConfigureAwait(false);
-            }
+            _fileSystem.WriteAllText(pointerCachePath, fullCachePath);
         }
 
         /// <summary>

@@ -7,7 +7,6 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Serialization;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -88,8 +87,7 @@ namespace MediaBrowser.Providers.Music
             return _httpClient.GetResponse(new HttpRequestOptions
             {
                 CancellationToken = cancellationToken,
-                Url = url,
-                ResourcePool = AudioDbArtistProvider.Current.AudioDbResourcePool
+                Url = url
             });
         }
 

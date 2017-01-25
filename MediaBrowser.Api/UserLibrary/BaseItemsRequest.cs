@@ -1,9 +1,9 @@
 ﻿using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -12,6 +12,7 @@ namespace MediaBrowser.Api.UserLibrary
         protected BaseItemsRequest()
         {
             EnableImages = true;
+            EnableTotalRecordCount = true;
         }
 
         /// <summary>
@@ -99,12 +100,13 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "HasTvdbId", Description = "Optional filter by items that have a tvdb id or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? HasTvdbId { get; set; }
 
-        [ApiMember(Name = "IsYearMismatched", Description = "Optional filter by items that are potentially misidentified.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
-        public bool? IsYearMismatched { get; set; }
-
         [ApiMember(Name = "IsInBoxSet", Description = "Optional filter by items that are in boxsets, or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? IsInBoxSet { get; set; }
-        
+
+        public string ExcludeItemIds { get; set; }
+
+        public bool EnableTotalRecordCount { get; set; }
+
         /// <summary>
         /// Skips over a given number of items within the results. Use for paging.
         /// </summary>
@@ -224,6 +226,9 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
         public bool? EnableImages { get; set; }
 
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
         [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public int? ImageTypeLimit { get; set; }
 
@@ -263,6 +268,8 @@ namespace MediaBrowser.Api.UserLibrary
         /// <value>The studios.</value>
         [ApiMember(Name = "Artists", Description = "Optional. If specified, results will be filtered based on artist. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string Artists { get; set; }
+
+        public string ExcludeArtistIds { get; set; }
 
         [ApiMember(Name = "ArtistIds", Description = "Optional. If specified, results will be filtered based on artist. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string ArtistIds { get; set; }
@@ -367,6 +374,11 @@ namespace MediaBrowser.Api.UserLibrary
             return (IncludeItemTypes ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
+        public string[] GetExcludeItemIds()
+        {
+            return (ExcludeItemIds ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
         public string[] GetExcludeItemTypes()
         {
             return (ExcludeItemTypes ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -380,6 +392,11 @@ namespace MediaBrowser.Api.UserLibrary
         public string[] GetStudios()
         {
             return (Studios ?? string.Empty).Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        public string[] GetArtistIds()
+        {
+            return (ArtistIds ?? string.Empty).Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         public string[] GetStudioIds()

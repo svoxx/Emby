@@ -1,22 +1,26 @@
-﻿(function ($, document) {
+﻿define(['datetime', 'cardBuilder', 'apphost', 'imageLoader', 'emby-itemscontainer', 'scrollStyles'], function (datetime, cardBuilder, appHost, imageLoader) {
+    'use strict';
 
-    function loadUpcoming(page) {
+    function getUpcomingPromise() {
+
         Dashboard.showLoadingMsg();
-
-        var limit = AppInfo.hasLowImageBandwidth && !enableScrollX() ?
-         24 :
-         40;
 
         var query = {
 
-            Limit: limit,
-            Fields: "AirTime,UserData,SeriesStudio,SyncInfo",
+            Limit: 40,
+            Fields: "AirTime,UserData",
             UserId: Dashboard.getCurrentUserId(),
             ImageTypeLimit: 1,
-            EnableImageTypes: "Primary,Backdrop,Banner,Thumb"
+            EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
+            EnableTotalRecordCount: false
         };
 
-        ApiClient.getJSON(ApiClient.getUrl("Shows/Upcoming", query)).then(function (result) {
+        return ApiClient.getJSON(ApiClient.getUrl("Shows/Upcoming", query));
+    }
+
+    function loadUpcoming(page, promise) {
+
+        promise.then(function (result) {
 
             var items = result.Items;
 
@@ -30,8 +34,6 @@
             renderUpcoming(elem, items);
 
             Dashboard.hideLoadingMsg();
-
-            LibraryBrowser.setLastRefreshed(page);
         });
     }
 
@@ -61,7 +63,13 @@
             if (item.PremiereDate) {
                 try {
 
-                    dateText = LibraryBrowser.getFutureDateText(parseISO8601Date(item.PremiereDate, { toLocal: true }), true);
+                    var premiereDate = datetime.parseISO8601Date(item.PremiereDate, true);
+
+                    if (datetime.isRelativeDay(premiereDate, -1)) {
+                        dateText = Globalize.translate('Yesterday');
+                    } else {
+                        dateText = LibraryBrowser.getFutureDateText(premiereDate, true);
+                    }
 
                 } catch (err) {
                 }
@@ -92,24 +100,32 @@
             html += '<div class="homePageSection">';
             html += '<h1 class="listHeader">' + group.name + '</h1>';
 
+            var allowBottomPadding = true;
+
             if (enableScrollX()) {
-                html += '<div class="itemsContainer hiddenScrollX">';
+                allowBottomPadding = false;
+                html += '<div is="emby-itemscontainer" class="itemsContainer hiddenScrollX">';
             } else {
-                html += '<div class="itemsContainer">';
+                html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
             }
 
-            html += LibraryBrowser.getPosterViewHtml({
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
+            html += cardBuilder.getCardsHtml({
                 items: group.items,
                 showLocationTypeIndicator: false,
                 shape: getThumbShape(),
                 showTitle: true,
-                showPremiereDate: true,
                 preferThumb: true,
                 lazy: true,
                 showDetailsMenu: true,
-                centerText: true,
+                centerText: !supportsImageAnalysis,
                 context: 'home-upcoming',
-                overlayMoreButton: true
+                overlayMoreButton: !supportsImageAnalysis,
+                showParentTitle: true,
+                allowBottomPadding: allowBottomPadding,
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
 
             });
             html += '</div>';
@@ -118,13 +134,22 @@
         }
 
         elem.innerHTML = html;
-        ImageLoader.lazyChildren(elem);
+        imageLoader.lazyChildren(elem);
     }
+    return function (view, params, tabContent) {
 
-    window.HomePage.renderUpcoming = function (page, tabContent) {
-        if (LibraryBrowser.needsRefresh(tabContent)) {
-            loadUpcoming(tabContent);
-        }
+        var self = this;
+        var upcomingPromise;
+
+        self.preRender = function () {
+            upcomingPromise = getUpcomingPromise();
+        };
+
+        self.renderTab = function () {
+
+            Dashboard.showLoadingMsg();
+            loadUpcoming(view, upcomingPromise);
+        };
     };
 
-})(jQuery, document);
+});

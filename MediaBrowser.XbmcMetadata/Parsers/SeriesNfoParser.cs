@@ -6,15 +6,13 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
 using System;
 using System.Xml;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.XbmcMetadata.Parsers
 {
     public class SeriesNfoParser : BaseNfoParser<Series>
     {
-        public SeriesNfoParser(ILogger logger, IConfigurationManager config) : base(logger, config)
-        {
-        }
-
         /// <summary>
         /// Fetches the data from XML node.
         /// </summary>
@@ -27,13 +25,29 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             switch (reader.Name)
             {
                 case "id":
-                    string id = reader.ReadElementContentAsString();
-                    if (!string.IsNullOrWhiteSpace(id))
                     {
-                        item.SetProviderId(MetadataProviders.Tvdb, id);
-                    }
-                    break;
+                        string imdbId = reader.GetAttribute("IMDB");
+                        string tmdbId = reader.GetAttribute("TMDB");
+                        string tvdbId = reader.GetAttribute("TVDB");
 
+                        if (string.IsNullOrWhiteSpace(tvdbId))
+                        {
+                            tvdbId = reader.ReadElementContentAsString();
+                        }
+                        if (!string.IsNullOrWhiteSpace(imdbId))
+                        {
+                            item.SetProviderId(MetadataProviders.Imdb, imdbId);
+                        }
+                        if (!string.IsNullOrWhiteSpace(tmdbId))
+                        {
+                            item.SetProviderId(MetadataProviders.Tmdb, tmdbId);
+                        }
+                        if (!string.IsNullOrWhiteSpace(tvdbId))
+                        {
+                            item.SetProviderId(MetadataProviders.Tvdb, tvdbId);
+                        }
+                        break;
+                    }
                 case "airs_dayofweek":
                     {
                         item.AirDays = TVUtils.GetAirDays(reader.ReadElementContentAsString());
@@ -91,6 +105,10 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     base.FetchDataFromXmlNode(reader, itemResult);
                     break;
             }
+        }
+
+        public SeriesNfoParser(ILogger logger, IConfigurationManager config, IProviderManager providerManager, IFileSystem fileSystem, IXmlReaderSettingsFactory xmlReaderSettingsFactory) : base(logger, config, providerManager, fileSystem, xmlReaderSettingsFactory)
+        {
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define(['libraryBrowser', 'cardBuilder', 'imageLoader', 'emby-itemscontainer', 'emby-tabs', 'emby-button', 'scripts/channelslatest', 'scripts/sections'], function (libraryBrowser, cardBuilder, imageLoader) {
+    'use strict';
 
     // The base query options
     var query = {
@@ -23,7 +24,7 @@
 
             if (view == "Thumb") {
 
-                html = LibraryBrowser.getPosterViewHtml({
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
                     shape: "backdrop",
                     context: 'channels',
@@ -36,7 +37,7 @@
             }
             else if (view == "ThumbCard") {
 
-                html = LibraryBrowser.getPosterViewHtml({
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
                     shape: "backdrop",
                     preferThumb: true,
@@ -49,9 +50,9 @@
 
             var elem = page.querySelector('#items');
             elem.innerHTML = html;
-            ImageLoader.lazyChildren(elem);
+            imageLoader.lazyChildren(elem);
 
-            LibraryBrowser.saveQueryValues('channels', query);
+            libraryBrowser.saveQueryValues('channels', query);
 
             Dashboard.hideLoadingMsg();
         });
@@ -62,7 +63,7 @@
         switch (index) {
 
             case 1:
-                LibraryBrowser.loadSavedQueryValues('channels', query);
+                libraryBrowser.loadSavedQueryValues('channels', query);
                 reloadItems(page);
                 break;
             default:
@@ -70,19 +71,27 @@
         }
     }
 
-    pageIdOn('pageinit', "channelsPage", function () {
+    return function (view, params) {
 
-        var page = this;
+        var self = this;
+        var viewTabs = view.querySelector('.libraryViewNav');
 
-        var tabs = page.querySelector('paper-tabs');
-        var pages = page.querySelector('neon-animated-pages');
+        libraryBrowser.configurePaperLibraryTabs(view, viewTabs, view.querySelectorAll('.pageTabContent'), [0, 1]);
 
-        LibraryBrowser.configurePaperLibraryTabs(page, tabs, pages, 'channels.html');
-
-        pages.addEventListener('tabchange', function (e) {
-            loadTab(page, parseInt(e.target.selected));
+        viewTabs.addEventListener('tabchange', function (e) {
+            loadTab(view, parseInt(e.detail.selectedTabIndex));
         });
 
-    });
+        require(["headroom-window"], function (headroom) {
+            headroom.add(viewTabs);
+            self.headroom = headroom;
+        });
 
-})(jQuery, document);
+        view.addEventListener('viewdestroy', function (e) {
+
+            if (self.headroom) {
+                self.headroom.remove(viewTabs);
+            }
+        });
+    };
+});

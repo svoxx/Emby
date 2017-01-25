@@ -3,6 +3,8 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Logging;
 using System.Xml;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.LocalMetadata.Parsers
 {
@@ -12,11 +14,6 @@ namespace MediaBrowser.LocalMetadata.Parsers
     public class BaseVideoXmlParser<T> : BaseItemXmlParser<T>
         where T : Video
     {
-        public BaseVideoXmlParser(ILogger logger)
-            : base(logger)
-        {
-        }
-
         /// <summary>
         /// Fetches the data from XML node.
         /// </summary>
@@ -35,7 +32,7 @@ namespace MediaBrowser.LocalMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val) && movie != null)
                         {
-                            movie.TmdbCollectionName = val;
+                            movie.CollectionName = val;
                         }
 
                         break;
@@ -46,19 +43,22 @@ namespace MediaBrowser.LocalMetadata.Parsers
                     break;
             }
         }
+
+        public BaseVideoXmlParser(ILogger logger, IProviderManager providerManager, IXmlReaderSettingsFactory xmlReaderSettingsFactory, IFileSystem fileSystem) : base(logger, providerManager, xmlReaderSettingsFactory, fileSystem)
+        {
+        }
     }
 
     public class MovieXmlParser : BaseVideoXmlParser<Movie>
     {
-        public MovieXmlParser(ILogger logger) : base(logger)
+        public MovieXmlParser(ILogger logger, IProviderManager providerManager, IXmlReaderSettingsFactory xmlReaderSettingsFactory, IFileSystem fileSystem) : base(logger, providerManager, xmlReaderSettingsFactory, fileSystem)
         {
         }
     }
 
     public class VideoXmlParser : BaseVideoXmlParser<Video>
     {
-        public VideoXmlParser(ILogger logger)
-            : base(logger)
+        public VideoXmlParser(ILogger logger, IProviderManager providerManager, IXmlReaderSettingsFactory xmlReaderSettingsFactory, IFileSystem fileSystem) : base(logger, providerManager, xmlReaderSettingsFactory, fileSystem)
         {
         }
     }

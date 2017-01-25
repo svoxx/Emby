@@ -1,9 +1,23 @@
-﻿(function ($, document) {
+﻿define(['listView', 'cardBuilder', 'imageLoader', 'emby-itemscontainer'], function (listView, cardBuilder, imageLoader) {
+    'use strict';
 
     function renderItems(page, item) {
 
         var sections = [];
 
+        if (item.ArtistCount) {
+            sections.push({
+                name: Globalize.translate('TabArtists'),
+                type: 'MusicArtist'
+            });
+        }
+        if (item.ProgramCount && item.Type == 'Person') {
+
+            sections.push({
+                name: Globalize.translate('HeaderUpcomingOnTV'),
+                type: 'Program'
+            });
+        }
         if (item.MovieCount) {
 
             sections.push({
@@ -29,7 +43,6 @@
         }
 
         if (item.TrailerCount) {
-
             sections.push({
                 name: Globalize.translate('TabTrailers'),
                 type: 'Trailer'
@@ -80,10 +93,10 @@
             html += '<h1 class="listHeader" style="display:inline-block;vertical-align:middle;">';
             html += section.name;
             html += '</h1>';
-            html += '<a href="#" class="clearLink hide" style="margin-left:1em;vertical-align:middle;"><paper-button raised class="more mini noIcon">' + Globalize.translate('ButtonMore') + '</paper-button></a>';
+            html += '<a href="#" class="clearLink hide" style="margin-left:1em;vertical-align:middle;"><button is="emby-button" type="button" class="raised more mini noIcon">' + Globalize.translate('ButtonMore') + '</button></a>';
             html += '</div>';
 
-            html += '<div class="itemsContainer">';
+            html += '<div is="emby-itemscontainer" class="itemsContainer">';
             html += '</div>';
 
             html += '</div>';
@@ -102,6 +115,26 @@
 
         switch (type) {
 
+            case 'Program':
+                loadItems(element, item, type, {
+                    MediaTypes: "",
+                    IncludeItemTypes: "Program",
+                    PersonTypes: "",
+                    ArtistIds: "",
+                    Limit: 10
+                }, {
+                    shape: "backdrop",
+                    showTitle: true,
+                    centerText: true,
+                    overlayMoreButton: true,
+                    preferThumb: true,
+                    overlayText: false,
+                    showAirTime: true,
+                    showAirDateTime: true,
+                    showChannelName: true
+                });
+                break;
+
             case 'Movie':
                 loadItems(element, item, type, {
                     MediaTypes: "",
@@ -110,10 +143,11 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
-                    overlayMoreButton: true
+                    overlayMoreButton: true,
+                    overlayText: false
                 });
                 break;
 
@@ -125,7 +159,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayPlayButton: true
@@ -140,7 +174,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayMoreButton: true
@@ -155,7 +189,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayPlayButton: true
@@ -170,7 +204,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayMoreButton: true
@@ -185,10 +219,29 @@
                     ArtistIds: "",
                     Limit: 8
                 }, {
-                    shape: "detailPageSquare",
+                    shape: "square",
                     playFromHere: true,
                     showTitle: true,
                     showParentTitle: true,
+                    coverImage: true,
+                    centerText: true,
+                    overlayPlayButton: true
+                });
+                break;
+
+            case 'MusicArtist':
+                loadItems(element, item, type, {
+                    MediaTypes: "",
+                    IncludeItemTypes: "MusicArtist",
+                    PersonTypes: "",
+                    ArtistIds: "",
+                    Limit: 8
+                }, {
+                    shape: "square",
+                    playFromHere: true,
+                    showTitle: true,
+                    showParentTitle: true,
+                    coverImage: true,
                     centerText: true,
                     overlayPlayButton: true
                 });
@@ -202,7 +255,7 @@
                     ArtistIds: "",
                     Limit: 6
                 }, {
-                    shape: "detailPage169",
+                    shape: "backdrop",
                     showTitle: true,
                     showParentTitle: true,
                     centerText: true,
@@ -219,8 +272,9 @@
                     Limit: 30
                 }, {
                     playFromHere: true,
-                    defaultAction: 'playallfromhere',
-                    smallIcon: true
+                    action: 'playallfromhere',
+                    smallIcon: true,
+                    artist: true
                 });
                 break;
 
@@ -247,24 +301,43 @@
             }
 
             listOptions.items = result.Items;
+            var itemsContainer = element.querySelector('.itemsContainer');
 
             if (type == 'Audio') {
-                html = LibraryBrowser.getListViewHtml(listOptions);
+                html = listView.getListViewHtml(listOptions);
+                itemsContainer.classList.remove('vertical-wrap');
+                itemsContainer.classList.add('vertical-list');
             } else {
-                html = LibraryBrowser.getPosterViewHtml(listOptions);
+                html = cardBuilder.getCardsHtml(listOptions);
+                itemsContainer.classList.add('vertical-wrap');
+                itemsContainer.classList.remove('vertical-list');
             }
 
-            var itemsContainer = element.querySelector('.itemsContainer');
             itemsContainer.innerHTML = html;
 
-            $(itemsContainer).createCardMenus();
-            ImageLoader.lazyChildren(itemsContainer);
+            imageLoader.lazyChildren(itemsContainer);
         });
     }
 
     function getMoreItemsHref(item, type) {
 
-        return 'secondaryitems.html?type=' + type + '&parentid=' + item.Id;
+        if (item.Type == 'Genre' || item.Type == 'MusicGenre' || item.Type == 'GameGenre') {
+            return 'secondaryitems.html?type=' + type + '&genreId=' + item.Id;
+        }
+
+        if (item.Type == 'Studio') {
+            return 'secondaryitems.html?type=' + type + '&studioId=' + item.Id;
+        }
+
+        if (item.Type == 'MusicArtist') {
+            return 'secondaryitems.html?type=' + type + '&artistId=' + item.Id;
+        }
+
+        if (item.Type == 'Person') {
+            return 'secondaryitems.html?type=' + type + '&personId=' + item.Id;
+        }
+
+        return 'secondaryitems.html?type=' + type + '&parentId=' + item.Id;
     }
 
     function addCurrentItemToQuery(query, item) {
@@ -297,13 +370,13 @@
             SortOrder: "Ascending",
             IncludeItemTypes: "",
             Recursive: true,
-            Fields: "AudioInfo,SeriesInfo,ParentId,PrimaryImageAspectRatio,SyncInfo",
+            Fields: "AudioInfo,SeriesInfo,ParentId,PrimaryImageAspectRatio,BasicSyncInfo",
             Limit: LibraryBrowser.getDefaultPageSize(),
             StartIndex: 0,
             CollapseBoxSetItems: false
         };
 
-        query = $.extend(query, options || {});
+        query = Object.assign(query, options || {});
 
         if (query.IncludeItemTypes == "Audio") {
             query.SortBy = "AlbumArtist,Album,SortName";
@@ -337,4 +410,4 @@
         renderItems: renderItems
     };
 
-})(jQuery, document);
+});

@@ -4,6 +4,11 @@ namespace MediaBrowser.Model.LiveTv
 {
     public class TimerInfoDto : BaseTimerInfoDto
     {
+        public TimerInfoDto()
+        {
+            Type = "Timer";
+        }
+
         /// <summary>
         /// Gets or sets the status.
         /// </summary>

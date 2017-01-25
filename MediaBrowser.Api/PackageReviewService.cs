@@ -3,12 +3,12 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Serialization;
-using ServiceStack;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -112,7 +112,7 @@ namespace MediaBrowser.Api
             _appHost = appHost;
         }
 
-        public object Get(ReviewRequest request)
+        public async Task<object> Get(ReviewRequest request)
         {
             var parms = "?id=" + request.Id;
 
@@ -133,11 +133,13 @@ namespace MediaBrowser.Api
                 parms += "&title=true";
             }
 
-            var result = _httpClient.Get(MbAdminUrl + "/service/packageReview/retrieve" + parms, CancellationToken.None).Result;
+            using (var result = await _httpClient.Get(MbAdminUrl + "/service/packageReview/retrieve" + parms, CancellationToken.None)
+                            .ConfigureAwait(false))
+            {
+                var reviews = _serializer.DeserializeFromStream<List<PackageReviewInfo>>(result);
 
-            var reviews = _serializer.DeserializeFromStream<List<PackageReviewInfo>>(result);
-
-            return ToOptimizedResult(reviews);
+                return ToOptimizedResult(reviews);
+            }
         }
 
         public void Post(CreateReviewRequest request)

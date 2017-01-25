@@ -1,14 +1,15 @@
-﻿using MediaBrowser.Controller.Providers;
+﻿using System;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
-using System.Collections.Generic;
 using System.Linq;
+using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Users;
 
 namespace MediaBrowser.Controller.Entities
 {
-    public class Book : BaseItem, IHasTags, IHasLookupInfo<BookInfo>, IHasSeries
+    public class Book : BaseItem, IHasLookupInfo<BookInfo>, IHasSeries
     {
+        [IgnoreDataMember]
         public override string MediaType
         {
             get
@@ -17,7 +18,38 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
+        [IgnoreDataMember]
+        public string SeriesPresentationUniqueKey { get; set; }
+        [IgnoreDataMember]
         public string SeriesName { get; set; }
+        [IgnoreDataMember]
+        public Guid? SeriesId { get; set; }
+        [IgnoreDataMember]
+        public string SeriesSortName { get; set; }
+
+        public string FindSeriesSortName()
+        {
+            return SeriesSortName;
+        }
+        public string FindSeriesName()
+        {
+            return SeriesName;
+        }
+        public string FindSeriesPresentationUniqueKey()
+        {
+            return SeriesPresentationUniqueKey;
+        }
+
+        [IgnoreDataMember]
+        public override bool EnableRefreshOnDateModifiedChange
+        {
+            get { return true; }
+        }
+
+        public Guid? FindSeriesId()
+        {
+            return SeriesId;
+        }
 
         public override bool CanDownload()
         {

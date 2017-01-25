@@ -1,10 +1,9 @@
-﻿define(['paperdialoghelper', 'paper-input', 'paper-button', 'jqmcollapsible', 'paper-checkbox'], function (paperDialogHelper) {
+﻿define(['dialogHelper', 'jQuery', 'emby-input', 'emby-button', 'emby-checkbox', 'paper-icon-button-light', 'formDialogStyle'], function (dialogHelper, $) {
+    'use strict';
 
     function renderLibrarySharingList(context, result) {
 
         var folderHtml = '';
-
-        folderHtml += '<div class="paperCheckboxList">';
 
         folderHtml += result.Items.map(function (i) {
 
@@ -13,13 +12,10 @@
             var isChecked = true;
             var checkedHtml = isChecked ? ' checked="checked"' : '';
 
-            currentHtml += '<paper-checkbox class="chkShareFolder" data-folderid="' + i.Id + '" type="checkbox"' + checkedHtml + '>' + i.Name + '</paper-checkbox>';
-
+            currentHtml += '<label><input is="emby-checkbox" class="chkShareFolder" type="checkbox" data-folderid="' + i.Id + '"' + checkedHtml + '/><span>' + i.Name + '</span></label>';
             return currentHtml;
 
         }).join('');
-
-        folderHtml += '</div>';
 
         context.querySelector('.librarySharingList').innerHTML = folderHtml;
     }
@@ -28,59 +24,31 @@
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getJSON(ApiClient.getUrl("Channels", {})).then(function (channelsResult) {
+        var shareExcludes = $(".chkShareFolder", dlg).get().filter(function (i) {
 
-            var shareExcludes = $(".chkShareFolder", dlg).get().filter(function (i) {
+            return i.checked;
 
-                return i.checked;
+        }).map(function (i) {
 
-            }).map(function (i) {
+            return i.getAttribute('data-folderid');
+        });
 
-                return i.getAttribute('data-folderid');
-            });
+        require(['connectHelper'], function (connectHelper) {
 
-            // Add/Update connect info
-            ApiClient.ajax({
-
-                type: "POST",
-                url: ApiClient.getUrl('Connect/Invite'),
-                dataType: 'json',
-                data: {
+            connectHelper.inviteGuest({
+                apiClient: ApiClient,
+                guestOptions: {
 
                     ConnectUsername: dlg.querySelector('#txtConnectUsername').value,
                     EnabledLibraries: shareExcludes.join(','),
                     SendingUserId: Dashboard.getCurrentUserId(),
                     EnableLiveTv: false
                 }
-
-            }).then(function (result) {
-
+            }).then(function() {
+                
                 dlg.submitted = true;
-                paperDialogHelper.close(dlg);
-
-                Dashboard.hideLoadingMsg();
-
-                showNewUserInviteMessage(dlg, result);
-
+                dialogHelper.close(dlg);
             });
-        });
-    }
-
-    function showNewUserInviteMessage(page, result) {
-
-        if (!result.IsNewUserInvitation && !result.IsPending) {
-
-            // It was immediately approved
-            return;
-        }
-
-        var message = result.IsNewUserInvitation ?
-            Globalize.translate('MessageInvitationSentToNewUser', result.GuestDisplayName) :
-            Globalize.translate('MessageInvitationSentToUser', result.GuestDisplayName);
-
-        Dashboard.alert({
-            message: message,
-            title: Globalize.translate('HeaderInvitationSent')
         });
     }
 
@@ -94,7 +62,7 @@
                 xhr.onload = function (e) {
 
                     var template = this.response;
-                    var dlg = paperDialogHelper.createDialog({
+                    var dlg = dialogHelper.createDialog({
                         removeOnClose: true,
                         size: 'small'
                     });
@@ -109,13 +77,10 @@
                     html += Globalize.translateDocument(template);
 
                     dlg.innerHTML = html;
-                    document.body.appendChild(dlg);
-                    // needed for the collapsible
-                    $(dlg.querySelector('form')).trigger('create');
 
-                    paperDialogHelper.open(dlg);
+                    dialogHelper.open(dlg);
 
-                    dlg.addEventListener('iron-overlay-closed', function () {
+                    dlg.addEventListener('close', function () {
 
                         if (dlg.submitted) {
                             resolve();
@@ -126,7 +91,7 @@
 
                     dlg.querySelector('.btnCancel').addEventListener('click', function (e) {
 
-                        paperDialogHelper.close(dlg);
+                        dialogHelper.close(dlg);
                     });
 
                     dlg.querySelector('form').addEventListener('submit', function (e) {

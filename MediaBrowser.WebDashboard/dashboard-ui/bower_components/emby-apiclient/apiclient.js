@@ -1,4 +1,5 @@
-﻿define(['events'], function (Events) {
+﻿define(['events'], function (events) {
+    'use strict';
 
     /**
      * Creates a new api client instance
@@ -21,6 +22,27 @@
         var self = this;
         var webSocket;
         var serverInfo = {};
+        var lastDetectedBitrate;
+        var lastDetectedBitrateTime;
+
+        var detectTimeout;
+        function redetectBitrate() {
+            stopBitrateDetection();
+
+            if (self.accessToken() && self.enableAutomaticBitrateDetection !== false) {
+                setTimeout(redetectBitrateInternal, 6000);
+            }
+        }
+
+        function redetectBitrateInternal() {
+            self.detectBitrate();
+        }
+
+        function stopBitrateDetection() {
+            if (detectTimeout) {
+                clearTimeout(detectTimeout);
+            }
+        }
 
         /**
          * Gets the server address.
@@ -29,17 +51,22 @@
 
             if (val != null) {
 
-                if (val.toLowerCase().indexOf('http') != 0) {
+                if (val.toLowerCase().indexOf('http') !== 0) {
                     throw new Error('Invalid url: ' + val);
                 }
 
-                var changed = val != serverAddress;
+                var changed = val !== serverAddress;
 
                 serverAddress = val;
 
+                lastDetectedBitrate = 0;
+                lastDetectedBitrateTime = 0;
+
                 if (changed) {
-                    Events.trigger(this, 'serveraddresschanged');
+                    events.trigger(this, 'serveraddresschanged');
                 }
+
+                redetectBitrate();
             }
 
             return serverAddress;
@@ -52,6 +79,10 @@
             return serverInfo;
         };
 
+        self.serverId = function () {
+            return self.serverInfo().Id;
+        };
+
         var currentUser;
         /**
          * Gets or sets the current user id.
@@ -59,25 +90,31 @@
         self.getCurrentUser = function () {
 
             if (currentUser) {
-                return new Promise(function (resolve, reject) {
-
-                    resolve(currentUser);
-                });
+                return Promise.resolve(currentUser);
             }
 
             var userId = self.getCurrentUserId();
 
             if (!userId) {
-                return new Promise(function (resolve, reject) {
-
-                    reject();
-                });
+                return Promise.reject();
             }
 
             return self.getUser(userId).then(function (user) {
                 currentUser = user;
                 return user;
             });
+        };
+
+        self.isLoggedIn = function () {
+
+            var info = self.serverInfo();
+            if (info) {
+                if (info.UserId && info.AccessToken) {
+                    return true;
+                }
+            }
+
+            return false;
         };
 
         /**
@@ -117,6 +154,7 @@
 
             serverInfo.AccessToken = accessKey;
             serverInfo.UserId = userId;
+            redetectBitrate();
         };
 
         self.encodeName = function (name) {
@@ -131,11 +169,11 @@
 
         function onFetchFail(url, response) {
 
-            Events.trigger(self, 'requestfail', [
+            events.trigger(self, 'requestfail', [
             {
                 url: url,
                 status: response.status,
-                errorCode: response.headers ? response.headers["X-Application-Error-Code"] : null
+                errorCode: response.headers ? response.headers.get('X-Application-Error-Code') : null
             }]);
         }
 
@@ -179,7 +217,7 @@
 
             var headers = request.headers || {};
 
-            if (request.dataType == 'json') {
+            if (request.dataType === 'json') {
                 headers.accept = 'application/json';
             }
 
@@ -228,7 +266,7 @@
                     resolve(response);
                 }, function (error) {
                     clearTimeout(timeout);
-                    reject();
+                    reject(error);
                 });
             });
         }
@@ -264,16 +302,16 @@
                 self.setRequestHeaders(request.headers);
             }
 
-            if (self.enableAutomaticNetworking === false || request.type != "GET") {
+            if (self.enableAutomaticNetworking === false || request.type !== "GET") {
                 console.log('Requesting url without automatic networking: ' + request.url);
 
                 return getFetchPromise(request).then(function (response) {
 
                     if (response.status < 400) {
 
-                        if (request.dataType == 'json' || request.headers.accept == 'application/json') {
+                        if (request.dataType === 'json' || request.headers.accept === 'application/json') {
                             return response.json();
-                        } else if (request.dataType == 'text' || (response.headers.get('Content-Type') || '').toLowerCase().indexOf('text/') == 0) {
+                        } else if (request.dataType === 'text' || (response.headers.get('Content-Type') || '').toLowerCase().indexOf('text/') === 0) {
                             return response.text();
                         } else {
                             return response;
@@ -339,7 +377,7 @@
 
             console.log("Attempting reconnection to " + url);
 
-            var timeout = connectionMode == MediaBrowser.ConnectionMode.Local ? 7000 : 15000;
+            var timeout = connectionMode === MediaBrowser.ConnectionMode.Local ? 7000 : 15000;
 
             fetchWithTimeout(url + "/system/info/public", {
 
@@ -396,9 +434,9 @@
 
                 if (response.status < 400) {
 
-                    if (request.dataType == 'json' || request.headers.accept == 'application/json') {
+                    if (request.dataType === 'json' || request.headers.accept === 'application/json') {
                         return response.json();
-                    } else if (request.dataType == 'text' || (response.headers.get('Content-Type') || '').toLowerCase().indexOf('text/') == 0) {
+                    } else if (request.dataType === 'text' || (response.headers.get('Content-Type') || '').toLowerCase().indexOf('text/') === 0) {
                         return response.text();
                     } else {
                         return response;
@@ -410,11 +448,14 @@
 
             }, function (error) {
 
-                console.log("Request failed to " + request.url);
+                if (error) {
+                    console.log("Request failed to " + request.url + ' ' + error.toString());
+                } else {
+                    console.log("Request timed out to " + request.url + ' ' + error.toString());
+                }
 
-                // http://api.jquery.com/jQuery.ajax/
-                if (enableReconnection) {
-
+                // http://api.jquery.com/jQuery.ajax/		     
+                if (!error && enableReconnection) {
                     console.log("Attempting reconnection");
 
                     var previousServerAddress = self.serverAddress();
@@ -468,11 +509,11 @@
                 throw new Error("serverAddress is yet not set");
             }
             var lowered = url.toLowerCase();
-            if (lowered.indexOf('/emby') == -1 && lowered.indexOf('/mediabrowser') == -1) {
+            if (lowered.indexOf('/emby') === -1 && lowered.indexOf('/mediabrowser') === -1) {
                 url += '/emby';
             }
 
-            if (name.charAt(0) != '/') {
+            if (name.charAt(0) !== '/') {
                 url += '/';
             }
 
@@ -520,6 +561,23 @@
             }
         };
 
+        self.ensureWebSocket = function () {
+            if (self.isWebSocketOpenOrConnecting() || !self.isWebSocketSupported()) {
+                return;
+            }
+
+            try {
+                self.openWebSocket();
+            } catch (err) {
+                console.log("Error opening web socket: " + err);
+            }
+        };
+
+        function replaceAll(originalString, strReplace, strWith) {
+            var reg = new RegExp(strReplace, 'ig');
+            return originalString.replace(reg, strWith);
+        }
+
         self.openWebSocket = function () {
 
             var accessToken = self.accessToken();
@@ -528,7 +586,10 @@
                 throw new Error("Cannot open web socket without access token.");
             }
 
-            var url = self.getUrl("socket").replace("emby/socket", "embywebsocket").replace('http', 'ws');
+            var url = self.getUrl("socket");
+
+            url = replaceAll(url, 'emby/socket', 'embywebsocket');
+            url = replaceAll(url, 'http', 'ws');
 
             url += "?api_key=" + accessToken;
             url += "&deviceId=" + deviceId;
@@ -545,17 +606,15 @@
 
                 console.log('web socket connection opened');
                 setTimeout(function () {
-                    Events.trigger(self, 'websocketopen');
+                    events.trigger(self, 'websocketopen');
                 }, 0);
             };
             webSocket.onerror = function () {
-                setTimeout(function () {
-                    Events.trigger(self, 'websocketerror');
-                }, 0);
+                events.trigger(self, 'websocketerror');
             };
             webSocket.onclose = function () {
                 setTimeout(function () {
-                    Events.trigger(self, 'websocketclose');
+                    events.trigger(self, 'websocketclose');
                 }, 0);
             };
         };
@@ -574,13 +633,13 @@
             else if (msg.MessageType === "UserUpdated" || msg.MessageType === "UserConfigurationUpdated") {
 
                 var user = msg.Data;
-                if (user.Id == self.getCurrentUserId()) {
+                if (user.Id === self.getCurrentUserId()) {
 
                     currentUser = null;
                 }
             }
 
-            Events.trigger(self, 'websocketmessage', [msg]);
+            events.trigger(self, 'websocketmessage', [msg]);
         }
 
         self.sendWebSocketMessage = function (name, data) {
@@ -640,23 +699,67 @@
             });
         };
 
-        self.detectBitrate = function () {
+        function normalizeReturnBitrate(bitrate) {
 
-            // First try a small amount so that we don't hang up their mobile connection
-            return self.getDownloadSpeed(1000000).then(function (bitrate) {
+            if (!bitrate) {
 
-                if (bitrate < 1000000) {
-                    return Math.round(bitrate * .8);
-                } else {
-
-                    // If that produced a fairly high speed, try again with a larger size to get a more accurate result
-                    return self.getDownloadSpeed(2400000).then(function (bitrate) {
-
-                        return Math.round(bitrate * .8);
-                    });
+                if (lastDetectedBitrate) {
+                    return lastDetectedBitrate;
                 }
 
+                return Promise.reject();
+            }
+
+            var result = Math.round(bitrate * 0.8);
+
+            lastDetectedBitrate = result;
+            lastDetectedBitrateTime = new Date().getTime();
+
+            return result;
+        }
+
+        function detectBitrateInternal(tests, index, currentBitrate) {
+
+            if (index >= tests.length) {
+
+                return normalizeReturnBitrate(currentBitrate);
+            }
+
+            var test = tests[index];
+
+            return self.getDownloadSpeed(test.bytes).then(function (bitrate) {
+
+                if (bitrate < test.threshold) {
+
+                    return normalizeReturnBitrate(bitrate);
+                } else {
+                    return detectBitrateInternal(tests, index + 1, bitrate);
+                }
+
+            }, function () {
+                return normalizeReturnBitrate(currentBitrate);
             });
+        }
+
+        self.detectBitrate = function () {
+
+            if (lastDetectedBitrate && (new Date().getTime() - (lastDetectedBitrateTime || 0)) <= 3600000) {
+                return Promise.resolve(lastDetectedBitrate);
+            }
+
+            return detectBitrateInternal([
+            {
+                bytes: 100000,
+                threshold: 5000000
+            },
+            {
+                bytes: 1000000,
+                threshold: 50000000
+            },
+            {
+                bytes: 3000000,
+                threshold: 50000000
+            }], 0);
         };
 
         /**
@@ -739,6 +842,7 @@
 
         self.logout = function () {
 
+            stopBitrateDetection();
             self.closeWebSocket();
 
             var done = function () {
@@ -912,6 +1016,13 @@
         self.getLiveTvRecordings = function (options) {
 
             var url = self.getUrl("LiveTv/Recordings", options || {});
+
+            return self.getJSON(url);
+        };
+
+        self.getLiveTvRecordingSeries = function (options) {
+
+            var url = self.getUrl("LiveTv/Recordings/Series", options || {});
 
             return self.getJSON(url);
         };
@@ -1704,7 +1815,7 @@
        * Adds a virtual folder
        * @param {String} name
        */
-        self.addVirtualFolder = function (name, type, refreshLibrary, initialPaths) {
+        self.addVirtualFolder = function (name, type, refreshLibrary, libraryOptions) {
 
             if (!name) {
                 throw new Error("null name");
@@ -1727,7 +1838,27 @@
                 type: "POST",
                 url: url,
                 data: JSON.stringify({
-                    Paths: initialPaths
+                    LibraryOptions: libraryOptions
+                }),
+                contentType: 'application/json'
+            });
+        };
+        self.updateVirtualFolderOptions = function (id, libraryOptions) {
+
+            if (!id) {
+                throw new Error("null name");
+            }
+
+            var url = "Library/VirtualFolders/LibraryOptions";
+
+            url = self.getUrl(url);
+
+            return self.ajax({
+                type: "POST",
+                url: url,
+                data: JSON.stringify({
+                    Id: id,
+                    LibraryOptions: libraryOptions
                 }),
                 contentType: 'application/json'
             });
@@ -1761,7 +1892,7 @@
         * Adds an additional mediaPath to an existing virtual folder
         * @param {String} name
         */
-        self.addMediaPath = function (virtualFolderName, mediaPath, refreshLibrary) {
+        self.addMediaPath = function (virtualFolderName, mediaPath, networkSharePath, refreshLibrary) {
 
             if (!virtualFolderName) {
                 throw new Error("null virtualFolderName");
@@ -1773,15 +1904,50 @@
 
             var url = "Library/VirtualFolders/Paths";
 
+            var pathInfo = {
+                Path: mediaPath
+            };
+            if (networkSharePath) {
+                pathInfo.NetworkPath = networkSharePath;
+            }
+
             url = self.getUrl(url, {
-                refreshLibrary: refreshLibrary ? true : false,
-                path: mediaPath,
-                name: virtualFolderName
+                refreshLibrary: refreshLibrary ? true : false
             });
 
             return self.ajax({
                 type: "POST",
-                url: url
+                url: url,
+                data: JSON.stringify({
+                    Name: virtualFolderName,
+                    PathInfo: pathInfo
+                }),
+                contentType: 'application/json'
+            });
+        };
+
+        self.updateMediaPath = function (virtualFolderName, pathInfo) {
+
+            if (!virtualFolderName) {
+                throw new Error("null virtualFolderName");
+            }
+
+            if (!pathInfo) {
+                throw new Error("null pathInfo");
+            }
+
+            var url = "Library/VirtualFolders/Paths/Update";
+
+            url = self.getUrl(url);
+
+            return self.ajax({
+                type: "POST",
+                url: url,
+                data: JSON.stringify({
+                    Name: virtualFolderName,
+                    PathInfo: pathInfo
+                }),
+                contentType: 'application/json'
             });
         };
 
@@ -1983,7 +2149,7 @@
                 throw new Error("File must be an image.");
             }
 
-            if (file.type != "image/png" && file.type != "image/jpeg" && file.type != "image/jpeg") {
+            if (file.type !== "image/png" && file.type !== "image/jpeg" && file.type !== "image/jpeg") {
                 throw new Error("File must be an image.");
             }
 
@@ -2040,7 +2206,7 @@
                 throw new Error("File must be an image.");
             }
 
-            if (file.type != "image/png" && file.type != "image/jpeg" && file.type != "image/jpeg") {
+            if (file.type !== "image/png" && file.type !== "image/jpeg" && file.type !== "image/jpeg") {
                 throw new Error("File must be an image.");
             }
 
@@ -2274,7 +2440,7 @@
         };
 
         self.getDefaultImageQuality = function (imageType) {
-            return imageType.toLowerCase() == 'backdrop' ? 80 : 90;
+            return imageType.toLowerCase() === 'backdrop' ? 80 : 90;
         };
 
         function normalizeImageOptions(options) {
@@ -2469,6 +2635,8 @@
                         if (self.onAuthenticated) {
                             self.onAuthenticated(self, result);
                         }
+
+                        redetectBitrate();
 
                         resolve(result);
 
@@ -2814,7 +2982,7 @@
 
             var url;
 
-            if ((typeof userId).toString().toLowerCase() == 'string') {
+            if ((typeof userId).toString().toLowerCase() === 'string') {
                 url = self.getUrl("Users/" + userId + "/Items", options);
             } else {
 
@@ -2824,9 +2992,24 @@
             return self.getJSON(url);
         };
 
+        self.getMovieRecommendations = function (options) {
+
+            return self.getJSON(self.getUrl('Movies/Recommendations', options));
+        };
+
+        self.getUpcomingEpisodes = function (options) {
+
+            return self.getJSON(self.getUrl('Shows/Upcoming', options));
+        };
+
         self.getChannels = function (query) {
 
             return self.getJSON(self.getUrl("Channels", query || {}));
+        };
+
+        self.getLatestChannelItems = function (query) {
+
+            return self.getJSON(self.getUrl("Channels/Items/Latest", query));
         };
 
         self.getUserViews = function (options, userId) {
@@ -2968,6 +3151,20 @@
             return self.getJSON(url);
         };
 
+        self.getGameSystems = function () {
+
+            var options = {};
+
+            var userId = self.getCurrentUserId();
+            if (userId) {
+                options.userId = userId;
+            }
+
+            var url = self.getUrl("Games/SystemSummaries", options);
+
+            return self.getJSON(url);
+        };
+
         self.getAdditionalVideoParts = function (userId, itemId) {
 
             if (!itemId) {
@@ -3008,7 +3205,13 @@
 
             var url = self.getUrl("Search/Hints", options);
 
-            return self.getJSON(url);
+            return self.getJSON(url).then(function (result) {
+                var serverId = self.serverId();
+                result.SearchHints.forEach(function (i) {
+                    i.ServerId = serverId;
+                });
+                return result;
+            });
         };
 
         /**
@@ -3185,6 +3388,8 @@
                 throw new Error("null options");
             }
 
+            stopBitrateDetection();
+
             var url = self.getUrl("Sessions/Playing");
 
             return self.ajax({
@@ -3286,6 +3491,22 @@
             });
         };
 
+        self.cancelSyncItems = function (itemIds, targetId) {
+
+            if (!itemIds) {
+                throw new Error("null itemIds");
+            }
+
+            var url = self.getUrl("Sync/" + (targetId || self.deviceId()) + "/Items", {
+                ItemIds: itemIds.join(',')
+            });
+
+            return self.ajax({
+                type: "DELETE",
+                url: url
+            });
+        };
+
         /**
          * Reports a user has stopped playing an item
          * @param {String} userId
@@ -3296,6 +3517,8 @@
             if (!options) {
                 throw new Error("null options");
             }
+
+            redetectBitrate();
 
             var url = self.getUrl("Sessions/Playing/Stopped");
 

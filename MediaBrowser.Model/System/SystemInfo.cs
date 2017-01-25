@@ -8,6 +8,8 @@ namespace MediaBrowser.Model.System
     /// </summary>
     public class SystemInfo : PublicSystemInfo
     {
+        public PackageVersionClass SystemUpdateLevel { get; set; }
+
         /// <summary>
         /// Gets or sets the display name of the operating system.
         /// </summary>
@@ -32,6 +34,8 @@ namespace MediaBrowser.Model.System
         /// <value>The mac address.</value>
         public string MacAddress { get; set; }
 
+        public string PackageName { get; set; }
+        
         /// <summary>
         /// Gets or sets a value indicating whether this instance has pending restart.
         /// </summary>
@@ -43,12 +47,6 @@ namespace MediaBrowser.Model.System
         /// </summary>
         /// <value><c>true</c> if [supports library monitor]; otherwise, <c>false</c>.</value>
         public bool SupportsLibraryMonitor { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether this instance is network deployed.
-        /// </summary>
-        /// <value><c>true</c> if this instance is network deployed; otherwise, <c>false</c>.</value>
-        public bool IsNetworkDeployed { get; set; }
 
         /// <summary>
         /// Gets or sets the in progress installations.
@@ -151,6 +149,10 @@ namespace MediaBrowser.Model.System
         /// </summary>
         /// <value><c>true</c> if [supports automatic run at startup]; otherwise, <c>false</c>.</value>
         public bool SupportsAutoRunAtStartup { get; set; }
+
+        public string EncoderLocationType { get; set; }
+
+        public Architecture SystemArchitecture { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SystemInfo" /> class.

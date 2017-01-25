@@ -35,6 +35,7 @@ namespace MediaBrowser.Controller.MediaEncoding
 
         public string VideoCodec { get; set; }
 
+        public int? TranscodingMaxAudioChannels { get; set; }
         public int? VideoBitRate { get; set; }
         public int? AudioStreamIndex { get; set; }
         public int? VideoStreamIndex { get; set; }
@@ -58,8 +59,6 @@ namespace MediaBrowser.Controller.MediaEncoding
             }
         }
 
-        public bool? Cabac { get; set; }
-
         public EncodingJobOptions()
         {
             
@@ -76,7 +75,7 @@ namespace MediaBrowser.Controller.MediaEncoding
             Level = info.VideoLevel;
             ItemId = info.ItemId;
             MediaSourceId = info.MediaSourceId;
-            AudioCodec = info.AudioCodec;
+            AudioCodec = info.TargetAudioCodec;
             MaxAudioChannels = info.MaxAudioChannels;
             AudioBitRate = info.AudioBitrate;
             AudioSampleRate = info.TargetAudioSampleRate;
@@ -87,11 +86,10 @@ namespace MediaBrowser.Controller.MediaEncoding
             MaxRefFrames = info.MaxRefFrames;
             MaxVideoBitDepth = info.MaxVideoBitDepth;
             SubtitleMethod = info.SubtitleDeliveryMethod;
-            Cabac = info.Cabac;
             Context = info.Context;
+            TranscodingMaxAudioChannels = info.TranscodingMaxAudioChannels;
 
-            if (info.SubtitleDeliveryMethod == SubtitleDeliveryMethod.Encode ||
-                info.SubtitleDeliveryMethod == SubtitleDeliveryMethod.Embed)
+            if (info.SubtitleDeliveryMethod != SubtitleDeliveryMethod.External)
             {
                 SubtitleStreamIndex = info.SubtitleStreamIndex;
             }

@@ -1,4 +1,5 @@
-(function ($, document) {
+define(['jQuery', 'imageLoader'], function ($, imageLoader) {
+    'use strict';
 
     $(document).on('pagebeforeshow', "#gamesRecommendedPage", function () {
 
@@ -28,7 +29,7 @@
                 lazy: true
 
             });
-            ImageLoader.lazyChildren(recentlyAddedItems);
+            imageLoader.lazyChildren(recentlyAddedItems);
 
         });
 
@@ -63,9 +64,9 @@
                 lazy: true
 
             });
-            ImageLoader.lazyChildren(recentlyPlayedItems);
+            imageLoader.lazyChildren(recentlyPlayedItems);
         });
 
     });
 
-})(jQuery, document);
+});

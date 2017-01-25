@@ -1,5 +1,4 @@
 ﻿using System;
-using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Dto;
@@ -9,6 +8,8 @@ using MediaBrowser.Model.Querying;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Events;
+using MediaBrowser.Controller.Library;
 
 namespace MediaBrowser.Controller.LiveTv
 {
@@ -37,7 +38,7 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{SeriesTimerInfoDto}.</returns>
         Task<SeriesTimerInfoDto> GetNewTimerDefaults(string programId, CancellationToken cancellationToken);
-        
+
         /// <summary>
         /// Deletes the recording.
         /// </summary>
@@ -50,8 +51,8 @@ namespace MediaBrowser.Controller.LiveTv
         /// </summary>
         /// <param name="recording">The recording.</param>
         /// <returns>Task.</returns>
-        Task DeleteRecording(ILiveTvRecording recording);
-        
+        Task DeleteRecording(BaseItem recording);
+
         /// <summary>
         /// Cancels the timer.
         /// </summary>
@@ -75,15 +76,6 @@ namespace MediaBrowser.Controller.LiveTv
         void AddParts(IEnumerable<ILiveTvService> services, IEnumerable<ITunerHost> tunerHosts, IEnumerable<IListingsProvider> listingProviders);
 
         /// <summary>
-        /// Gets the channels.
-        /// </summary>
-        /// <param name="query">The query.</param>
-        /// <param name="options">The options.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>IEnumerable{Channel}.</returns>
-        Task<QueryResult<ChannelInfoDto>> GetChannels(LiveTvChannelQuery query, DtoOptions options, CancellationToken cancellationToken);
-
-        /// <summary>
         /// Gets the recording.
         /// </summary>
         /// <param name="id">The identifier.</param>
@@ -93,15 +85,6 @@ namespace MediaBrowser.Controller.LiveTv
         /// <returns>Task{RecordingInfoDto}.</returns>
         Task<BaseItemDto> GetRecording(string id, DtoOptions options, CancellationToken cancellationToken, User user = null);
 
-        /// <summary>
-        /// Gets the channel.
-        /// </summary>
-        /// <param name="id">The identifier.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <param name="user">The user.</param>
-        /// <returns>Task{RecordingInfoDto}.</returns>
-        Task<ChannelInfoDto> GetChannel(string id, CancellationToken cancellationToken, User user = null);
-        
         /// <summary>
         /// Gets the timer.
         /// </summary>
@@ -126,6 +109,7 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>QueryResult{RecordingInfoDto}.</returns>
         Task<QueryResult<BaseItemDto>> GetRecordings(RecordingQuery query, DtoOptions options, CancellationToken cancellationToken);
+        Task<QueryResult<BaseItemDto>> GetRecordingSeries(RecordingQuery query, DtoOptions options, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the timers.
@@ -142,21 +126,21 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{QueryResult{SeriesTimerInfoDto}}.</returns>
         Task<QueryResult<SeriesTimerInfoDto>> GetSeriesTimers(SeriesTimerQuery query, CancellationToken cancellationToken);
-        
+
         /// <summary>
         /// Gets the channel.
         /// </summary>
         /// <param name="id">The identifier.</param>
         /// <returns>Channel.</returns>
         LiveTvChannel GetInternalChannel(string id);
-        
+
         /// <summary>
         /// Gets the recording.
         /// </summary>
         /// <param name="id">The identifier.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>LiveTvRecording.</returns>
-        Task<ILiveTvRecording> GetInternalRecording(string id, CancellationToken cancellationToken);
+        Task<BaseItem> GetInternalRecording(string id, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the recording stream.
@@ -173,8 +157,8 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="mediaSourceId">The media source identifier.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{StreamResponseInfo}.</returns>
-        Task<MediaSourceInfo> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken);
-        
+        Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken);
+
         /// <summary>
         /// Gets the program.
         /// </summary>
@@ -237,9 +221,8 @@ namespace MediaBrowser.Controller.LiveTv
         /// Closes the live stream.
         /// </summary>
         /// <param name="id">The identifier.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        Task CloseLiveStream(string id, CancellationToken cancellationToken);
+        Task CloseLiveStream(string id);
 
         /// <summary>
         /// Gets the guide information.
@@ -259,10 +242,8 @@ namespace MediaBrowser.Controller.LiveTv
         /// <summary>
         /// Gets the recommended programs internal.
         /// </summary>
-        /// <param name="query">The query.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;QueryResult&lt;LiveTvProgram&gt;&gt;.</returns>
-        Task<QueryResult<LiveTvProgram>> GetRecommendedProgramsInternal(RecommendedProgramQuery query, CancellationToken cancellationToken);
+        Task<QueryResult<LiveTvProgram>> GetRecommendedProgramsInternal(RecommendedProgramQuery query, DtoOptions options, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the live tv information.
@@ -320,18 +301,12 @@ namespace MediaBrowser.Controller.LiveTv
         /// <summary>
         /// Gets the recording media sources.
         /// </summary>
-        /// <param name="id">The identifier.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task&lt;IEnumerable&lt;MediaSourceInfo&gt;&gt;.</returns>
-        Task<IEnumerable<MediaSourceInfo>> GetRecordingMediaSources(string id, CancellationToken cancellationToken);
+        Task<IEnumerable<MediaSourceInfo>> GetRecordingMediaSources(IHasMediaSources item, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the channel media sources.
         /// </summary>
-        /// <param name="id">The identifier.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task&lt;IEnumerable&lt;MediaSourceInfo&gt;&gt;.</returns>
-        Task<IEnumerable<MediaSourceInfo>> GetChannelMediaSources(string id, CancellationToken cancellationToken);
+        Task<IEnumerable<MediaSourceInfo>> GetChannelMediaSources(IHasMediaSources item, CancellationToken cancellationToken);
 
         /// <summary>
         /// Adds the information to recording dto.
@@ -348,13 +323,12 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="fields">The fields.</param>
         /// <param name="user">The user.</param>
         /// <returns>Task.</returns>
-        Task AddInfoToProgramDto(List<Tuple<BaseItem,BaseItemDto>> programs, List<ItemFields> fields, User user = null);
+        Task AddInfoToProgramDto(List<Tuple<BaseItem, BaseItemDto>> programs, List<ItemFields> fields, User user = null);
+
         /// <summary>
         /// Saves the tuner host.
         /// </summary>
-        /// <param name="info">The information.</param>
-        /// <returns>Task.</returns>
-        Task<TunerHostInfo> SaveTunerHost(TunerHostInfo info);
+        Task<TunerHostInfo> SaveTunerHost(TunerHostInfo info, bool dataSourceChanged = true);
         /// <summary>
         /// Saves the listing provider.
         /// </summary>
@@ -363,6 +337,13 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="validateListings">if set to <c>true</c> [validate listings].</param>
         /// <returns>Task.</returns>
         Task<ListingsProviderInfo> SaveListingProvider(ListingsProviderInfo info, bool validateLogin, bool validateListings);
+
+        void DeleteListingsProvider(string id);
+
+        Task<TunerChannelMapping> SetChannelMapping(string providerId, string tunerChannelNumber, string providerChannelNumber);
+
+        TunerChannelMapping GetTunerChannelMapping(ChannelInfo channel, List<NameValuePair> mappings, List<ChannelInfo> providerChannels);
+
         /// <summary>
         /// Gets the lineups.
         /// </summary>
@@ -376,19 +357,44 @@ namespace MediaBrowser.Controller.LiveTv
         /// <summary>
         /// Gets the registration information.
         /// </summary>
-        /// <param name="channelId">The channel identifier.</param>
-        /// <param name="programId">The program identifier.</param>
         /// <param name="feature">The feature.</param>
         /// <returns>Task&lt;MBRegistrationRecord&gt;.</returns>
-        Task<MBRegistrationRecord> GetRegistrationInfo(string channelId, string programId, string feature);
+        Task<MBRegistrationRecord> GetRegistrationInfo(string feature);
 
         /// <summary>
         /// Adds the channel information.
         /// </summary>
-        /// <param name="dto">The dto.</param>
-        /// <param name="channel">The channel.</param>
+        /// <param name="items">The items.</param>
         /// <param name="options">The options.</param>
         /// <param name="user">The user.</param>
-        void AddChannelInfo(BaseItemDto dto, LiveTvChannel channel, DtoOptions options, User user);
+        void AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> items, DtoOptions options, User user);
+
+        /// <summary>
+        /// Called when [recording file deleted].
+        /// </summary>
+        /// <param name="recording">The recording.</param>
+        /// <returns>Task.</returns>
+        Task OnRecordingFileDeleted(BaseItem recording);
+
+        /// <summary>
+        /// Gets the sat ini mappings.
+        /// </summary>
+        /// <returns>List&lt;NameValuePair&gt;.</returns>
+        List<NameValuePair> GetSatIniMappings();
+
+        Task<List<ChannelInfo>> GetSatChannelScanResult(TunerHostInfo info, CancellationToken cancellationToken);
+
+        Task<List<ChannelInfo>> GetChannelsForListingsProvider(string id, CancellationToken cancellationToken);
+        Task<List<ChannelInfo>> GetChannelsFromListingsProviderData(string id, CancellationToken cancellationToken);
+
+        List<IListingsProvider> ListingProviders { get; }
+
+        event EventHandler<GenericEventArgs<TimerEventInfo>> SeriesTimerCancelled;
+        event EventHandler<GenericEventArgs<TimerEventInfo>> TimerCancelled;
+        event EventHandler<GenericEventArgs<TimerEventInfo>> TimerCreated;
+        event EventHandler<GenericEventArgs<TimerEventInfo>> SeriesTimerCreated;
+
+        string GetEmbyTvActiveRecordingPath(string id);
+        Task<LiveStream> GetEmbyTvLiveStream(string id);
     }
 }

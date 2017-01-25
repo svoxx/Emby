@@ -1,19 +1,19 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Security;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Net;
-using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.System;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Net;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.System
 {
@@ -21,7 +21,7 @@ namespace MediaBrowser.Api.System
     /// Class GetSystemInfo
     /// </summary>
     [Route("/System/Info", "GET", Summary = "Gets information about the server")]
-    [Authenticated(EscapeParentalControl = true)]
+    [Authenticated(EscapeParentalControl = true, AllowBeforeStartupWizard = true)]
     public class GetSystemInfo : IReturn<SystemInfo>
     {
 
@@ -122,11 +122,11 @@ namespace MediaBrowser.Api.System
 
             try
             {
-				files = _fileSystem.GetFiles(_appPaths.LogDirectoryPath)
+                files = _fileSystem.GetFiles(_appPaths.LogDirectoryPath)
                     .Where(i => string.Equals(i.Extension, ".txt", StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
-            catch (DirectoryNotFoundException)
+            catch (IOException)
             {
                 files = new List<FileSystemMetadata>();
             }
@@ -146,12 +146,12 @@ namespace MediaBrowser.Api.System
             return ToOptimizedResult(result);
         }
 
-        public object Get(GetLogFile request)
+        public Task<object> Get(GetLogFile request)
         {
-			var file = _fileSystem.GetFiles(_appPaths.LogDirectoryPath)
+            var file = _fileSystem.GetFiles(_appPaths.LogDirectoryPath)
                 .First(i => string.Equals(i.Name, request.Name, StringComparison.OrdinalIgnoreCase));
 
-            return ResultFactory.GetStaticFileResult(Request, file.FullName, FileShare.ReadWrite);
+            return ResultFactory.GetStaticFileResult(Request, file.FullName, FileShareMode.ReadWrite);
         }
 
         /// <summary>
@@ -159,16 +159,16 @@ namespace MediaBrowser.Api.System
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetSystemInfo request)
+        public async Task<object> Get(GetSystemInfo request)
         {
-            var result = _appHost.GetSystemInfo();
+            var result = await _appHost.GetSystemInfo().ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Get(GetPublicSystemInfo request)
+        public async Task<object> Get(GetPublicSystemInfo request)
         {
-            var result = _appHost.GetSystemInfo();
+            var result = await _appHost.GetSystemInfo().ConfigureAwait(false);
 
             var publicInfo = new PublicSystemInfo
             {

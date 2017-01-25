@@ -45,6 +45,8 @@
         /// </summary>
         Chapters,
 
+        ChildCount,
+
         /// <summary>
         /// The critic rating summary
         /// </summary>
@@ -130,6 +132,10 @@
         /// </summary>
         Metascore,
 
+        OfficialRatingDescription,
+
+        OriginalTitle,
+
         /// <summary>
         /// The item overview
         /// </summary>
@@ -165,6 +171,8 @@
         /// </summary>
         PrimaryImageAspectRatio,
 
+        RecursiveItemCount,
+
         /// <summary>
         /// The revenue
         /// </summary>
@@ -195,6 +203,8 @@
         /// </summary>
         SeriesGenres,
 
+        SeriesPrimaryImage,
+
         /// <summary>
         /// The series studio
         /// </summary>
@@ -215,6 +225,7 @@
         /// </summary>
         Studios,
 
+        BasicSyncInfo,
         /// <summary>
         /// The synchronize information
         /// </summary>
@@ -236,11 +247,6 @@
         VoteCount,
 
         /// <summary>
-        /// The TMDB collection name
-        /// </summary>
-        TmdbCollectionName,
-        
-        /// <summary>
         /// The trailer url of the item
         /// </summary>
         RemoteTrailers,
@@ -258,6 +264,8 @@
         /// <summary>
         /// The service name
         /// </summary>
-        ServiceName
+        ServiceName,
+        ThemeSongIds,
+        ThemeVideoIds
     }
 }

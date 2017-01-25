@@ -1,4 +1,5 @@
 ﻿define([], function () {
+    'use strict';
 
     function getVideoQualityOptions(maxStreamingBitrate, videoWidth) {
 
@@ -7,15 +8,18 @@
 
         var options = [];
 
+        if (maxAllowedWidth >= 3800) {
+            options.push({ name: '4K - 120Mbps', maxHeight: 2160, bitrate: 120000000 });
+            options.push({ name: '4K - 100Mbps', maxHeight: 2160, bitrate: 100000000 });
+            options.push({ name: '4K - 80Mbps', maxHeight: 2160, bitrate: 80000000 });
+        }
+
         // Some 1080- videos are reported as 1912?
         if (maxAllowedWidth >= 1900) {
 
             options.push({ name: '1080p - 60Mbps', maxHeight: 1080, bitrate: 60000000 });
-            options.push({ name: '1080p - 55Mbps', maxHeight: 1080, bitrate: 55000000 });
             options.push({ name: '1080p - 50Mbps', maxHeight: 1080, bitrate: 50000000 });
-            options.push({ name: '1080p - 45Mbps', maxHeight: 1080, bitrate: 45000000 });
             options.push({ name: '1080p - 40Mbps', maxHeight: 1080, bitrate: 40000000 });
-            options.push({ name: '1080p - 35Mbps', maxHeight: 1080, bitrate: 35000000 });
             options.push({ name: '1080p - 30Mbps', maxHeight: 1080, bitrate: 30000000 });
             options.push({ name: '1080p - 25Mbps', maxHeight: 1080, bitrate: 25000000 });
             options.push({ name: '1080p - 20Mbps', maxHeight: 1080, bitrate: 20000000 });
@@ -63,12 +67,12 @@
 
                 var option = options[i];
 
-                if (selectedIndex == -1 && option.bitrate <= maxStreamingBitrate) {
+                if (selectedIndex === -1 && option.bitrate <= maxStreamingBitrate) {
                     selectedIndex = i;
                 }
             }
 
-            if (selectedIndex == -1) {
+            if (selectedIndex === -1) {
 
                 selectedIndex = options.length - 1;
             }
@@ -77,7 +81,7 @@
         }
 
         return options;
-    };
+    }
 
     return {
         getVideoQualityOptions: getVideoQualityOptions

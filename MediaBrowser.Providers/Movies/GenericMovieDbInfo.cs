@@ -13,8 +13,10 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Movies
 {
@@ -24,16 +26,16 @@ namespace MediaBrowser.Providers.Movies
         private readonly ILogger _logger;
         private readonly IJsonSerializer _jsonSerializer;
         private readonly ILibraryManager _libraryManager;
-		private readonly IFileSystem _fileSystem;
+        private readonly IFileSystem _fileSystem;
 
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
 
-		public GenericMovieDbInfo(ILogger logger, IJsonSerializer jsonSerializer, ILibraryManager libraryManager, IFileSystem fileSystem)
+        public GenericMovieDbInfo(ILogger logger, IJsonSerializer jsonSerializer, ILibraryManager libraryManager, IFileSystem fileSystem)
         {
             _logger = logger;
             _jsonSerializer = jsonSerializer;
             _libraryManager = libraryManager;
-			_fileSystem = fileSystem;
+            _fileSystem = fileSystem;
         }
 
         public async Task<MetadataResult<T>> GetMetadata(ItemLookupInfo itemId, CancellationToken cancellationToken)
@@ -126,11 +128,7 @@ namespace MediaBrowser.Providers.Movies
 
             movie.Name = movieData.GetTitle() ?? movie.Name;
 
-            var hasOriginalTitle = movie as IHasOriginalTitle;
-            if (hasOriginalTitle != null)
-            {
-                hasOriginalTitle.OriginalTitle = movieData.GetOriginalTitle();
-            }
+            movie.OriginalTitle = movieData.GetOriginalTitle();
 
             // Bug in Mono: WebUtility.HtmlDecode should return null if the string is null but in Mono it generate an System.ArgumentNullException.
             movie.Overview = movieData.overview != null ? WebUtility.HtmlDecode(movieData.overview) : null;
@@ -147,24 +145,15 @@ namespace MediaBrowser.Providers.Movies
 
             if (!string.IsNullOrEmpty(movieData.tagline))
             {
-                var hasTagline = movie as IHasTaglines;
-                if (hasTagline != null)
-                {
-                    hasTagline.Taglines.Clear();
-                    hasTagline.AddTagline(movieData.tagline);
-                }
+                movie.Tagline = movieData.tagline;
             }
 
             if (movieData.production_countries != null)
             {
-                var hasProductionLocations = movie as IHasProductionLocations;
-                if (hasProductionLocations != null)
-                {
-                    hasProductionLocations.ProductionLocations = movieData
-                        .production_countries
-                        .Select(i => i.name)
-                        .ToList();
-                }
+                movie.ProductionLocations = movieData
+                    .production_countries
+                    .Select(i => i.name)
+                    .ToList();
             }
 
             movie.SetProviderId(MetadataProviders.Tmdb, movieData.id.ToString(_usCulture));
@@ -179,7 +168,7 @@ namespace MediaBrowser.Providers.Movies
 
                 if (movieItem != null)
                 {
-                    movieItem.TmdbCollectionName = movieData.belongs_to_collection.name;
+                    movieItem.CollectionName = movieData.belongs_to_collection.name;
                 }
             }
 
@@ -198,22 +187,21 @@ namespace MediaBrowser.Providers.Movies
             {
                 var releases = movieData.releases.countries.Where(i => !string.IsNullOrWhiteSpace(i.certification)).ToList();
 
-                var ourRelease = releases.FirstOrDefault(c => c.iso_3166_1.Equals(preferredCountryCode, StringComparison.OrdinalIgnoreCase));
-                var usRelease = releases.FirstOrDefault(c => c.iso_3166_1.Equals("US", StringComparison.OrdinalIgnoreCase));
-                var minimunRelease = releases.OrderBy(c => c.release_date).FirstOrDefault();
+                var ourRelease = releases.FirstOrDefault(c => string.Equals(c.iso_3166_1, preferredCountryCode, StringComparison.OrdinalIgnoreCase));
+                var usRelease = releases.FirstOrDefault(c => string.Equals(c.iso_3166_1, "US", StringComparison.OrdinalIgnoreCase));
 
                 if (ourRelease != null)
                 {
                     var ratingPrefix = string.Equals(preferredCountryCode, "us", StringComparison.OrdinalIgnoreCase) ? "" : preferredCountryCode + "-";
-                    movie.OfficialRating = ratingPrefix + ourRelease.certification;
+                    var newRating = ratingPrefix + ourRelease.certification;
+
+                    newRating = newRating.Replace("de-", "FSK-", StringComparison.OrdinalIgnoreCase);
+
+                    movie.OfficialRating = newRating;
                 }
                 else if (usRelease != null)
                 {
                     movie.OfficialRating = usRelease.certification;
-                }
-                else if (minimunRelease != null)
-                {
-                    movie.OfficialRating = minimunRelease.iso_3166_1 + "-" + minimunRelease.certification;
                 }
             }
 
@@ -250,7 +238,7 @@ namespace MediaBrowser.Providers.Movies
             }
 
             resultItem.ResetPeople();
-            var tmdbImageUrl = settings.images.base_url + "original";
+            var tmdbImageUrl = settings.images.secure_base_url + "original";
 
             //Actors, Directors, Writers - all in People
             //actors come from cast
@@ -283,6 +271,8 @@ namespace MediaBrowser.Providers.Movies
             //and the rest from crew
             if (movieData.casts != null && movieData.casts.crew != null)
             {
+                var keepTypes = new[] { PersonType.Director, PersonType.Writer, PersonType.Producer };
+
                 foreach (var person in movieData.casts.crew)
                 {
                     // Normalize this
@@ -290,6 +280,12 @@ namespace MediaBrowser.Providers.Movies
                     if (string.Equals(type, "writing", StringComparison.OrdinalIgnoreCase))
                     {
                         type = PersonType.Writer;
+                    }
+
+                    if (!keepTypes.Contains(type ?? string.Empty, StringComparer.OrdinalIgnoreCase) &&
+                        !keepTypes.Contains(person.job ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+                    {
+                        continue;
                     }
 
                     var personInfo = new PersonInfo
@@ -315,11 +311,7 @@ namespace MediaBrowser.Providers.Movies
 
             if (movieData.keywords != null && movieData.keywords.keywords != null)
             {
-                var hasTags = movie as IHasKeywords;
-                if (hasTags != null)
-                {
-                    hasTags.Keywords = movieData.keywords.keywords.Select(i => i.name).ToList();
-                }
+                movie.Keywords = movieData.keywords.keywords.Select(i => i.name).ToList();
             }
 
             if (movieData.trailers != null && movieData.trailers.youtube != null &&
@@ -330,9 +322,8 @@ namespace MediaBrowser.Providers.Movies
                 {
                     hasTrailers.RemoteTrailers = movieData.trailers.youtube.Select(i => new MediaUrl
                     {
-                        Url = string.Format("http://www.youtube.com/watch?v={0}", i.source),
-                        Name = i.name,
-                        VideoSize = string.Equals("hd", i.size, StringComparison.OrdinalIgnoreCase) ? VideoSize.HighDefinition : VideoSize.StandardDefinition
+                        Url = string.Format("https://www.youtube.com/watch?v={0}", i.source),
+                        Name = i.name
 
                     }).ToList();
                 }

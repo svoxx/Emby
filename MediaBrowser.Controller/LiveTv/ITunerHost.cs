@@ -22,9 +22,8 @@ namespace MediaBrowser.Controller.LiveTv
         /// <summary>
         /// Gets the channels.
         /// </summary>
-        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;IEnumerable&lt;ChannelInfo&gt;&gt;.</returns>
-        Task<IEnumerable<ChannelInfo>> GetChannels(CancellationToken cancellationToken);
+        Task<IEnumerable<ChannelInfo>> GetChannels(bool enableCache, CancellationToken cancellationToken);
         /// <summary>
         /// Gets the tuner infos.
         /// </summary>
@@ -38,7 +37,7 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="streamId">The stream identifier.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;MediaSourceInfo&gt;.</returns>
-        Task<Tuple<MediaSourceInfo,SemaphoreSlim>> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken);
+        Task<LiveStream> GetChannelStream(string channelId, string streamId, CancellationToken cancellationToken);
         /// <summary>
         /// Gets the channel stream media sources.
         /// </summary>

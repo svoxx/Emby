@@ -1,29 +1,9 @@
-﻿(function ($, document) {
+﻿define(['libraryBrowser', 'emby-tabs', 'emby-button'], function (libraryBrowser) {
+    'use strict';
 
     var defaultFirstSection = 'smalllibrarytiles';
 
     function getDefaultSection(index) {
-
-        if (AppInfo.isNativeApp && browserInfo.safari) {
-
-            switch (index) {
-
-                case 0:
-                    return defaultFirstSection;
-                case 1:
-                    return 'resume';
-                case 2:
-                    return 'nextup';
-                case 3:
-                    return 'latestmovies';
-                case 4:
-                    return 'latestepisodes';
-                case 5:
-                    return 'latesttvrecordings';
-                default:
-                    return '';
-            }
-        }
 
         switch (index) {
 
@@ -32,49 +12,42 @@
             case 1:
                 return 'resume';
             case 2:
-                return 'latestmedia';
+                return 'nextup';
             case 3:
+                return 'latestmedia';
+            case 4:
                 return 'latesttvrecordings';
             default:
                 return '';
         }
-
     }
 
-    function loadSection(page, user, displayPreferences, index) {
+    function loadSection(page, user, userSettings, index) {
 
         var userId = user.Id;
 
-        var section = displayPreferences.CustomPrefs['home' + index] || getDefaultSection(index);
+        var section = userSettings.get('homesection' + index) || getDefaultSection(index);
 
         if (section == 'folders') {
             section = defaultFirstSection;
         }
-
-        var showLibraryTileNames = displayPreferences.CustomPrefs.enableLibraryTileNames != '0';
 
         var elem = page.querySelector('.section' + index);
 
         if (section == 'latestmedia') {
             return Sections.loadRecentlyAdded(elem, user);
         }
-        else if (section == 'latestmovies') {
-            return Sections.loadLatestMovies(elem, user);
-        }
-        else if (section == 'latestepisodes') {
-            return Sections.loadLatestEpisodes(elem, user);
-        }
         else if (section == 'librarytiles') {
-            return Sections.loadLibraryTiles(elem, user, 'backdrop', index, false, showLibraryTileNames);
+            return Sections.loadLibraryTiles(elem, user, 'backdrop', index);
         }
         else if (section == 'smalllibrarytiles') {
-            return Sections.loadLibraryTiles(elem, user, 'homePageSmallBackdrop', index, false, showLibraryTileNames);
+            return Sections.loadLibraryTiles(elem, user, 'smallBackdrop', index);
         }
         else if (section == 'smalllibrarytiles-automobile') {
-            return Sections.loadLibraryTiles(elem, user, 'homePageSmallBackdrop', index, true, showLibraryTileNames);
+            return Sections.loadLibraryTiles(elem, user, 'smallBackdrop', index);
         }
         else if (section == 'librarytiles-automobile') {
-            return Sections.loadLibraryTiles(elem, user, 'backdrop', index, true, showLibraryTileNames);
+            return Sections.loadLibraryTiles(elem, user, 'backdrop', index);
         }
         else if (section == 'librarybuttons') {
             return Sections.loadlibraryButtons(elem, userId, index);
@@ -102,10 +75,10 @@
         }
     }
 
-    function loadSections(page, user, displayPreferences) {
+    function loadSections(page, user, userSettings) {
 
         var i, length;
-        var sectionCount = 6;
+        var sectionCount = 5;
 
         var elem = page.querySelector('.sections');
 
@@ -123,7 +96,7 @@
 
         for (i = 0, length = sectionCount; i < length; i++) {
 
-            promises.push(loadSection(page, user, displayPreferences, i));
+            promises.push(loadSection(page, user, userSettings, i));
         }
 
         return Promise.all(promises);
@@ -152,22 +125,23 @@
     function showWelcomeIfNeeded(page, displayPreferences) {
 
         if (displayPreferences.CustomPrefs[homePageTourKey] == homePageDismissValue) {
-            $('.welcomeMessage', page).hide();
+            page.querySelector('.welcomeMessage').classList.add('hide');
         } else {
 
             Dashboard.hideLoadingMsg();
 
-            var elem = $('.welcomeMessage', page).show();
+            var elem = page.querySelector('.welcomeMessage');
+            elem.classList.remove('hide');
 
             if (displayPreferences.CustomPrefs[homePageTourKey]) {
 
-                $('.tourHeader', elem).html(Globalize.translate('HeaderWelcomeBack'));
-                $('.tourButtonText', elem).html(Globalize.translate('ButtonTakeTheTourToSeeWhatsNew'));
+                elem.querySelector('.tourHeader').innerHTML = Globalize.translate('HeaderWelcomeBack');
+                elem.querySelector('.tourButtonText').innerHTML = Globalize.translate('ButtonTakeTheTourToSeeWhatsNew');
 
             } else {
 
-                $('.tourHeader', elem).html(Globalize.translate('HeaderWelcomeToProjectWebClient'));
-                $('.tourButtonText', elem).html(Globalize.translate('ButtonTakeTheTour'));
+                elem.querySelector('.tourHeader').innerHTML = Globalize.translate('HeaderWelcomeToProjectWebClient');
+                elem.querySelector('.tourButtonText').innerHTML = Globalize.translate('ButtonTakeTheTour');
             }
         }
     }
@@ -205,120 +179,44 @@
                 newSlideShow.show();
 
                 dismissWelcome(page, userId);
-                $('.welcomeMessage', page).hide();
+                page.querySelector('.welcomeMessage').classList.add('hide');
             });
+        });
+    }
+
+    function getRequirePromise(deps) {
+
+        return new Promise(function (resolve, reject) {
+
+            require(deps, resolve);
         });
     }
 
     function loadHomeTab(page, tabContent) {
 
-        if (LibraryBrowser.needsRefresh(tabContent)) {
-            if (window.ApiClient) {
-                var userId = Dashboard.getCurrentUserId();
+        if (window.ApiClient) {
+            var userId = Dashboard.getCurrentUserId();
+            Dashboard.showLoadingMsg();
 
-                Dashboard.showLoadingMsg();
+            var promises = [
+                getDisplayPreferences('home', userId),
+                Dashboard.getCurrentUser(),
+                getRequirePromise(['userSettings'])
+            ];
 
-                getDisplayPreferences('home', userId).then(function (result) {
+            Promise.all(promises).then(function(responses) {
+                var displayPreferences = responses[0];
+                var user = responses[1];
+                var userSettings = responses[2];
 
-                    Dashboard.getCurrentUser().then(function (user) {
+                loadSections(tabContent, user, userSettings).then(function () {
 
-                        loadSections(tabContent, user, result).then(function () {
-
-                            if (!AppInfo.isNativeApp) {
-                                showWelcomeIfNeeded(page, result);
-                            }
-                            Dashboard.hideLoadingMsg();
-
-                            LibraryBrowser.setLastRefreshed(tabContent);
-                        });
-
-                    });
+                    if (!AppInfo.isNativeApp) {
+                        showWelcomeIfNeeded(page, displayPreferences);
+                    }
+                    Dashboard.hideLoadingMsg();
                 });
-            }
-        }
-    }
-
-    function loadTab(page, index) {
-
-        var tabContent = page.querySelector('.pageTabContent[data-index=\'' + index + '\']');
-        var depends = [];
-        var scope = 'HomePage';
-        var method = '';
-
-        switch (index) {
-
-            case 0:
-                depends.push('scripts/sections');
-                method = 'renderHomeTab';
-                break;
-            case 1:
-                depends.push('scripts/homenextup');
-                method = 'renderNextUp';
-                break;
-            case 2:
-                depends.push('scripts/favorites');
-                method = 'renderFavorites';
-                break;
-            case 3:
-                depends.push('scripts/homeupcoming');
-                method = 'renderUpcoming';
-                break;
-            default:
-                break;
-        }
-
-        require(depends, function () {
-
-            window[scope][method](page, tabContent);
-
-        });
-    }
-
-    pageIdOn('pageinit', "indexPage", function () {
-
-        var page = this;
-
-        var tabs = page.querySelector('paper-tabs');
-        var pages = page.querySelector('neon-animated-pages');
-
-        LibraryBrowser.configurePaperLibraryTabs(page, tabs, pages, 'index.html');
-
-        pages.addEventListener('tabchange', function (e) {
-            loadTab(page, parseInt(e.target.selected));
-        });
-
-        page.querySelector('.btnTakeTour').addEventListener('click', function () {
-            takeTour(page, Dashboard.getCurrentUserId());
-        });
-
-        if (AppInfo.enableHomeTabs) {
-            page.classList.remove('noSecondaryNavPage');
-            page.querySelector('.libraryViewNav').classList.remove('hide');
-        } else {
-            page.classList.add('noSecondaryNavPage');
-            page.querySelector('.libraryViewNav').classList.add('hide');
-        }
-    });
-
-    pageIdOn('pageshow', "indexPage", function () {
-
-        var page = this;
-        Events.on(MediaController, 'playbackstop', onPlaybackStop);
-    });
-
-    pageIdOn('pagebeforehide', "indexPage", function () {
-
-        var page = this;
-        Events.off(MediaController, 'playbackstop', onPlaybackStop);
-    });
-
-    function onPlaybackStop(e, state) {
-
-        if (state.NowPlayingItem && state.NowPlayingItem.MediaType == 'Video') {
-            var page = $($.mobile.activePage)[0];
-            var pages = page.querySelector('neon-animated-pages');
-
-            pages.dispatchEvent(new CustomEvent("tabchange", {}));
+            });
         }
     }
 
@@ -327,8 +225,147 @@
         return ApiClient.getDisplayPreferences(key, userId, displayPreferencesKey());
     }
 
-    window.HomePage = {
-        renderHomeTab: loadHomeTab
-    };
+    return function (view, params) {
 
-})(jQuery, document);
+        var self = this;
+
+        self.renderTab = function () {
+            var tabContent = view.querySelector('.pageTabContent[data-index=\'' + 0 + '\']');
+            loadHomeTab(view, tabContent);
+        };
+
+        var viewTabs = view.querySelector('.libraryViewNav');
+
+        libraryBrowser.configurePaperLibraryTabs(view, viewTabs, view.querySelectorAll('.pageTabContent'), [0, 1, 2, 3], AppInfo.enableHomeTabs);
+
+        var tabControllers = [];
+        var renderedTabs = [];
+
+        function getTabController(page, index, callback) {
+
+            var depends = [];
+
+            switch (index) {
+
+                case 0:
+                    depends.push('scripts/sections');
+                    break;
+                case 1:
+                    depends.push('scripts/homenextup');
+                    break;
+                case 2:
+                    depends.push('scripts/homefavorites');
+                    break;
+                case 3:
+                    depends.push('scripts/homeupcoming');
+                    break;
+                default:
+                    return;
+            }
+
+            require(depends, function (controllerFactory) {
+                var tabContent;
+                if (index == 0) {
+                    tabContent = view.querySelector('.pageTabContent[data-index=\'' + index + '\']');
+                    self.tabContent = tabContent;
+                }
+                var controller = tabControllers[index];
+                if (!controller) {
+                    tabContent = view.querySelector('.pageTabContent[data-index=\'' + index + '\']');
+                    controller = index ? new controllerFactory(view, params, tabContent) : self;
+                    tabControllers[index] = controller;
+
+                    if (controller.initTab) {
+                        controller.initTab();
+                    }
+                }
+
+                callback(controller);
+            });
+        }
+
+        function preLoadTab(page, index) {
+
+            getTabController(page, index, function (controller) {
+                if (renderedTabs.indexOf(index) == -1) {
+                    if (controller.preRender) {
+                        controller.preRender();
+                    }
+                }
+            });
+        }
+
+        function loadTab(page, index) {
+
+            getTabController(page, index, function (controller) {
+                if (renderedTabs.indexOf(index) == -1) {
+                    renderedTabs.push(index);
+                    controller.renderTab();
+                }
+            });
+        }
+
+        viewTabs.addEventListener('beforetabchange', function (e) {
+            preLoadTab(view, parseInt(e.detail.selectedTabIndex));
+        });
+
+        viewTabs.addEventListener('tabchange', function (e) {
+            loadTab(view, parseInt(e.detail.selectedTabIndex));
+        });
+
+        view.querySelector('.btnTakeTour').addEventListener('click', function () {
+            takeTour(view, Dashboard.getCurrentUserId());
+        });
+
+        if (AppInfo.enableHomeTabs) {
+            view.classList.remove('noSecondaryNavPage');
+            view.querySelector('.libraryViewNav').classList.remove('hide');
+        } else {
+            view.classList.add('noSecondaryNavPage');
+            view.querySelector('.libraryViewNav').classList.add('hide');
+        }
+
+        function onPlaybackStop(e, state) {
+
+            if (state.NowPlayingItem && state.NowPlayingItem.MediaType == 'Video') {
+
+                viewTabs.triggerTabChange();
+            }
+        }
+
+        function onWebSocketMessage(e, data) {
+
+            var msg = data;
+
+            if (msg.MessageType === "UserDataChanged") {
+
+                if (msg.Data.UserId == Dashboard.getCurrentUserId()) {
+
+                    renderedTabs = [];
+                }
+            }
+
+        }
+
+        view.addEventListener('viewshow', function (e) {
+            Events.on(MediaController, 'playbackstop', onPlaybackStop);
+            Events.on(ApiClient, "websocketmessage", onWebSocketMessage);
+        });
+
+        view.addEventListener('viewbeforehide', function (e) {
+            Events.off(MediaController, 'playbackstop', onPlaybackStop);
+            Events.off(ApiClient, "websocketmessage", onWebSocketMessage);
+        });
+
+        require(["headroom-window"], function (headroom) {
+            headroom.add(viewTabs);
+            self.headroom = headroom;
+        });
+
+        view.addEventListener('viewdestroy', function (e) {
+            if (self.headroom) {
+                self.headroom.remove(viewTabs);
+            }
+        });
+    };
+});

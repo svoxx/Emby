@@ -41,11 +41,6 @@ namespace MediaBrowser.Model.ApiClient
                 {
                     existing.DateLastAccessed = server.DateLastAccessed;
                 }
-
-                if (server.DateLastLocalConnection > existing.DateLastLocalConnection)
-                {
-                    existing.DateLastLocalConnection = server.DateLastLocalConnection;
-                }
                 
                 existing.UserLinkType = server.UserLinkType;
 
@@ -62,13 +57,17 @@ namespace MediaBrowser.Model.ApiClient
                 {
                     existing.RemoteAddress = server.RemoteAddress;
                 }
+                if (!string.IsNullOrEmpty(server.ConnectServerId))
+                {
+                    existing.ConnectServerId = server.ConnectServerId;
+                }
                 if (!string.IsNullOrEmpty(server.LocalAddress))
                 {
                     existing.LocalAddress = server.LocalAddress;
                 }
                 if (!string.IsNullOrEmpty(server.ManualAddress))
                 {
-                    existing.LocalAddress = server.ManualAddress;
+                    existing.ManualAddress = server.ManualAddress;
                 }
                 if (!string.IsNullOrEmpty(server.Name))
                 {

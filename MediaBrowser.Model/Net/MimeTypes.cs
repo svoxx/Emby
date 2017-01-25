@@ -100,6 +100,7 @@ namespace MediaBrowser.Model.Net
                 .ToDictionary(x => x.Key, x => x.First().Key, StringComparer.OrdinalIgnoreCase);
 
             dict["image/jpg"] = ".jpg";
+            dict["image/x-png"] = ".png";
 
             return dict;
         }
@@ -241,7 +242,7 @@ namespace MediaBrowser.Model.Net
 			}
 			if (StringHelper.EqualsIgnoreCase(ext, ".opus"))
 			{
-				return "audio/opus";
+				return "audio/ogg";
 			}
 
             // Playlists

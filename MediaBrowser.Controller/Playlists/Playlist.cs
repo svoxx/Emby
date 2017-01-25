@@ -5,7 +5,9 @@ using MediaBrowser.Model.Querying;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Serialization;
+using MediaBrowser.Model.Serialization;
+using System.Threading.Tasks;
+using MediaBrowser.Controller.Providers;
 
 namespace MediaBrowser.Controller.Playlists
 {
@@ -30,7 +32,25 @@ namespace MediaBrowser.Controller.Playlists
         }
 
         [IgnoreDataMember]
+        public override bool SupportsPlayedStatus
+        {
+            get
+            {
+                return string.Equals(MediaType, "Video", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        [IgnoreDataMember]
         public override bool AlwaysScanInternalMetadataPath
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsCumulativeRunTimeTicks
         {
             get
             {
@@ -48,18 +68,29 @@ namespace MediaBrowser.Controller.Playlists
             return true;
         }
 
-        public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
+        protected override IEnumerable<BaseItem> LoadChildren()
         {
-            return GetPlayableItems(user);
+            // Save a trip to the database
+            return new List<BaseItem>();
         }
 
-        public override IEnumerable<BaseItem> GetRecursiveChildren(User user, Func<BaseItem, bool> filter)
+        public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
         {
-            var items = GetPlayableItems(user);
+            return GetPlayableItems(user).Result;
+        }
 
-            if (filter != null)
+        protected override IEnumerable<BaseItem> GetNonCachedChildren(IDirectoryService directoryService)
+        {
+            return new List<BaseItem>();
+        }
+
+        public override IEnumerable<BaseItem> GetRecursiveChildren(User user, InternalItemsQuery query)
+        {
+            var items = GetPlayableItems(user).Result;
+
+            if (query != null)
             {
-                items = items.Where(filter);
+                items = items.Where(i => UserViewBuilder.FilterItem(i, query));
             }
 
             return items;
@@ -70,32 +101,40 @@ namespace MediaBrowser.Controller.Playlists
             return GetLinkedChildrenInfos();
         }
 
-        private IEnumerable<BaseItem> GetPlayableItems(User user)
+        private Task<IEnumerable<BaseItem>> GetPlayableItems(User user)
         {
             return GetPlaylistItems(MediaType, base.GetChildren(user, true), user);
         }
 
-        public static IEnumerable<BaseItem> GetPlaylistItems(string playlistMediaType, IEnumerable<BaseItem> inputItems, User user)
+        public static async Task<IEnumerable<BaseItem>> GetPlaylistItems(string playlistMediaType, IEnumerable<BaseItem> inputItems, User user)
         {
             if (user != null)
             {
                 inputItems = inputItems.Where(i => i.IsVisible(user));
             }
 
-            return inputItems.SelectMany(i => GetPlaylistItems(i, user))
-                .Where(m => string.Equals(m.MediaType, playlistMediaType, StringComparison.OrdinalIgnoreCase));
+            var list = new List<BaseItem>();
+
+            foreach (var item in inputItems)
+            {
+                var playlistItems = await GetPlaylistItems(item, user, playlistMediaType).ConfigureAwait(false);
+                list.AddRange(playlistItems);
+            }
+
+            return list;
         }
 
-        private static IEnumerable<BaseItem> GetPlaylistItems(BaseItem item, User user)
+        private static async Task<IEnumerable<BaseItem>> GetPlaylistItems(BaseItem item, User user, string mediaType)
         {
             var musicGenre = item as MusicGenre;
             if (musicGenre != null)
             {
-                Func<BaseItem, bool> filter = i => i is Audio && i.Genres.Contains(musicGenre.Name, StringComparer.OrdinalIgnoreCase);
-
-                var items = user == null
-                    ? LibraryManager.RootFolder.GetRecursiveChildren(filter)
-                    : user.RootFolder.GetRecursiveChildren(user, filter);
+                var items = LibraryManager.GetItemList(new InternalItemsQuery(user)
+                {
+                    Recursive = true,
+                    IncludeItemTypes = new[] { typeof(Audio).Name },
+                    Genres = new[] { musicGenre.Name }
+                });
 
                 return LibraryManager.Sort(items, user, new[] { ItemSortBy.AlbumArtist, ItemSortBy.Album, ItemSortBy.SortName }, SortOrder.Ascending);
             }
@@ -111,7 +150,11 @@ namespace MediaBrowser.Controller.Playlists
 
                 var items = user == null
                     ? LibraryManager.RootFolder.GetRecursiveChildren(filter)
-                    : user.RootFolder.GetRecursiveChildren(user, filter);
+                    : user.RootFolder.GetRecursiveChildren(user, new InternalItemsQuery(user)
+                    {
+                        IncludeItemTypes = new[] { typeof(Audio).Name },
+                        ArtistIds = new[] { musicArtist.Id.ToString("N") }
+                    });
 
                 return LibraryManager.Sort(items, user, new[] { ItemSortBy.AlbumArtist, ItemSortBy.Album, ItemSortBy.SortName }, SortOrder.Ascending);
             }
@@ -119,15 +162,19 @@ namespace MediaBrowser.Controller.Playlists
             var folder = item as Folder;
             if (folder != null)
             {
-                var items = user == null
-                    ? folder.GetRecursiveChildren(m => !m.IsFolder)
-                    : folder.GetRecursiveChildren(user, m => !m.IsFolder);
-
-                if (folder.IsPreSorted)
+                var query = new InternalItemsQuery(user)
                 {
-                    return items;
-                }
-                return LibraryManager.Sort(items, user, new[] { ItemSortBy.SortName }, SortOrder.Ascending);
+                    Recursive = true,
+                    IsFolder = false,
+                    SortBy = new[] { ItemSortBy.SortName },
+                    MediaTypes = new[] { mediaType },
+                    EnableTotalRecordCount = false
+                };
+
+                var itemsResult = await folder.GetItems(query).ConfigureAwait(false);
+                var items = itemsResult.Items;
+
+                return items;
             }
 
             return new[] { item };
@@ -160,15 +207,15 @@ namespace MediaBrowser.Controller.Playlists
 
         public override bool IsVisible(User user)
         {
-            if (base.IsVisible(user))
-            {
-                var userId = user.Id.ToString("N");
+            var userId = user.Id.ToString("N");
 
-                return Shares.Any(i => string.Equals(userId, i.UserId, StringComparison.OrdinalIgnoreCase)) ||
-                    string.Equals(OwnerUserId, userId, StringComparison.OrdinalIgnoreCase);
-            }
+            return Shares.Any(i => string.Equals(userId, i.UserId, StringComparison.OrdinalIgnoreCase)) ||
+                string.Equals(OwnerUserId, userId, StringComparison.OrdinalIgnoreCase);
+        }
 
-            return false;
+        public override bool IsVisibleStandalone(User user)
+        {
+            return IsVisible(user);
         }
     }
 }

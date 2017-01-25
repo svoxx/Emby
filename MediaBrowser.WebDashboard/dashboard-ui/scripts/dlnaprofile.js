@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery', 'fnchecked', 'jqmlistview', 'emby-select', 'emby-button', 'emby-input', 'emby-checkbox', 'listViewStyle'], function ($) {
+    'use strict';
 
     var currentProfile;
 
@@ -41,10 +42,10 @@
         $('.chkMediaType', page).each(function () {
             this.checked = (profile.SupportedMediaTypes || '').split(',').indexOf(this.getAttribute('data-value')) != -1;
 
-        }).checkboxradio('refresh');
+        });
 
-        $('#chkEnableAlbumArtInDidl', page).checked(profile.EnableAlbumArtInDidl).checkboxradio('refresh');
-        $('#chkEnableSingleImageLimit', page).checked(profile.EnableSingleAlbumArtLimit).checkboxradio('refresh');
+        $('#chkEnableAlbumArtInDidl', page).checked(profile.EnableAlbumArtInDidl);
+        $('#chkEnableSingleImageLimit', page).checked(profile.EnableSingleAlbumArtLimit);
 
         renderXmlDocumentAttributes(page, profile.XmlRootAttributes || []);
 
@@ -78,13 +79,13 @@
         $('#txtIconMaxWidth', page).val(profile.MaxIconWidth || '');
         $('#txtIconMaxHeight', page).val(profile.MaxIconHeight || '');
 
-        $('#chkIgnoreTranscodeByteRangeRequests', page).checked(profile.IgnoreTranscodeByteRangeRequests).checkboxradio('refresh');
+        $('#chkIgnoreTranscodeByteRangeRequests', page).checked(profile.IgnoreTranscodeByteRangeRequests);
         $('#txtMaxAllowedBitrate', page).val(profile.MaxStreamingBitrate || '');
 
         $('#txtMusicStreamingTranscodingBitrate', page).val(profile.MusicStreamingTranscodingBitrate || '');
 
-        $('#chkRequiresPlainFolders', page).checked(profile.RequiresPlainFolders).checkboxradio('refresh');
-        $('#chkRequiresPlainVideoItems', page).checked(profile.RequiresPlainVideoItems).checkboxradio('refresh');
+        $('#chkRequiresPlainFolders', page).checked(profile.RequiresPlainFolders);
+        $('#chkRequiresPlainVideoItems', page).checked(profile.RequiresPlainVideoItems);
 
         $('#txtProtocolInfo', page).val(profile.ProtocolInfo || '');
         $('#txtXDlnaCap', page).val(profile.XDlnaCap || '');
@@ -109,26 +110,27 @@
 
         var index = 0;
 
-        var html = '<ul data-role="listview" data-inset="true" data-split-icon="delete">' + headers.map(function (h) {
+        var html = '<div class="paperList">' + headers.map(function (h) {
 
-            var li = '<li>';
+            var li = '<div class="listItem">';
 
-            li += '<a href="#">';
+            li += '<i class="md-icon listItemIcon">info</i>';
+            li += '<div class="listItemBody">';
 
-            li += '<div style="font-weight:normal;">' + h.Name + ': ' + (h.Value || '') + '</div>';
-            li += '<div style="font-weight:normal;">' + (h.Match || '') + '</div>';
+            li += '<h3 class="listItemBodyText">' + h.Name + ': ' + (h.Value || '') + '</h3>';
+            li += '<div class="listItemBodyText secondary">' + (h.Match || '') + '</div>';
 
-            li += '</a>';
+            li += '</div>';
 
-            li += '<a class="btnDeleteIdentificationHeader" href="#" data-index="' + index + '"></a>';
+            li += '<button type="button" is="paper-icon-button-light" class="btnDeleteIdentificationHeader listItemButton" data-index="' + index + '"><i class="md-icon">delete</i></button>';
 
-            li += '</li>';
+            li += '</div>';
 
             index++;
 
             return li;
 
-        }).join('') + '</ul>';
+        }).join('') + '</div>';
 
         var elem = $('.httpHeaderIdentificationList', page).html(html).trigger('create');
 
@@ -165,6 +167,9 @@
 
         if (isSubProfileNew) {
 
+            currentProfile.Identification = currentProfile.Identification || {};
+            currentProfile.Identification.Headers = currentProfile.Identification.Headers || [];
+
             currentProfile.Identification.Headers.push(currentSubProfile);
         }
 
@@ -179,25 +184,24 @@
 
         var index = 0;
 
-        var html = '<ul data-role="listview" data-inset="true" data-split-icon="delete">' + attribute.map(function (h) {
+        var html = '<div class="paperList">' + attribute.map(function (h) {
 
-            var li = '<li>';
+            var li = '<div class="listItem">';
 
-            li += '<a href="#">';
+            li += '<i class="md-icon listItemIcon">info</i>';
+            li += '<div class="listItemBody">';
 
-            li += '<div style="font-weight:normal;">' + h.Name + ' = ' + (h.Value || '') + '</div>';
+            li += '<h3 class="listItemBodyText">' + h.Name + ' = ' + (h.Value || '') + '</h3>';
 
-            li += '</a>';
+            li += '</div>';
 
-            li += '<a class="btnDeleteXmlAttribute" href="#" data-icon="delete" data-index="' + index + '"></a>';
+            li += '<button type="button" is="paper-icon-button-light" class="btnDeleteXmlAttribute listItemButton" data-index="' + index + '"><i class="md-icon">delete</i></button>';
 
-            li += '</li>';
-
-            index++;
+            li += '</div>';
 
             return li;
 
-        }).join('') + '</ul>';
+        }).join('') + '</div>';
 
         var elem = $('.xmlDocumentAttributeList', page).html(html).trigger('create');
 
@@ -497,9 +501,9 @@
         $('#txtTranscodingVideoCodec', popup).val(transcodingProfile.VideoCodec || '');
         $('#selectTranscodingProtocol', popup).val(transcodingProfile.Protocol || 'Http');
 
-        $('#chkEnableMpegtsM2TsMode', popup).checked(transcodingProfile.EnableMpegtsM2TsMode || false).checkboxradio('refresh');
-        $('#chkEstimateContentLength', popup).checked(transcodingProfile.EstimateContentLength || false).checkboxradio('refresh');
-        $('#chkReportByteRangeRequests', popup).checked(transcodingProfile.TranscodeSeekInfo == 'Bytes').checkboxradio('refresh');
+        $('#chkEnableMpegtsM2TsMode', popup).checked(transcodingProfile.EnableMpegtsM2TsMode || false);
+        $('#chkEstimateContentLength', popup).checked(transcodingProfile.EstimateContentLength || false);
+        $('#chkReportByteRangeRequests', popup).checked(transcodingProfile.TranscodeSeekInfo == 'Bytes');
 
         $('.radioTabButton:first', popup).trigger('click');
 
@@ -869,7 +873,7 @@
                 require(['toast'], function (toast) {
                     toast('Settings saved.');
                 });
-            });
+            }, Dashboard.processErrorResponse);
 
         } else {
 
@@ -882,7 +886,7 @@
 
                 Dashboard.navigate('dlnaprofiles.html');
 
-            });
+            }, Dashboard.processErrorResponse);
 
         }
 
@@ -1174,4 +1178,4 @@
         }
     };
 
-})(jQuery, document, window);
+});

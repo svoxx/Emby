@@ -1,136 +1,197 @@
-﻿(function ($, document) {
+﻿define(['events', 'libraryBrowser', 'imageLoader', 'listView', 'cardBuilder', 'emby-itemscontainer'], function (events, libraryBrowser, imageLoader, listView, cardBuilder) {
+    'use strict';
 
-    var data = {};
+    return function (view, params, tabContent) {
 
-    function getPageData(context) {
-        var key = getSavedQueryKey(context);
-        var pageData = data[key];
+        var self = this;
+        var pageSize = libraryBrowser.getDefaultPageSize();
 
-        if (!pageData) {
-            pageData = data[key] = {
-                query: {
-                    SortBy: "SeriesSortName,SortName",
-                    SortOrder: "Ascending",
-                    IncludeItemTypes: "Episode",
-                    Recursive: true,
-                    Fields: "PrimaryImageAspectRatio,MediaSourceCount,UserData,SyncInfo",
-                    IsMissing: false,
-                    IsVirtualUnaired: false,
-                    ImageTypeLimit: 1,
-                    EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
-                    StartIndex: 0,
-                    Limit: LibraryBrowser.getDefaultPageSize()
-                },
-                view: LibraryBrowser.getSavedView(key) || LibraryBrowser.getDefaultItemsView('Poster', 'Poster')
-            };
+        var data = {};
 
-            pageData.query.ParentId = LibraryMenu.getTopParentId();
-            LibraryBrowser.loadSavedQueryValues(key, pageData.query);
+        function getPageData(context) {
+            var key = getSavedQueryKey(context);
+            var pageData = data[key];
+
+            if (!pageData) {
+                pageData = data[key] = {
+                    query: {
+                        SortBy: "SeriesSortName,SortName",
+                        SortOrder: "Ascending",
+                        IncludeItemTypes: "Episode",
+                        Recursive: true,
+                        Fields: "PrimaryImageAspectRatio,MediaSourceCount,UserData",
+                        IsMissing: false,
+                        IsVirtualUnaired: false,
+                        ImageTypeLimit: 1,
+                        EnableImageTypes: "Primary,Backdrop,Thumb",
+                        StartIndex: 0,
+                        Limit: pageSize
+                    },
+                    view: libraryBrowser.getSavedView(key) || 'Poster'
+                };
+
+                pageData.query.ParentId = params.topParentId;
+                libraryBrowser.loadSavedQueryValues(key, pageData.query);
+            }
+            return pageData;
         }
-        return pageData;
-    }
 
-    function getQuery(context) {
+        function getQuery(context) {
 
-        return getPageData(context).query;
-    }
-
-    function getSavedQueryKey(context) {
-
-        if (!context.savedQueryKey) {
-            context.savedQueryKey = LibraryBrowser.getSavedQueryKey('episodes');
+            return getPageData(context).query;
         }
-        return context.savedQueryKey;
-    }
 
-    function reloadItems(page) {
+        function getSavedQueryKey(context) {
 
-        Dashboard.showLoadingMsg();
-
-        var query = getQuery(page);
-        ApiClient.getItems(Dashboard.getCurrentUserId(), query).then(function (result) {
-
-            // Scroll back up so they can see the results from the beginning
-            window.scrollTo(0, 0);
-
-            var view = getPageData(page).view;
-
-            var html = '';
-            var pagingHtml = LibraryBrowser.getQueryPagingHtml({
-                startIndex: query.StartIndex,
-                limit: query.Limit,
-                totalRecordCount: result.TotalRecordCount,
-                showLimit: false,
-                updatePageSizeSetting: false,
-                addLayoutButton: true,
-                sortButton: true,
-                currentLayout: view,
-                layouts: 'Poster,PosterCard',
-                filterButton: true
-            });
-
-            page.querySelector('.listTopPaging').innerHTML = pagingHtml;
-
-            updateFilterControls(page);
-
-            if (view == "List") {
-
-                html = LibraryBrowser.getListViewHtml({
-                    items: result.Items,
-                    sortBy: query.SortBy
-                });
+            if (!context.savedQueryKey) {
+                context.savedQueryKey = libraryBrowser.getSavedQueryKey('episodes');
             }
-            else if (view == "Poster") {
-                html += LibraryBrowser.getPosterViewHtml({
-                    items: result.Items,
-                    shape: "backdrop",
-                    showTitle: true,
-                    showParentTitle: true,
-                    overlayText: true,
-                    lazy: true,
-                    showDetailsMenu: true,
-                    overlayPlayButton: true
-                });
+            return context.savedQueryKey;
+        }
+
+        function onViewStyleChange() {
+
+            var viewStyle = self.getCurrentViewStyle();
+
+            var itemsContainer = tabContent.querySelector('.itemsContainer');
+
+            if (viewStyle == "List") {
+
+                itemsContainer.classList.add('vertical-list');
+                itemsContainer.classList.remove('vertical-wrap');
             }
-            else if (view == "PosterCard") {
-                html += LibraryBrowser.getPosterViewHtml({
-                    items: result.Items,
-                    shape: "backdrop",
-                    showTitle: true,
-                    showParentTitle: true,
-                    lazy: true,
-                    cardLayout: true,
-                    showDetailsMenu: true
-                });
+            else {
+
+                itemsContainer.classList.remove('vertical-list');
+                itemsContainer.classList.add('vertical-wrap');
             }
+            itemsContainer.innerHTML = '';
+        }
 
-            var elem = page.querySelector('.itemsContainer');
-            elem.innerHTML = html + pagingHtml;
-            ImageLoader.lazyChildren(elem);
+        function reloadItems(page) {
 
-            $('.btnNextPage', page).on('click', function () {
-                query.StartIndex += query.Limit;
-                reloadItems(page);
+            Dashboard.showLoadingMsg();
+
+            var query = getQuery(page);
+
+            ApiClient.getItems(Dashboard.getCurrentUserId(), query).then(function (result) {
+
+                // Scroll back up so they can see the results from the beginning
+                window.scrollTo(0, 0);
+
+                var pagingHtml = LibraryBrowser.getQueryPagingHtml({
+                    startIndex: query.StartIndex,
+                    limit: query.Limit,
+                    totalRecordCount: result.TotalRecordCount,
+                    showLimit: false,
+                    updatePageSizeSetting: false,
+                    addLayoutButton: false,
+                    sortButton: false,
+                    filterButton: false
+                });
+
+                var viewStyle = self.getCurrentViewStyle();
+
+                var html;
+                var itemsContainer = tabContent.querySelector('.itemsContainer');
+
+                if (viewStyle == "List") {
+
+                    html = listView.getListViewHtml({
+                        items: result.Items,
+                        sortBy: query.SortBy,
+                        showParentTitle: true
+                    });
+                }
+                else if (viewStyle == "PosterCard") {
+
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "backdrop",
+                        showTitle: true,
+                        showParentTitle: true,
+                        scalable: true,
+                        cardLayout: true
+                    });
+                }
+                else {
+
+                    // poster
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "backdrop",
+                        showTitle: true,
+                        showParentTitle: true,
+                        overlayText: true,
+                        scalable: true,
+                        overlayPlayButton: true
+                    });
+                }
+
+                var i, length;
+                var elems = tabContent.querySelectorAll('.paging');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].innerHTML = pagingHtml;
+                }
+
+                function onNextPageClick() {
+                    query.StartIndex += query.Limit;
+                    reloadItems(tabContent);
+                }
+
+                function onPreviousPageClick() {
+                    query.StartIndex -= query.Limit;
+                    reloadItems(tabContent);
+                }
+
+                elems = tabContent.querySelectorAll('.btnNextPage');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].addEventListener('click', onNextPageClick);
+                }
+
+                elems = tabContent.querySelectorAll('.btnPreviousPage');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].addEventListener('click', onPreviousPageClick);
+                }
+
+                itemsContainer.innerHTML = html;
+                imageLoader.lazyChildren(itemsContainer);
+
+                libraryBrowser.saveQueryValues(getSavedQueryKey(page), query);
+
+                Dashboard.hideLoadingMsg();
+            });
+        }
+
+        self.showFilterMenu = function () {
+            require(['components/filterdialog/filterdialog'], function (filterDialogFactory) {
+
+                var filterDialog = new filterDialogFactory({
+                    query: getQuery(tabContent),
+                    mode: 'episodes'
+                });
+
+                Events.on(filterDialog, 'filterchange', function () {
+                    reloadItems(tabContent);
+                });
+
+                filterDialog.show();
+            });
+        };
+
+        function initPage(tabContent) {
+
+            tabContent.querySelector('.itemsContainer').addEventListener('needsrefresh', function () {
+
+                reloadItems(tabContent);
             });
 
-            $('.btnPreviousPage', page).on('click', function () {
-                query.StartIndex -= query.Limit;
-                reloadItems(page);
+            tabContent.querySelector('.btnFilter').addEventListener('click', function () {
+                self.showFilterMenu();
             });
 
-            $('.btnChangeLayout', page).on('layoutchange', function (e, layout) {
-                getPageData(page).view = layout;
-                LibraryBrowser.saveViewSetting(getSavedQueryKey(page), layout);
-                reloadItems(page);
-            });
-
-            $('.btnFilter', page).on('click', function () {
-                showFilterMenu(page);
-            });
-
-            // On callback make sure to set StartIndex = 0
-            $('.btnSort', page).on('click', function () {
-                LibraryBrowser.showSortMenu({
+            tabContent.querySelector('.btnSort').addEventListener('click', function (e) {
+                libraryBrowser.showSortMenu({
                     items: [{
                         name: Globalize.translate('OptionNameSort'),
                         id: 'SeriesSortName,SortName'
@@ -162,83 +223,44 @@
                     {
                         name: Globalize.translate('OptionRuntime'),
                         id: 'Runtime,SeriesSortName,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionVideoBitrate'),
-                        id: 'VideoBitRate,SeriesSortName,SortName'
                     }],
                     callback: function () {
-                        reloadItems(page);
+                        reloadItems(tabContent);
                     },
-                    query: query
+                    query: getQuery(tabContent),
+                    button: e.target
                 });
             });
 
-            LibraryBrowser.saveQueryValues(getSavedQueryKey(page), query);
+            var btnSelectView = tabContent.querySelector('.btnSelectView');
+            btnSelectView.addEventListener('click', function (e) {
 
-            Dashboard.hideLoadingMsg();
-        });
-    }
-
-    function showFilterMenu(page) {
-
-        require(['components/filterdialog/filterdialog'], function (filterDialogFactory) {
-
-            var filterDialog = new filterDialogFactory({
-                query: getQuery(page),
-                mode: 'episodes'
+                libraryBrowser.showLayoutMenu(e.target, self.getCurrentViewStyle(), 'List,Poster,PosterCard'.split(','));
             });
 
-            Events.on(filterDialog, 'filterchange', function () {
-                reloadItems(page);
+            btnSelectView.addEventListener('layoutchange', function (e) {
+
+                var viewStyle = e.detail.viewStyle;
+                getPageData(tabContent).view = viewStyle;
+                libraryBrowser.saveViewSetting(getSavedQueryKey(tabContent), viewStyle);
+                onViewStyleChange();
+                reloadItems(tabContent);
             });
+        }
 
-            filterDialog.show();
-        });
-    }
-
-    function updateFilterControls(tabContent) {
-
-        var query = getQuery(tabContent);
-
-        $('.alphabetPicker', tabContent).alphaValue(query.NameStartsWithOrGreater);
-    }
-
-    function initPage(tabContent) {
-
-        $('.alphabetPicker', tabContent).on('alphaselect', function (e, character) {
-
-            var query = getQuery(tabContent);
-            query.NameStartsWithOrGreater = character;
-            query.StartIndex = 0;
-
-            reloadItems(tabContent);
-
-        }).on('alphaclear', function (e) {
-
-            var query = getQuery(tabContent);
-            query.NameStartsWithOrGreater = '';
-
-            reloadItems(tabContent);
-        });
-
-        $('.itemsContainer', tabContent).on('needsrefresh', function () {
-
-            reloadItems(tabContent);
-        });
-    }
-
-    window.TvPage.initEpisodesTab = function (page, tabContent) {
+        self.getCurrentViewStyle = function () {
+            return getPageData(tabContent).view;
+        };
 
         initPage(tabContent);
-    };
+        onViewStyleChange();
 
-    window.TvPage.renderEpisodesTab = function (page, tabContent) {
+        self.renderTab = function () {
 
-        if (LibraryBrowser.needsRefresh(tabContent)) {
             reloadItems(tabContent);
-            updateFilterControls(tabContent);
-        }
-    };
+        };
 
-})(jQuery, document);
+        self.destroy = function () {
+        };
+    };
+});

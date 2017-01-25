@@ -2,10 +2,12 @@
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Providers;
-using ServiceStack;
 using System.Threading;
-using CommonIO;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Logging;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -40,12 +42,14 @@ namespace MediaBrowser.Api
         private readonly ILibraryManager _libraryManager;
         private readonly IProviderManager _providerManager;
         private readonly IFileSystem _fileSystem;
+        private readonly ILogger _logger;
 
-        public ItemRefreshService(ILibraryManager libraryManager, IProviderManager providerManager, IFileSystem fileSystem)
+        public ItemRefreshService(ILibraryManager libraryManager, IProviderManager providerManager, IFileSystem fileSystem, ILogger logger)
         {
             _libraryManager = libraryManager;
             _providerManager = providerManager;
             _fileSystem = fileSystem;
+            _logger = logger;
         }
 
         /// <summary>
@@ -70,7 +74,7 @@ namespace MediaBrowser.Api
 
         private MetadataRefreshOptions GetRefreshOptions(BaseRefreshRequest request)
         {
-            return new MetadataRefreshOptions(new DirectoryService(_fileSystem))
+            return new MetadataRefreshOptions(new DirectoryService(_logger, _fileSystem))
             {
                 MetadataRefreshMode = request.MetadataRefreshMode,
                 ImageRefreshMode = request.ImageRefreshMode,

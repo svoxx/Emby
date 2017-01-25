@@ -1,6 +1,7 @@
-﻿(function (window) {
+﻿define([], function () {
+    'use strict';
 
-    function processForgotPasswordResult(page, result) {
+    function processForgotPasswordResult(result) {
 
         if (result.Success) {
 
@@ -31,31 +32,25 @@
         return;
     }
 
-    function onSubmit() {
+    return function (view, params) {
 
-        var page = $(this).parents('.page');
+        function onSubmit(e) {
 
-        ApiClient.ajax({
+            ApiClient.ajax({
 
-            type: 'POST',
-            url: ApiClient.getUrl('Users/ForgotPassword/Pin'),
-            dataType: 'json',
-            data: {
-                Pin: $('#txtPin', page).val()
-            }
+                type: 'POST',
+                url: ApiClient.getUrl('Users/ForgotPassword/Pin'),
+                dataType: 'json',
+                data: {
+                    Pin: view.querySelector('#txtPin').value
+                }
 
-        }).then(function (result) {
+            }).then(processForgotPasswordResult);
 
-            processForgotPasswordResult(page, result);
-        });
-        return false;
-    }
+            e.preventDefault();
+            return false;
+        }
 
-    $(document).on('pageinit', '.forgotPasswordPinPage', function () {
-
-        var page = this;
-
-        $('form', page).off('submit', onSubmit).on('submit', onSubmit);
-    });
-
-})(window);
+        view.querySelector('form').addEventListener('submit', onSubmit);
+    };
+});

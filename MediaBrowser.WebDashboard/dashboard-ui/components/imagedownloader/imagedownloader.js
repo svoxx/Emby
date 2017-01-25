@@ -1,12 +1,14 @@
-﻿define(['paperdialoghelper', 'paper-checkbox', 'paper-dialog', 'paper-fab'], function (paperDialogHelper) {
+﻿define(['dialogHelper', 'imageLoader', 'emby-checkbox', 'emby-button', 'paper-icon-button-light', 'css!css/metadataeditor.css'], function (dialogHelper, imageLoader) {
+    'use strict';
 
     var currentItemId;
     var currentItemType;
-    var currentDeferred;
+    var currentResolve;
+    var currentReject;
     var hasChanges = false;
 
     // These images can be large and we're seeing memory problems in safari
-    var browsableImagePageSize = browserInfo.safari ? 6 : (browserInfo.mobile ? 10 : 40);
+    var browsableImagePageSize = browserInfo.slow ? 6 : 30;
 
     var browsableImageStartIndex = 0;
     var browsableImageType = 'Primary';
@@ -30,7 +32,7 @@
         options.type = browsableImageType;
         options.startIndex = browsableImageStartIndex;
         options.limit = browsableImagePageSize;
-        options.IncludeAllLanguages = $('#chkAllLanguages', page).checked();
+        options.IncludeAllLanguages = page.querySelector('#chkAllLanguages').checked;
 
         var provider = selectedProvider || '';
 
@@ -42,13 +44,15 @@
 
             renderRemoteImages(page, result, browsableImageType, options.startIndex, options.limit);
 
-            $('#selectBrowsableImageType', page).val(browsableImageType);
+            page.querySelector('#selectBrowsableImageType').value = browsableImageType;
 
             var providersHtml = result.Providers.map(function (p) {
                 return '<option value="' + p + '">' + p + '</option>';
             });
 
-            $('#selectImageProvider', page).html('<option value="">' + Globalize.translate('LabelAll') + '</option>' + providersHtml).val(provider);
+            var selectImageProvider = page.querySelector('#selectImageProvider');
+            selectImageProvider.innerHTML = '<option value="">' + Globalize.translate('LabelAll') + '</option>' + providersHtml;
+            selectImageProvider.value = provider;
 
             Dashboard.hideLoadingMsg();
         });
@@ -56,7 +60,8 @@
     }
 
     function renderRemoteImages(page, imagesResult, imageType, startIndex, limit) {
-        $('.availableImagesPaging', page).html(getPagingHtml(startIndex, limit, imagesResult.TotalRecordCount)).trigger('create');
+
+        page.querySelector('.availableImagesPaging').innerHTML = getPagingHtml(startIndex, limit, imagesResult.TotalRecordCount);
 
         var html = '';
 
@@ -67,22 +72,24 @@
 
         var availableImagesList = page.querySelector('.availableImagesList');
         availableImagesList.innerHTML = html;
-        ImageLoader.lazyChildren(availableImagesList);
+        imageLoader.lazyChildren(availableImagesList);
 
-        $('.btnNextPage', page).on('click', function () {
-            browsableImageStartIndex += browsableImagePageSize;
-            reloadBrowsableImages(page);
-        });
+        var btnNextPage = page.querySelector('.btnNextPage');
+        var btnPreviousPage = page.querySelector('.btnPreviousPage');
 
-        $('.btnPreviousPage', page).on('click', function () {
-            browsableImageStartIndex -= browsableImagePageSize;
-            reloadBrowsableImages(page);
-        });
+        if (btnNextPage) {
+            btnNextPage.addEventListener('click', function () {
+                browsableImageStartIndex += browsableImagePageSize;
+                reloadBrowsableImages(page);
+            });
+        }
 
-        $('.btnDownloadRemoteImage', page).on('click', function () {
-
-            downloadRemoteImage(page, this.getAttribute('data-imageurl'), this.getAttribute('data-imagetype'), this.getAttribute('data-imageprovider'));
-        });
+        if (btnPreviousPage) {
+            btnPreviousPage.addEventListener('click', function () {
+                browsableImageStartIndex -= browsableImagePageSize;
+                reloadBrowsableImages(page);
+            });
+        }
 
     }
 
@@ -107,14 +114,27 @@
         if (showControls) {
             html += '<div data-role="controlgroup" data-type="horizontal" style="display:inline-block;">';
 
-            html += '<paper-icon-button icon="arrow-back" title="' + Globalize.translate('ButtonPreviousPage') + '" class="btnPreviousPage" ' + (startIndex ? '' : 'disabled') + '></paper-icon-button>';
-            html += '<paper-icon-button icon="arrow-forward" title="' + Globalize.translate('ButtonNextPage') + '" class="btnNextPage" ' + (startIndex + limit >= totalRecordCount ? 'disabled' : '') + '></paper-icon-button>';
+            html += '<button is="paper-icon-button-light" title="' + Globalize.translate('ButtonPreviousPage') + '" class="btnPreviousPage autoSize" ' + (startIndex ? '' : 'disabled') + '><i class="md-icon">&#xE5C4;</i></button>';
+            html += '<button is="paper-icon-button-light" title="' + Globalize.translate('ButtonNextPage') + '" class="btnNextPage autoSize" ' + (startIndex + limit >= totalRecordCount ? 'disabled' : '') + '><i class="md-icon">arrow_forward</i></button>';
             html += '</div>';
         }
 
         html += '</div>';
 
         return html;
+    }
+
+    function parentWithClass(elem, className) {
+
+        while (!elem.classList || !elem.classList.contains(className)) {
+            elem = elem.parentNode;
+
+            if (!elem) {
+                return null;
+            }
+        }
+
+        return elem;
     }
 
     function downloadRemoteImage(page, url, type, provider) {
@@ -130,8 +150,8 @@
         ApiClient.downloadRemoteImage(options).then(function () {
 
             hasChanges = true;
-            var dlg = $(page).parents('paper-dialog')[0];
-            paperDialogHelper.close(dlg);
+            var dlg = parentWithClass(page, 'dialog');
+            dialogHelper.close(dlg);
         });
     }
 
@@ -223,7 +243,7 @@
             html += '</div>';
         }
 
-        html += '<paper-icon-button icon="cloud-download" class="btnDownloadRemoteImage" raised data-imageprovider="' + image.ProviderName + '" data-imageurl="' + image.Url + '" data-imagetype="' + image.Type + '" title="' + Globalize.translate('ButtonDownload') + '"></paper-icon-button>';
+        html += '<button is="paper-icon-button-light" class="btnDownloadRemoteImage autoSize" raised data-imageprovider="' + image.ProviderName + '" data-imageurl="' + image.Url + '" data-imagetype="' + image.Type + '" title="' + Globalize.translate('ButtonDownload') + '"><i class="md-icon">cloud_download</i></button>';
 
         html += '</div>';
         html += '</div>';
@@ -233,8 +253,8 @@
 
     function initEditor(page) {
 
-        $('#selectBrowsableImageType', page).on('change', function () {
 
+        page.querySelector('#selectBrowsableImageType').addEventListener('change', function () {
             browsableImageType = this.value;
             browsableImageStartIndex = 0;
             selectedProvider = null;
@@ -242,7 +262,7 @@
             reloadBrowsableImages(page);
         });
 
-        $('#selectImageProvider', page).on('change', function () {
+        page.querySelector('#selectImageProvider').addEventListener('change', function () {
 
             browsableImageStartIndex = 0;
             selectedProvider = this.value;
@@ -250,11 +270,19 @@
             reloadBrowsableImages(page);
         });
 
-        $('#chkAllLanguages', page).on('change', function () {
+        page.querySelector('#chkAllLanguages').addEventListener('change', function () {
 
             browsableImageStartIndex = 0;
 
             reloadBrowsableImages(page);
+        });
+
+        page.addEventListener('click', function (e) {
+
+            var btnDownloadRemoteImage = parentWithClass(e.target, 'btnDownloadRemoteImage');
+            if (btnDownloadRemoteImage) {
+                downloadRemoteImage(page, btnDownloadRemoteImage.getAttribute('data-imageurl'), btnDownloadRemoteImage.getAttribute('data-imagetype'), btnDownloadRemoteImage.getAttribute('data-imageprovider'));
+            }
         });
     }
 
@@ -271,20 +299,20 @@
             currentItemId = itemId;
             currentItemType = itemType;
 
-            var dlg = paperDialogHelper.createDialog({
+            var dlg = dialogHelper.createDialog({
                 size: 'fullscreen-border',
-                lockScroll: true
+                lockScroll: true,
+                removeOnClose: true
             });
 
             var theme = 'b';
 
             dlg.classList.add('ui-body-' + theme);
             dlg.classList.add('background-theme-' + theme);
-            dlg.classList.add('popupEditor');
 
             var html = '';
             html += '<h2 class="dialogHeader">';
-            html += '<paper-fab icon="arrow-back" mini class="btnCloseDialog" tabindex="-1"></paper-fab>';
+            html += '<button type="button" is="emby-button" icon="arrow-back" class="fab mini btnCloseDialog autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
             html += '<div style="display:inline-block;margin-left:.6em;vertical-align:middle;">' + Globalize.translate('HeaderSearch') + '</div>';
             html += '</h2>';
 
@@ -293,19 +321,18 @@
             html += '</div>';
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             // Has to be assigned a z-index after the call to .open() 
-            $(dlg).on('iron-overlay-closed', onDialogClosed);
+            dlg.addEventListener('close', onDialogClosed);
 
-            paperDialogHelper.open(dlg);
+            dialogHelper.open(dlg);
 
             var editorContent = dlg.querySelector('.editorContent');
             initEditor(editorContent);
 
-            $('.btnCloseDialog', dlg).on('click', function () {
+            dlg.querySelector('.btnCloseDialog').addEventListener('click', function () {
 
-                paperDialogHelper.close(dlg);
+                dialogHelper.close(dlg);
             });
 
             reloadBrowsableImages(editorContent);
@@ -316,24 +343,28 @@
 
     function onDialogClosed() {
 
-        $(this).remove();
         Dashboard.hideLoadingMsg();
-        currentDeferred.resolveWith(null, [hasChanges]);
+        if (hasChanges) {
+            currentResolve();
+        } else {
+            currentReject();
+        }
     }
 
     return {
         show: function (itemId, itemType, imageType) {
 
-            var deferred = jQuery.Deferred();
+            return new Promise(function (resolve, reject) {
 
-            currentDeferred = deferred;
-            hasChanges = false;
-            browsableImageStartIndex = 0;
-            browsableImageType = imageType || 'Primary';
-            selectedProvider = null;
+                currentResolve = resolve;
+                currentReject = reject;
+                hasChanges = false;
+                browsableImageStartIndex = 0;
+                browsableImageType = imageType || 'Primary';
+                selectedProvider = null;
 
-            showEditor(itemId, itemType);
-            return deferred.promise();
+                showEditor(itemId, itemType);
+            });
         }
     };
 });

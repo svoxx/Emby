@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -18,7 +17,9 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Diagnostics;
+using MediaBrowser.Model.Text;
 using UniversalDetector;
 
 namespace MediaBrowser.MediaEncoding.Subtitles
@@ -33,8 +34,11 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         private readonly IJsonSerializer _json;
         private readonly IHttpClient _httpClient;
         private readonly IMediaSourceManager _mediaSourceManager;
+        private readonly IMemoryStreamFactory _memoryStreamProvider;
+        private readonly IProcessFactory _processFactory;
+        private readonly ITextEncoding _textEncoding;
 
-        public SubtitleEncoder(ILibraryManager libraryManager, ILogger logger, IApplicationPaths appPaths, IFileSystem fileSystem, IMediaEncoder mediaEncoder, IJsonSerializer json, IHttpClient httpClient, IMediaSourceManager mediaSourceManager)
+        public SubtitleEncoder(ILibraryManager libraryManager, ILogger logger, IApplicationPaths appPaths, IFileSystem fileSystem, IMediaEncoder mediaEncoder, IJsonSerializer json, IHttpClient httpClient, IMediaSourceManager mediaSourceManager, IMemoryStreamFactory memoryStreamProvider, IProcessFactory processFactory, ITextEncoding textEncoding)
         {
             _libraryManager = libraryManager;
             _logger = logger;
@@ -44,6 +48,9 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             _json = json;
             _httpClient = httpClient;
             _mediaSourceManager = mediaSourceManager;
+            _memoryStreamProvider = memoryStreamProvider;
+            _processFactory = processFactory;
+            _textEncoding = textEncoding;
         }
 
         private string SubtitleCachePath
@@ -59,9 +66,10 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             string outputFormat,
             long startTimeTicks,
             long? endTimeTicks,
+            bool preserveOriginalTimestamps,
             CancellationToken cancellationToken)
         {
-            var ms = new MemoryStream();
+            var ms = _memoryStreamProvider.CreateNew();
 
             try
             {
@@ -69,7 +77,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                 var trackInfo = reader.Parse(stream, cancellationToken);
 
-                FilterEvents(trackInfo, startTimeTicks, endTimeTicks, false);
+                FilterEvents(trackInfo, startTimeTicks, endTimeTicks, preserveOriginalTimestamps);
 
                 var writer = GetWriter(outputFormat);
 
@@ -117,21 +125,37 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             string outputFormat,
             long startTimeTicks,
             long? endTimeTicks,
+            bool preserveOriginalTimestamps,
             CancellationToken cancellationToken)
         {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                throw new ArgumentNullException("itemId");
+            }
+            if (string.IsNullOrWhiteSpace(mediaSourceId))
+            {
+                throw new ArgumentNullException("mediaSourceId");
+            }
+
             var subtitle = await GetSubtitleStream(itemId, mediaSourceId, subtitleStreamIndex, cancellationToken)
                         .ConfigureAwait(false);
 
             var inputFormat = subtitle.Item2;
+            var writer = TryGetWriter(outputFormat);
 
-            if (string.Equals(inputFormat, outputFormat, StringComparison.OrdinalIgnoreCase) && TryGetWriter(outputFormat) == null)
+            if (string.Equals(inputFormat, outputFormat, StringComparison.OrdinalIgnoreCase) && writer == null)
+            {
+                return subtitle.Item1;
+            }
+
+            if (writer == null)
             {
                 return subtitle.Item1;
             }
 
             using (var stream = subtitle.Item1)
             {
-                return await ConvertSubtitles(stream, inputFormat, outputFormat, startTimeTicks, endTimeTicks, cancellationToken).ConfigureAwait(false);
+                return await ConvertSubtitles(stream, inputFormat, outputFormat, startTimeTicks, endTimeTicks, preserveOriginalTimestamps, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -140,10 +164,19 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             int subtitleStreamIndex,
             CancellationToken cancellationToken)
         {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                throw new ArgumentNullException("itemId");
+            }
+            if (string.IsNullOrWhiteSpace(mediaSourceId))
+            {
+                throw new ArgumentNullException("mediaSourceId");
+            }
+
             var mediaSources = await _mediaSourceManager.GetPlayackMediaSources(itemId, null, false, new[] { MediaType.Audio, MediaType.Video }, cancellationToken).ConfigureAwait(false);
 
             var mediaSource = mediaSources
-                .First(i => string.Equals(i.Id, mediaSourceId));
+                .First(i => string.Equals(i.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase));
 
             var subtitleStream = mediaSource.MediaStreams
                 .First(i => i.Type == MediaStreamType.Subtitle && i.Index == subtitleStreamIndex);
@@ -162,16 +195,16 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
             var fileInfo = await GetReadableFile(mediaSource.Path, inputFiles, mediaSource.Protocol, subtitleStream, cancellationToken).ConfigureAwait(false);
 
-            var stream = await GetSubtitleStream(fileInfo.Item1, fileInfo.Item2, fileInfo.Item4, cancellationToken).ConfigureAwait(false);
+            var stream = await GetSubtitleStream(fileInfo.Item1, subtitleStream.Language, fileInfo.Item2, fileInfo.Item4, cancellationToken).ConfigureAwait(false);
 
             return new Tuple<Stream, string>(stream, fileInfo.Item3);
         }
 
-        private async Task<Stream> GetSubtitleStream(string path, MediaProtocol protocol, bool requiresCharset, CancellationToken cancellationToken)
+        private async Task<Stream> GetSubtitleStream(string path, string language, MediaProtocol protocol, bool requiresCharset, CancellationToken cancellationToken)
         {
             if (requiresCharset)
             {
-                var charset = await GetSubtitleFileCharacterSet(path, protocol, cancellationToken).ConfigureAwait(false);
+                var charset = await GetSubtitleFileCharacterSet(path, language, protocol, cancellationToken).ConfigureAwait(false);
 
                 if (!string.IsNullOrEmpty(charset))
                 {
@@ -183,7 +216,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                             var bytes = Encoding.UTF8.GetBytes(text);
 
-                            return new MemoryStream(bytes);
+                            return _memoryStreamProvider.CreateNew(bytes);
                         }
                     }
                 }
@@ -198,14 +231,19 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 throw new ArgumentNullException("charset");
             }
-            
+
+            _logger.Debug("Getting encoding object for character set: {0}", charset);
+
             try
             {
                 return Encoding.GetEncoding(charset);
             }
             catch (ArgumentException)
             {
-                return Encoding.GetEncoding(charset.Replace("-", string.Empty));
+                charset = charset.Replace("-", string.Empty);
+                _logger.Debug("Getting encoding object for character set: {0}", charset);
+
+                return Encoding.GetEncoding(charset);
             }
         }
 
@@ -220,14 +258,15 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 string outputFormat;
                 string outputCodec;
 
-                if (string.Equals(subtitleStream.Codec, "ass", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(subtitleStream.Codec, "ass", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(subtitleStream.Codec, "ssa", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(subtitleStream.Codec, "srt", StringComparison.OrdinalIgnoreCase))
                 {
                     // Extract    
                     outputCodec = "copy";
-                    outputFormat = "ass";
+                    outputFormat = subtitleStream.Codec;
                 }
-                else if (string.Equals(subtitleStream.Codec, "subrip", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(subtitleStream.Codec, "srt", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(subtitleStream.Codec, "subrip", StringComparison.OrdinalIgnoreCase))
                 {
                     // Extract    
                     outputCodec = "copy";
@@ -257,7 +296,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 // Convert    
                 var outputPath = GetSubtitleCachePath(mediaPath, protocol, subtitleStream.Index, ".srt");
 
-                await ConvertTextSubtitleToSrt(subtitleStream.Path, protocol, outputPath, cancellationToken).ConfigureAwait(false);
+                await ConvertTextSubtitleToSrt(subtitleStream.Path, subtitleStream.Language, protocol, outputPath, cancellationToken).ConfigureAwait(false);
 
                 return new Tuple<string, MediaProtocol, string, bool>(outputPath, MediaProtocol.File, "srt", true);
             }
@@ -356,7 +395,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         /// <param name="outputPath">The output path.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        private async Task ConvertTextSubtitleToSrt(string inputPath, MediaProtocol inputProtocol, string outputPath, CancellationToken cancellationToken)
+        private async Task ConvertTextSubtitleToSrt(string inputPath, string language, MediaProtocol inputProtocol, string outputPath, CancellationToken cancellationToken)
         {
             var semaphore = GetLock(outputPath);
 
@@ -364,9 +403,9 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
             try
             {
-				if (!_fileSystem.FileExists(outputPath))
+                if (!_fileSystem.FileExists(outputPath))
                 {
-                    await ConvertTextSubtitleToSrtInternal(inputPath, inputProtocol, outputPath, cancellationToken).ConfigureAwait(false);
+                    await ConvertTextSubtitleToSrtInternal(inputPath, language, inputProtocol, outputPath, cancellationToken).ConfigureAwait(false);
                 }
             }
             finally
@@ -388,8 +427,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         /// or
         /// outputPath
         /// </exception>
-        /// <exception cref="System.ApplicationException"></exception>
-        private async Task ConvertTextSubtitleToSrtInternal(string inputPath, MediaProtocol inputProtocol, string outputPath, CancellationToken cancellationToken)
+        private async Task ConvertTextSubtitleToSrtInternal(string inputPath, string language, MediaProtocol inputProtocol, string outputPath, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(inputPath))
             {
@@ -401,40 +439,27 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 throw new ArgumentNullException("outputPath");
             }
 
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(outputPath));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(outputPath));
 
-            var encodingParam = await GetSubtitleFileCharacterSet(inputPath, inputProtocol, cancellationToken).ConfigureAwait(false);
+            var encodingParam = await GetSubtitleFileCharacterSet(inputPath, language, inputProtocol, cancellationToken).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(encodingParam))
             {
                 encodingParam = " -sub_charenc " + encodingParam;
             }
 
-            var process = new Process
+            var process = _processFactory.Create(new ProcessOptions
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                FileName = _mediaEncoder.EncoderPath,
+                Arguments = string.Format("{0} -i \"{1}\" -c:s srt \"{2}\"", encodingParam, inputPath, outputPath),
 
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    FileName = _mediaEncoder.EncoderPath,
-                    Arguments = string.Format("{0} -i \"{1}\" -c:s srt \"{2}\"", encodingParam, inputPath, outputPath),
-
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false
-                }
-            };
+                IsHidden = true,
+                ErrorDialog = false
+            });
 
             _logger.Info("{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
-
-            var logFilePath = Path.Combine(_appPaths.LogDirectoryPath, "ffmpeg-sub-convert-" + Guid.NewGuid() + ".txt");
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(logFilePath));
-
-            var logFileStream = _fileSystem.GetFileStream(logFilePath, FileMode.Create, FileAccess.Write, FileShare.Read,
-                true);
 
             try
             {
@@ -442,14 +467,10 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
             catch (Exception ex)
             {
-                logFileStream.Dispose();
-
                 _logger.ErrorException("Error starting ffmpeg", ex);
 
                 throw;
             }
-
-            var logTask = process.StandardError.BaseStream.CopyToAsync(logFileStream);
 
             var ranToCompletion = process.WaitForExit(60000);
 
@@ -459,18 +480,11 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 {
                     _logger.Info("Killing ffmpeg subtitle conversion process");
 
-                    process.StandardInput.WriteLine("q");
-                    process.WaitForExit(1000);
-
-                    await logTask.ConfigureAwait(false);
+                    process.Kill();
                 }
                 catch (Exception ex)
                 {
                     _logger.ErrorException("Error killing subtitle conversion process", ex);
-                }
-                finally
-                {
-                    logFileStream.Dispose();
                 }
             }
 
@@ -484,7 +498,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 failed = true;
 
-				if (_fileSystem.FileExists(outputPath))
+                if (_fileSystem.FileExists(outputPath))
                 {
                     try
                     {
@@ -497,20 +511,22 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     }
                 }
             }
-			else if (!_fileSystem.FileExists(outputPath))
+            else if (!_fileSystem.FileExists(outputPath))
             {
                 failed = true;
             }
 
             if (failed)
             {
-                var msg = string.Format("ffmpeg subtitle converted failed for {0}", inputPath);
+                var msg = string.Format("ffmpeg subtitle conversion failed for {0}", inputPath);
 
                 _logger.Error(msg);
 
-                throw new ApplicationException(msg);
+                throw new Exception(msg);
             }
             await SetAssFont(outputPath).ConfigureAwait(false);
+
+            _logger.Info("ffmpeg subtitle conversion succeeded for {0}", inputPath);
         }
 
         /// <summary>
@@ -533,7 +549,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
             try
             {
-				if (!_fileSystem.FileExists(outputPath))
+                if (!_fileSystem.FileExists(outputPath))
                 {
                     await ExtractTextSubtitleInternal(_mediaEncoder.GetInputArgument(inputFiles, protocol), subtitleStreamIndex,
                             outputCodec, outputPath, cancellationToken).ConfigureAwait(false);
@@ -558,36 +574,23 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 throw new ArgumentNullException("outputPath");
             }
 
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(outputPath));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(outputPath));
 
             var processArgs = string.Format("-i {0} -map 0:{1} -an -vn -c:s {2} \"{3}\"", inputPath,
                 subtitleStreamIndex, outputCodec, outputPath);
 
-            var process = new Process
+            var process = _processFactory.Create(new ProcessOptions
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
+                CreateNoWindow = true,
+                UseShellExecute = false,
 
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true,
-
-                    FileName = _mediaEncoder.EncoderPath,
-                    Arguments = processArgs,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    ErrorDialog = false
-                }
-            };
+                FileName = _mediaEncoder.EncoderPath,
+                Arguments = processArgs,
+                IsHidden = true,
+                ErrorDialog = false
+            });
 
             _logger.Info("{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
-
-            var logFilePath = Path.Combine(_appPaths.LogDirectoryPath, "ffmpeg-sub-extract-" + Guid.NewGuid() + ".txt");
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(logFilePath));
-
-            var logFileStream = _fileSystem.GetFileStream(logFilePath, FileMode.Create, FileAccess.Write, FileShare.Read,
-                true);
 
             try
             {
@@ -595,16 +598,12 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
             catch (Exception ex)
             {
-                logFileStream.Dispose();
-
                 _logger.ErrorException("Error starting ffmpeg", ex);
 
                 throw;
             }
 
-            process.StandardError.BaseStream.CopyToAsync(logFileStream);
-
-            var ranToCompletion = process.WaitForExit(120000);
+            var ranToCompletion = process.WaitForExit(300000);
 
             if (!ranToCompletion)
             {
@@ -612,16 +611,11 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 {
                     _logger.Info("Killing ffmpeg subtitle extraction process");
 
-                    process.StandardInput.WriteLine("q");
-                    process.WaitForExit(1000);
+                    process.Kill();
                 }
                 catch (Exception ex)
                 {
                     _logger.ErrorException("Error killing subtitle extraction process", ex);
-                }
-                finally
-                {
-                    logFileStream.Dispose();
                 }
             }
 
@@ -644,16 +638,12 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 {
 
                 }
-                catch (DirectoryNotFoundException)
-                {
-
-                }
                 catch (IOException ex)
                 {
                     _logger.ErrorException("Error deleting extracted subtitle {0}", ex, outputPath);
                 }
             }
-			else if (!_fileSystem.FileExists(outputPath))
+            else if (!_fileSystem.FileExists(outputPath))
             {
                 failed = true;
             }
@@ -664,7 +654,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                 _logger.Error(msg);
 
-                throw new ApplicationException(msg);
+                throw new Exception(msg);
             }
             else
             {
@@ -691,20 +681,26 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             string text;
             Encoding encoding;
 
-            using (var reader = new StreamReader(file, true))
+            using (var fileStream = _fileSystem.OpenRead(file))
             {
-                encoding = reader.CurrentEncoding;
+                using (var reader = new StreamReader(fileStream, true))
+                {
+                    encoding = reader.CurrentEncoding;
 
-                text = await reader.ReadToEndAsync().ConfigureAwait(false);
+                    text = await reader.ReadToEndAsync().ConfigureAwait(false);
+                }
             }
 
             var newText = text.Replace(",Arial,", ",Arial Unicode MS,");
 
             if (!string.Equals(text, newText))
             {
-                using (var writer = new StreamWriter(file, false, encoding))
+                using (var fileStream = _fileSystem.GetFileStream(file, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read))
                 {
-                    writer.Write(newText);
+                    using (var writer = new StreamWriter(fileStream, encoding))
+                    {
+                        writer.Write(newText);
+                    }
                 }
             }
         }
@@ -733,17 +729,19 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
         }
 
-        public async Task<string> GetSubtitleFileCharacterSet(string path, MediaProtocol protocol, CancellationToken cancellationToken)
+        public async Task<string> GetSubtitleFileCharacterSet(string path, string language, MediaProtocol protocol, CancellationToken cancellationToken)
         {
             if (protocol == MediaProtocol.File)
             {
-                if (GetFileEncoding(path).Equals(Encoding.UTF8))
+                var fileEncoding = _textEncoding.GetFileEncoding(path);
+
+                if (fileEncoding != null && fileEncoding.Equals(Encoding.UTF8))
                 {
                     return string.Empty;
                 }
             }
 
-            var charset = await DetectCharset(path, protocol, cancellationToken).ConfigureAwait(false);
+            var charset = await DetectCharset(path, language, protocol, cancellationToken).ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(charset))
             {
@@ -755,19 +753,27 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 return charset;
             }
 
+            if (!string.IsNullOrWhiteSpace(language))
+            {
+                return GetSubtitleFileCharacterSetFromLanguage(language);
+            }
+
             return null;
         }
 
         public string GetSubtitleFileCharacterSetFromLanguage(string language)
         {
+            // https://developer.xamarin.com/api/type/System.Text.Encoding/
+
             switch (language.ToLower())
             {
+                case "hun":
+                    return "windows-1252";
                 case "pol":
                 case "cze":
                 case "ces":
                 case "slo":
                 case "slk":
-                case "hun":
                 case "slv":
                 case "srp":
                 case "hrv":
@@ -799,7 +805,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
         }
 
-        private async Task<string> DetectCharset(string path, MediaProtocol protocol, CancellationToken cancellationToken)
+        private async Task<string> DetectCharset(string path, string language, MediaProtocol protocol, CancellationToken cancellationToken)
         {
             try
             {
@@ -816,6 +822,15 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                         _logger.Info("UniversalDetector detected charset {0} for {1}", charset, path);
                     }
 
+                    // This is often incorrectly indetected. If this happens, try to use other techniques instead
+                    if (string.Equals("x-mac-cyrillic", charset, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!string.IsNullOrWhiteSpace(language))
+                        {
+                            return null;
+                        }
+                    }
+
                     return charset;
                 }
             }
@@ -827,29 +842,6 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             return null;
         }
 
-        private Encoding GetFileEncoding(string srcFile)
-        {
-            // *** Detect byte order mark if any - otherwise assume default
-            var buffer = new byte[5];
-
-            using (var file = _fileSystem.GetFileStream(srcFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            {
-                file.Read(buffer, 0, 5);
-            }
-
-            if (buffer[0] == 0xef && buffer[1] == 0xbb && buffer[2] == 0xbf)
-                return Encoding.UTF8;
-            if (buffer[0] == 0xfe && buffer[1] == 0xff)
-                return Encoding.Unicode;
-            if (buffer[0] == 0 && buffer[1] == 0 && buffer[2] == 0xfe && buffer[3] == 0xff)
-                return Encoding.UTF32;
-            if (buffer[0] == 0x2b && buffer[1] == 0x2f && buffer[2] == 0x76)
-                return Encoding.UTF7;
-
-            // It's ok - anything aside from utf is ok since that's what we're looking for
-            return Encoding.Default;
-        }
-
         private async Task<Stream> GetStream(string path, MediaProtocol protocol, CancellationToken cancellationToken)
         {
             if (protocol == MediaProtocol.Http)
@@ -858,7 +850,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
             if (protocol == MediaProtocol.File)
             {
-                return _fileSystem.GetFileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return _fileSystem.GetFileStream(path, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite);
             }
 
             throw new ArgumentOutOfRangeException("protocol");

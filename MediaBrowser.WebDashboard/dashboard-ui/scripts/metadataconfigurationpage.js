@@ -1,12 +1,11 @@
-﻿(function () {
+﻿define(['jQuery', 'fnchecked'], function ($) {
+    'use strict';
 
     function load(page, config, allCultures, allCountries) {
         if (!config || !allCultures || !allCountries) {
             return;
         }
 
-        page.querySelector('#chkEnableInternetProviders').checked = config.EnableInternetProviders;
-        page.querySelector('#chkSaveLocal').checked = config.SaveLocalMeta;
         $('#selectLanguage', page).val(config.PreferredMetadataLanguage);
         $('#selectCountry', page).val(config.MetadataCountryCode);
 
@@ -20,16 +19,55 @@
 
         ApiClient.getServerConfiguration().then(function (config) {
 
-            config.EnableInternetProviders = form.querySelector('#chkEnableInternetProviders').checked;
-            config.SaveLocalMeta = form.querySelector('#chkSaveLocal').checked;
             config.PreferredMetadataLanguage = $('#selectLanguage', form).val();
             config.MetadataCountryCode = $('#selectCountry', form).val();
 
-            ApiClient.updateServerConfiguration(config).then(Dashboard.processServerConfigurationUpdateResult);
+            ApiClient.updateServerConfiguration(config).then(function() {
+                Dashboard.processServerConfigurationUpdateResult();
+
+                showConfirmMessage(config);
+            });
         });
 
         // Disable default form submission
         return false;
+    }
+
+    function showConfirmMessage(config) {
+
+        var msg = [];
+
+        msg.push(Globalize.translate('MetadataSettingChangeHelp'));
+
+        if (config.DownloadImagesInAdvance) {
+            msg.push(Globalize.translate('DownloadImagesInAdvanceWarning'));
+        }
+
+        if (!msg.length) {
+            return;
+        }
+
+        require(['alert'], function (alert) {
+            alert({
+                text: msg.join('<br/><br/>')
+            });
+        });
+    }
+
+    function getTabs() {
+        return [
+        {
+            href: 'metadata.html',
+            name: Globalize.translate('TabSettings')
+        },
+         {
+             href: 'metadataimages.html',
+             name: Globalize.translate('TabServices')
+         },
+         {
+             href: 'metadatanfo.html',
+             name: Globalize.translate('TabNfoSettings')
+         }];
     }
 
     $(document).on('pageinit', "#metadataConfigurationPage", function () {
@@ -40,6 +78,7 @@
 
     }).on('pageshow', "#metadataConfigurationPage", function () {
 
+        LibraryMenu.setTabs('metadata', 0, getTabs);
         Dashboard.showLoadingMsg();
 
         var page = this;
@@ -103,4 +142,4 @@
         });
     });
 
-})();
+});

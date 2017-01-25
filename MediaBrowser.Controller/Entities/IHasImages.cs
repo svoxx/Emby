@@ -1,12 +1,12 @@
 ﻿using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -152,11 +152,7 @@ namespace MediaBrowser.Controller.Entities
         /// <value><c>true</c> if [supports local metadata]; otherwise, <c>false</c>.</value>
         bool SupportsLocalMetadata { get; }
 
-        /// <summary>
-        /// Gets a value indicating whether this instance is in mixed folder.
-        /// </summary>
-        /// <value><c>true</c> if this instance is in mixed folder; otherwise, <c>false</c>.</value>
-        bool IsInMixedFolder { get; }
+        bool DetectIsInMixedFolder();
 
         /// <summary>
         /// Gets a value indicating whether this instance is locked.

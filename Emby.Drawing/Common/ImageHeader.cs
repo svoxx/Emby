@@ -1,11 +1,12 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Model.Drawing;
+﻿using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace Emby.Drawing.Common
 {
@@ -47,7 +48,7 @@ namespace Emby.Drawing.Common
         /// <exception cref="ArgumentException">The image was of an unrecognised format.</exception>
         public static ImageSize GetDimensions(string path, ILogger logger, IFileSystem fileSystem)
         {
-            using (var fs = File.OpenRead(path))
+            using (var fs = fileSystem.OpenRead(path))
             {
                 using (var binaryReader = new BinaryReader(fs))
                 {

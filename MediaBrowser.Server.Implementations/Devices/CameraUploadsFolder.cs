@@ -3,11 +3,13 @@ using MediaBrowser.Controller.Entities;
 using System;
 using System.IO;
 using System.Linq;
-using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Server.Implementations.Devices
 {
@@ -28,6 +30,7 @@ namespace MediaBrowser.Server.Implementations.Devices
             return base.IsVisible(user) && HasChildren();
         }
 
+        [IgnoreDataMember]
         public override string CollectionType
         {
             get { return Model.Entities.CollectionType.Photos; }
@@ -61,29 +64,4 @@ namespace MediaBrowser.Server.Implementations.Devices
             get { return true; }
         }
     }
-
-    public class CameraUploadsDynamicFolder : IVirtualFolderCreator
-    {
-        private readonly IApplicationPaths _appPaths;
-        private readonly IFileSystem _fileSystem;
-
-        public CameraUploadsDynamicFolder(IApplicationPaths appPaths, IFileSystem fileSystem)
-        {
-            _appPaths = appPaths;
-            _fileSystem = fileSystem;
-        }
-
-        public BasePluginFolder GetFolder()
-        {
-            var path = Path.Combine(_appPaths.DataPath, "camerauploads");
-
-            _fileSystem.CreateDirectory(path);
-
-            return new CameraUploadsFolder
-            {
-                Path = path
-            };
-        }
-    }
-
 }

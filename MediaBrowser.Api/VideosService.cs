@@ -1,17 +1,19 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -54,8 +56,9 @@ namespace MediaBrowser.Api
         private readonly IFileSystem _fileSystem;
         private readonly IItemRepository _itemRepo;
         private readonly IServerConfigurationManager _config;
+        private readonly IAuthorizationContext _authContext;
 
-        public VideosService(ILibraryManager libraryManager, IUserManager userManager, IDtoService dtoService, IItemRepository itemRepo, IFileSystem fileSystem, IServerConfigurationManager config)
+        public VideosService(ILibraryManager libraryManager, IUserManager userManager, IDtoService dtoService, IItemRepository itemRepo, IFileSystem fileSystem, IServerConfigurationManager config, IAuthorizationContext authContext)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
@@ -63,6 +66,7 @@ namespace MediaBrowser.Api
             _itemRepo = itemRepo;
             _fileSystem = fileSystem;
             _config = config;
+            _authContext = authContext;
         }
 
         /// <summary>
@@ -80,13 +84,20 @@ namespace MediaBrowser.Api
                                   : _libraryManager.RootFolder)
                            : _libraryManager.GetItemById(request.Id);
 
-            var dtoOptions = GetDtoOptions(request);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var video = (Video)item;
-
-            var items = video.GetAdditionalParts()
-                         .Select(i => _dtoService.GetBaseItemDto(i, dtoOptions, user, video))
-                         .ToArray();
+            var video = item as Video;
+            BaseItemDto[] items;
+            if (video != null)
+            {
+                items = video.GetAdditionalParts()
+                    .Select(i => _dtoService.GetBaseItemDto(i, dtoOptions, user, video))
+                    .ToArray();
+            }
+            else
+            {
+                items = new BaseItemDto[] { };
+            }
 
             var result = new ItemsResult
             {
@@ -131,6 +142,7 @@ namespace MediaBrowser.Api
             var items = request.Ids.Split(',')
                 .Select(i => new Guid(i))
                 .Select(i => _libraryManager.GetItemById(i))
+                .OfType<Video>()
                 .ToList();
 
             if (items.Count < 2)
@@ -138,14 +150,7 @@ namespace MediaBrowser.Api
                 throw new ArgumentException("Please supply at least two videos to merge.");
             }
 
-            if (items.Any(i => !(i is Video)))
-            {
-                throw new ArgumentException("Only videos can be grouped together.");
-            }
-
-            var videos = items.Cast<Video>().ToList();
-
-            var videosWithVersions = videos.Where(i => i.MediaSourceCount > 1)
+            var videosWithVersions = items.Where(i => i.MediaSourceCount > 1)
                 .ToList();
 
             if (videosWithVersions.Count > 1)
@@ -157,7 +162,7 @@ namespace MediaBrowser.Api
 
             if (primaryVersion == null)
             {
-                primaryVersion = videos.OrderBy(i =>
+                primaryVersion = items.OrderBy(i =>
                 {
                     if (i.Video3DFormat.HasValue)
                     {
@@ -180,9 +185,9 @@ namespace MediaBrowser.Api
                     }).First();
             }
 
-            foreach (var item in videos.Where(i => i.Id != primaryVersion.Id))
+            foreach (var item in items.Where(i => i.Id != primaryVersion.Id))
             {
-                item.PrimaryVersionId = primaryVersion.Id;
+                item.PrimaryVersionId = primaryVersion.Id.ToString("N");
 
                 await item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 

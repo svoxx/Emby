@@ -8,15 +8,16 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
-using ServiceStack;
-using ServiceStack.Web;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.Images
 {
@@ -204,7 +205,6 @@ namespace MediaBrowser.Api.Images
     /// </summary>
     [Route("/Items/{Id}/Images/{Type}", "POST")]
     [Route("/Items/{Id}/Images/{Type}/{Index}", "POST")]
-    [Api(Description = "Posts an item image")]
     [Authenticated(Roles = "admin")]
     public class PostItemImage : DeleteImageRequest, IRequiresRequestStream, IReturnVoid
     {
@@ -236,11 +236,12 @@ namespace MediaBrowser.Api.Images
         private readonly IItemRepository _itemRepo;
         private readonly IImageProcessor _imageProcessor;
         private readonly IFileSystem _fileSystem;
+        private readonly IAuthorizationContext _authContext;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ImageService" /> class.
         /// </summary>
-        public ImageService(IUserManager userManager, ILibraryManager libraryManager, IProviderManager providerManager, IItemRepository itemRepo, IImageProcessor imageProcessor, IFileSystem fileSystem)
+        public ImageService(IUserManager userManager, ILibraryManager libraryManager, IProviderManager providerManager, IItemRepository itemRepo, IImageProcessor imageProcessor, IFileSystem fileSystem, IAuthorizationContext authContext)
         {
             _userManager = userManager;
             _libraryManager = libraryManager;
@@ -248,6 +249,7 @@ namespace MediaBrowser.Api.Images
             _itemRepo = itemRepo;
             _imageProcessor = imageProcessor;
             _fileSystem = fileSystem;
+            _authContext = authContext;
         }
 
         /// <summary>
@@ -273,7 +275,9 @@ namespace MediaBrowser.Api.Images
         {
             var list = new List<ImageInfo>();
 
-            foreach (var image in item.ImageInfos.Where(i => !item.AllowsMultipleImages(i.Type)))
+            var itemImages = item.ImageInfos;
+
+            foreach (var image in itemImages.Where(i => !item.AllowsMultipleImages(i.Type)))
             {
                 var info = GetImageInfo(item, image, null);
 
@@ -283,14 +287,14 @@ namespace MediaBrowser.Api.Images
                 }
             }
 
-            foreach (var imageType in item.ImageInfos.Select(i => i.Type).Distinct().Where(item.AllowsMultipleImages))
+            foreach (var imageType in itemImages.Select(i => i.Type).Distinct().Where(item.AllowsMultipleImages))
             {
                 var index = 0;
 
                 // Prevent implicitly captured closure
                 var currentImageType = imageType;
 
-                foreach (var image in item.ImageInfos.Where(i => i.Type == currentImageType))
+                foreach (var image in itemImages.Where(i => i.Type == currentImageType))
                 {
                     var info = GetImageInfo(item, image, index);
 
@@ -318,7 +322,7 @@ namespace MediaBrowser.Api.Images
                 {
                     if (info.IsLocalFile)
                     {
-                        var fileInfo = new FileInfo(info.Path);
+                        var fileInfo = _fileSystem.GetFileInfo(info.Path);
                         length = fileInfo.Length;
 
                         var size = _imageProcessor.GetImageSize(info);
@@ -423,7 +427,7 @@ namespace MediaBrowser.Api.Images
         public void Post(PostUserImage request)
         {
             var userId = GetPathValue(1);
-            AssertCanUpdateUser(_userManager, userId);
+            AssertCanUpdateUser(_authContext, _userManager, userId);
 
             request.Type = (ImageType)Enum.Parse(typeof(ImageType), GetPathValue(3), true);
 
@@ -458,7 +462,7 @@ namespace MediaBrowser.Api.Images
         public void Delete(DeleteUserImage request)
         {
             var userId = request.Id;
-            AssertCanUpdateUser(_userManager, userId);
+            AssertCanUpdateUser(_authContext, _userManager, userId);
 
             var item = _userManager.GetUserById(userId);
 
@@ -514,7 +518,7 @@ namespace MediaBrowser.Api.Images
         /// <param name="isHeadRequest">if set to <c>true</c> [is head request].</param>
         /// <returns>System.Object.</returns>
         /// <exception cref="ResourceNotFoundException"></exception>
-        public object GetImage(ImageRequest request, IHasImages item, bool isHeadRequest)
+        public Task<object> GetImage(ImageRequest request, IHasImages item, bool isHeadRequest)
         {
             if (request.PercentPlayed.HasValue)
             {
@@ -571,11 +575,9 @@ namespace MediaBrowser.Api.Images
 
             var outputFormats = GetOutputFormats(request, imageInfo, cropwhitespace, supportedImageEnhancers);
 
-            var cacheGuid = new Guid(_imageProcessor.GetImageCacheTag(item, imageInfo, supportedImageEnhancers));
-
             TimeSpan? cacheDuration = null;
 
-            if (!string.IsNullOrEmpty(request.Tag) && cacheGuid == new Guid(request.Tag))
+            if (!string.IsNullOrEmpty(request.Tag))
             {
                 cacheDuration = TimeSpan.FromDays(365);
             }
@@ -594,8 +596,7 @@ namespace MediaBrowser.Api.Images
                 supportedImageEnhancers,
                 cacheDuration,
                 responseHeaders,
-                isHeadRequest)
-                .Result;
+                isHeadRequest);
         }
 
         private async Task<object> GetImageResult(IHasImages item,
@@ -623,6 +624,7 @@ namespace MediaBrowser.Api.Images
                 AddPlayedIndicator = request.AddPlayedIndicator,
                 PercentPlayed = request.PercentPlayed ?? 0,
                 UnplayedCount = request.UnplayedCount,
+                Blur = request.Blur,
                 BackgroundColor = request.BackgroundColor,
                 ForegroundLayer = request.ForegroundLayer,
                 SupportedOutputFormats = supportedFormats
@@ -632,18 +634,20 @@ namespace MediaBrowser.Api.Images
 
             headers["Vary"] = "Accept";
 
-            return ResultFactory.GetStaticFileResult(Request, new StaticFileResultOptions
+            return await ResultFactory.GetStaticFileResult(Request, new StaticFileResultOptions
             {
                 CacheDuration = cacheDuration,
                 ResponseHeaders = headers,
                 ContentType = imageResult.Item2,
+                DateLastModified = imageResult.Item3,
                 IsHeadRequest = isHeadRequest,
                 Path = imageResult.Item1,
 
                 // Sometimes imagemagick keeps a hold on the file briefly even after it's done writing to it.
                 // I'd rather do this than add a delay after saving the file
-                FileShare = FileShare.ReadWrite
-            });
+                FileShare = FileShareMode.ReadWrite
+
+            }).ConfigureAwait(false);
         }
 
         private List<ImageFormat> GetOutputFormats(ImageRequest request, ItemImageInfo image, bool cropwhitespace, List<IImageEnhancer> enhancers)
@@ -699,6 +703,7 @@ namespace MediaBrowser.Api.Images
 
         private ImageFormat[] GetClientSupportedFormats()
         {
+            //Logger.Debug("Request types: {0}", string.Join(",", Request.AcceptTypes ?? new string[] { }));
             var supportsWebP = (Request.AcceptTypes ?? new string[] { }).Contains("image/webp", StringComparer.OrdinalIgnoreCase);
 
             var userAgent = Request.UserAgent ?? string.Empty;

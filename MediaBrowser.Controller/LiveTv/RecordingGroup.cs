@@ -1,4 +1,5 @@
-﻿using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Model.Serialization;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Users;
 
@@ -23,6 +24,13 @@ namespace MediaBrowser.Controller.LiveTv
             {
                 return false;
             }
+        }
+
+        [IgnoreDataMember]
+        public override SourceType SourceType
+        {
+            get { return SourceType.LiveTV; }
+            set { }
         }
     }
 }

@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Logging;
@@ -8,15 +7,13 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Xml;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.XbmcMetadata.Parsers
 {
     public class EpisodeNfoParser : BaseNfoParser<Episode>
     {
-        public EpisodeNfoParser(ILogger logger, IConfigurationManager config) : base(logger, config)
-        {
-        }
-
         public void Fetch(MetadataResult<Episode> item,
             List<LocalImageInfo> images,
             string metadataFile, 
@@ -189,11 +186,51 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
+                case "displayseason":
+                    {
+                        var val = reader.ReadElementContentAsString();
+
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            int rval;
+
+                            // int.TryParse is local aware, so it can be probamatic, force us culture
+                            if (int.TryParse(val, NumberStyles.Integer, UsCulture, out rval))
+                            {
+                                item.AirsBeforeSeasonNumber = rval;
+                            }
+                        }
+
+                        break;
+                    }
+
+                case "displayepisode":
+                    {
+                        var val = reader.ReadElementContentAsString();
+
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            int rval;
+
+                            // int.TryParse is local aware, so it can be probamatic, force us culture
+                            if (int.TryParse(val, NumberStyles.Integer, UsCulture, out rval))
+                            {
+                                item.AirsBeforeEpisodeNumber = rval;
+                            }
+                        }
+
+                        break;
+                    }
+
 
                 default:
                     base.FetchDataFromXmlNode(reader, itemResult);
                     break;
             }
+        }
+
+        public EpisodeNfoParser(ILogger logger, IConfigurationManager config, IProviderManager providerManager, IFileSystem fileSystem, IXmlReaderSettingsFactory xmlReaderSettingsFactory) : base(logger, config, providerManager, fileSystem, xmlReaderSettingsFactory)
+        {
         }
     }
 }

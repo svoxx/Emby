@@ -1,20 +1,19 @@
-﻿(function () {
+﻿define(['jQuery', 'emby-checkbox', 'fnchecked'], function ($) {
+    'use strict';
 
     var notificationsConfigurationKey = "notifications";
 
     function fillItems(elem, items, cssClass, idPrefix, currentList, isEnabledList) {
 
-        var html = '<div data-role="controlgroup">';
+        var html = '<div class="checkboxList paperList" style="padding: .5em 1em;">';
 
         html += items.map(function (u) {
-
-            var id = idPrefix + u.Id;
 
             var isChecked = isEnabledList ? currentList.indexOf(u.Id) != -1 : currentList.indexOf(u.Id) == -1;
 
             var checkedHtml = isChecked ? ' checked="checked"' : '';
 
-            return '<label for="' + id + '">' + u.Name + '</label><input class="' + cssClass + '" type="checkbox" data-itemid="' + u.Id + '" id="' + id + '"' + checkedHtml + ' />';
+            return '<label><input is="emby-checkbox" class="' + cssClass + '" type="checkbox" data-itemid="' + u.Id + '"' + checkedHtml + '/><span>' + u.Name + '</span></label>';
 
         }).join('');
 
@@ -86,7 +85,7 @@
             fillItems($('.sendToUsersList', page), users, 'chkSendTo', 'chkSendTo', notificationConfig.SendToUsers, true);
             fillItems($('.servicesList', page), services, 'chkService', 'chkService', notificationConfig.DisabledServices);
 
-            $('#chkEnabled', page).checked(notificationConfig.Enabled || false).checkboxradio('refresh');
+            $('#chkEnabled', page).checked(notificationConfig.Enabled || false);
 
             $('#txtTitle', page).val(notificationConfig.Title || typeInfo.DefaultTitle);
 
@@ -135,20 +134,27 @@
                 notificationConfig.Title = null;
             }
 
-            notificationConfig.DisabledMonitorUsers = $('.chkMonitor:not(:checked)', page).get().map(function (c) {
+            notificationConfig.DisabledMonitorUsers = $('.chkMonitor', page).get().filter(function (c) {
+                return !c.checked;
+            }).map(function (c) {
                 return c.getAttribute('data-itemid');
             });
 
-            notificationConfig.SendToUsers = $('.chkSendTo:checked', page).get().map(function (c) {
+            notificationConfig.SendToUsers = $('.chkSendTo', page).get().filter(function (c) {
+                return c.checked;
+            }).map(function (c) {
                 return c.getAttribute('data-itemid');
             });
 
-            notificationConfig.DisabledServices = $('.chkService:not(:checked)', page).get().map(function (c) {
+            notificationConfig.DisabledServices = $('.chkService', page).get().filter(function (c) {
+                return !c.checked;
+            }).map(function (c) {
                 return c.getAttribute('data-itemid');
             });
 
             ApiClient.updateNamedConfiguration(notificationsConfigurationKey, notificationOptions).then(function (r) {
 
+                Dashboard.processServerConfigurationUpdateResult();
                 Dashboard.navigate('notificationsettings.html');
             });
 
@@ -184,4 +190,4 @@
         reload(page);
     });
 
-})(jQuery, window);
+});

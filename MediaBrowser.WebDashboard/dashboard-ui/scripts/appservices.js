@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function reloadList(page) {
 
@@ -43,11 +44,13 @@
             installedPlugins = installedPlugins.filter(function (i) {
 
                 var catalogEntry = availablePlugins.filter(function (a) {
-                    return a.guid == i.Id;
+                    return (a.guid || '').toLowerCase() == (i.Id || '').toLowerCase();
                 })[0];
 
-                return catalogEntry && catalogEntry.category == category;
-
+                if (catalogEntry) {
+                    return catalogEntry.category == category;
+                }
+                return false;
             });
 
             PluginsPage.renderPlugins(page, installedPlugins);
@@ -80,23 +83,18 @@
 
         var context = getParameterByName('context');
 
-        $('.sectionTabs', page).hide();
-
         if (context == 'sync') {
-            Dashboard.setPageTitle(Globalize.translate('TitleSync'));
+            LibraryMenu.setTitle(Globalize.translate('TitleSync'));
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Sync');
         }
         else if (context == 'livetv') {
-            Dashboard.setPageTitle(Globalize.translate('TitleLiveTV'));
+            LibraryMenu.setTitle(Globalize.translate('TitleLiveTV'));
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Live%20TV');
         }
         else if (context == 'notifications') {
-            Dashboard.setPageTitle(Globalize.translate('TitleNotifications'));
+            LibraryMenu.setTitle(Globalize.translate('TitleNotifications'));
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Notifications');
         }
-
-        $('.sectionTabs', page).hide();
-        $('.' + context + 'SectionTabs', page).show();
 
     }).on('pageshow', "#appServicesPage", function () {
 
@@ -105,4 +103,4 @@
         reloadList(page);
     });
 
-})(jQuery, document);
+});

@@ -4,8 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CommonIO;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
 
 namespace MediaBrowser.Controller.MediaEncoding
 {
@@ -37,8 +37,13 @@ namespace MediaBrowser.Controller.MediaEncoding
             return new[] {videoPath};
         }
 
-        public static List<string> GetPlayableStreamFiles(IFileSystem fileSystem, string rootPath, IEnumerable<string> filenames)
+        private static List<string> GetPlayableStreamFiles(IFileSystem fileSystem, string rootPath, List<string> filenames)
         {
+            if (filenames.Count == 0)
+            {
+                return new List<string>();
+            }
+
             var allFiles = fileSystem
                 .GetFilePaths(rootPath, true)
                 .ToList();

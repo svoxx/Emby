@@ -1,50 +1,54 @@
 ﻿using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.LiveTv;
-using MediaBrowser.Model.Users;
 using System;
+using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Serialization;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Providers;
+using MediaBrowser.Model.Serialization;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Controller.LiveTv
 {
-    public class LiveTvProgram : BaseItem, ILiveTvItem, IHasLookupInfo<LiveTvProgramLookupInfo>, IHasStartDate, IHasProgramAttributes
+    public class LiveTvProgram : BaseItem, IHasLookupInfo<LiveTvProgramLookupInfo>, IHasStartDate, IHasProgramAttributes
     {
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            if (IsMovie)
-            {
-                var key = Movie.GetMovieUserDataKey(this);
+            var list = base.GetUserDataKeys();
 
+            if (!IsSeries)
+            {
+                var key = this.GetProviderId(MetadataProviders.Imdb);
                 if (!string.IsNullOrWhiteSpace(key))
                 {
-                    return key;
+                    list.Insert(0, key);
+                }
+
+                key = this.GetProviderId(MetadataProviders.Tmdb);
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    list.Insert(0, key);
                 }
             }
-
-            if (IsSeries && !string.IsNullOrWhiteSpace(EpisodeTitle))
+            else if (!string.IsNullOrWhiteSpace(EpisodeTitle))
             {
                 var name = GetClientTypeName();
 
-                return name + "-" + Name + (EpisodeTitle ?? string.Empty);
+                list.Insert(0, name + "-" + Name + (EpisodeTitle ?? string.Empty));
             }
 
-            return base.CreateUserDataKey();
+            return list;
         }
 
-        /// <summary>
-        /// Gets or sets the name.
-        /// </summary>
-        /// <value>The name.</value>
         [IgnoreDataMember]
-        public string ServiceName { get; set; }
+        public override SourceType SourceType
+        {
+            get { return SourceType.LiveTV; }
+            set { }
+        }
 
         /// <summary>
         /// The start date of the program, in UTC.
@@ -233,6 +237,60 @@ namespace MediaBrowser.Controller.LiveTv
             {
                 return false;
             }
+        }
+
+        private LiveTvOptions GetConfiguration()
+        {
+            return ConfigurationManager.GetConfiguration<LiveTvOptions>("livetv");
+        }
+
+        private ListingsProviderInfo GetListingsProviderInfo()
+        {
+            if (string.Equals(ServiceName, "Emby", StringComparison.OrdinalIgnoreCase))
+            {
+                var config = GetConfiguration();
+
+                return config.ListingProviders.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.MoviePrefix));
+            }
+
+            return null;
+        }
+
+        protected override string GetNameForMetadataLookup()
+        {
+            var name = base.GetNameForMetadataLookup();
+
+            var listings = GetListingsProviderInfo();
+
+            if (listings != null)
+            {
+                if (!string.IsNullOrWhiteSpace(listings.MoviePrefix) && name.StartsWith(listings.MoviePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(listings.MoviePrefix.Length).Trim();
+                }
+            }
+
+            return name;
+        }
+
+        public override List<ExternalUrl> GetRelatedUrls()
+        {
+            var list = base.GetRelatedUrls();
+
+            var imdbId = this.GetProviderId(MetadataProviders.Imdb);
+            if (!string.IsNullOrWhiteSpace(imdbId))
+            {
+                if (IsMovie)
+                {
+                    list.Add(new ExternalUrl
+                    {
+                        Name = "Trakt",
+                        Url = string.Format("https://trakt.tv/movies/{0}", imdbId)
+                    });
+                }
+            }
+
+            return list;
         }
     }
 }

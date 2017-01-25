@@ -6,19 +6,25 @@ using MediaBrowser.Model.Users;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Serialization;
+using MediaBrowser.Model.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Extensions;
+using MediaBrowser.Controller.Extensions;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Controller.Entities.Audio
 {
     /// <summary>
     /// Class MusicArtist
     /// </summary>
-    public class MusicArtist : Folder, IMetadataContainer, IItemByName, IHasMusicGenres, IHasDualAccess, IHasProductionLocations, IHasLookupInfo<ArtistInfo>
+    public class MusicArtist : Folder, IMetadataContainer, IItemByName, IHasMusicGenres, IHasDualAccess, IHasLookupInfo<ArtistInfo>
     {
-        public bool IsAccessedByName { get; set; }
-        public List<string> ProductionLocations { get; set; }
+        [IgnoreDataMember]
+        public bool IsAccessedByName
+        {
+            get { return ParentId == Guid.Empty; }
+        }
 
         [IgnoreDataMember]
         public override bool IsFolder
@@ -30,9 +36,27 @@ namespace MediaBrowser.Controller.Entities.Audio
         }
 
         [IgnoreDataMember]
+        public override bool SupportsCumulativeRunTimeTicks
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+        [IgnoreDataMember]
         public override bool SupportsAddingToPlaylist
         {
             get { return true; }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsPlayedStatus
+        {
+            get
+            {
+                return false;
+            }
         }
 
         public override bool CanDelete()
@@ -40,6 +64,18 @@ namespace MediaBrowser.Controller.Entities.Audio
             return !IsAccessedByName;
         }
 
+        public IEnumerable<BaseItem> GetTaggedItems(InternalItemsQuery query)
+        {
+            if (query.IncludeItemTypes.Length == 0)
+            {
+                query.IncludeItemTypes = new[] { typeof(Audio).Name, typeof(MusicVideo).Name, typeof(MusicAlbum).Name };
+                query.ArtistIds = new[] { Id.ToString("N") };
+            }
+
+            return LibraryManager.GetItemList(query);
+        }
+
+        [IgnoreDataMember]
         protected override IEnumerable<BaseItem> ActualChildren
         {
             get
@@ -51,6 +87,15 @@ namespace MediaBrowser.Controller.Entities.Audio
 
                 return base.ActualChildren;
             }
+        }
+
+        public override int GetChildCount(User user)
+        {
+            if (IsAccessedByName)
+            {
+                return 0;
+            }
+            return base.GetChildCount(user);
         }
 
         public override bool IsSaveLocalMetadataEnabled()
@@ -75,18 +120,12 @@ namespace MediaBrowser.Controller.Entities.Audio
             return base.ValidateChildrenInternal(progress, cancellationToken, recursive, refreshChildMetadata, refreshOptions, directoryService);
         }
 
-        public MusicArtist()
+        public override List<string> GetUserDataKeys()
         {
-            ProductionLocations = new List<string>();
-        }
+            var list = base.GetUserDataKeys();
 
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
-        {
-            return GetUserDataKey(this);
+            list.InsertRange(0, GetUserDataKeys(this));
+            return list;
         }
 
         /// <summary>
@@ -121,18 +160,23 @@ namespace MediaBrowser.Controller.Entities.Audio
         /// </summary>
         /// <param name="item">The item.</param>
         /// <returns>System.String.</returns>
-        private static string GetUserDataKey(MusicArtist item)
+        private static List<string> GetUserDataKeys(MusicArtist item)
         {
+            var list = new List<string>();
             var id = item.GetProviderId(MetadataProviders.MusicBrainzArtist);
 
             if (!string.IsNullOrEmpty(id))
             {
-                return "Artist-Musicbrainz-" + id;
+                list.Add("Artist-Musicbrainz-" + id);
             }
 
-            return "Artist-" + item.Name;
+            list.Add("Artist-" + (item.Name ?? string.Empty).RemoveDiacritics());
+            return list;
         }
-
+        public override string CreatePresentationUniqueKey()
+        {
+            return "Artist-" + (Name ?? string.Empty).RemoveDiacritics();
+        }
         protected override bool GetBlockUnratedValue(UserPolicy config)
         {
             return config.BlockUnratedItems.Contains(UnratedItem.Music);
@@ -229,6 +273,55 @@ namespace MediaBrowser.Controller.Entities.Audio
             {
                 return false;
             }
+        }
+
+        public static string GetPath(string name, bool normalizeName = true)
+        {
+            // Trim the period at the end because windows will have a hard time with that
+            var validName = normalizeName ?
+                FileSystem.GetValidFilename(name).Trim().TrimEnd('.') :
+                name;
+
+            return System.IO.Path.Combine(ConfigurationManager.ApplicationPaths.ArtistsPath, validName);
+        }
+
+        private string GetRebasedPath()
+        {
+            return GetPath(System.IO.Path.GetFileName(Path), false);
+        }
+
+        public override bool RequiresRefresh()
+        {
+            if (IsAccessedByName)
+            {
+                var newPath = GetRebasedPath();
+                if (!string.Equals(Path, newPath, StringComparison.Ordinal))
+                {
+                    Logger.Debug("{0} path has changed from {1} to {2}", GetType().Name, Path, newPath);
+                    return true;
+                }
+            }
+            return base.RequiresRefresh();
+        }
+
+        /// <summary>
+        /// This is called before any metadata refresh and returns true or false indicating if changes were made
+        /// </summary>
+        public override bool BeforeMetadataRefresh()
+        {
+            var hasChanges = base.BeforeMetadataRefresh();
+
+            if (IsAccessedByName)
+            {
+                var newPath = GetRebasedPath();
+                if (!string.Equals(Path, newPath, StringComparison.Ordinal))
+                {
+                    Path = newPath;
+                    hasChanges = true;
+                }
+            }
+
+            return hasChanges;
         }
     }
 }

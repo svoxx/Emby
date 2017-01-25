@@ -1,6 +1,6 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Branding;
-using ServiceStack;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -10,6 +10,7 @@ namespace MediaBrowser.Api
     }
 
     [Route("/Branding/Css", "GET", Summary = "Gets custom css")]
+    [Route("/Branding/Css.css", "GET", Summary = "Gets custom css")]
     public class GetBrandingCss
     {
     }

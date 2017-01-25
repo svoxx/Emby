@@ -1,19 +1,16 @@
-﻿using MediaBrowser.Controller.Collections;
-using MediaBrowser.Controller.Dto;
+﻿using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Audio;
-using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Localization;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -36,7 +33,6 @@ namespace MediaBrowser.Api.UserLibrary
         /// The _user manager
         /// </summary>
         private readonly IUserManager _userManager;
-        private readonly IUserDataManager _userDataRepository;
 
         /// <summary>
         /// The _library manager
@@ -45,25 +41,39 @@ namespace MediaBrowser.Api.UserLibrary
         private readonly ILocalizationManager _localization;
 
         private readonly IDtoService _dtoService;
-        private readonly ICollectionManager _collectionManager;
+        private readonly IAuthorizationContext _authContext;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ItemsService" /> class.
         /// </summary>
         /// <param name="userManager">The user manager.</param>
         /// <param name="libraryManager">The library manager.</param>
-        /// <param name="userDataRepository">The user data repository.</param>
         /// <param name="localization">The localization.</param>
         /// <param name="dtoService">The dto service.</param>
-        /// <param name="collectionManager">The collection manager.</param>
-        public ItemsService(IUserManager userManager, ILibraryManager libraryManager, IUserDataManager userDataRepository, ILocalizationManager localization, IDtoService dtoService, ICollectionManager collectionManager)
+        public ItemsService(IUserManager userManager, ILibraryManager libraryManager, ILocalizationManager localization, IDtoService dtoService, IAuthorizationContext authContext)
         {
+            if (userManager == null)
+            {
+                throw new ArgumentNullException("userManager");
+            }
+            if (libraryManager == null)
+            {
+                throw new ArgumentNullException("libraryManager");
+            }
+            if (localization == null)
+            {
+                throw new ArgumentNullException("localization");
+            }
+            if (dtoService == null)
+            {
+                throw new ArgumentNullException("dtoService");
+            }
+
             _userManager = userManager;
             _libraryManager = libraryManager;
-            _userDataRepository = userDataRepository;
             _localization = localization;
             _dtoService = dtoService;
-            _collectionManager = collectionManager;
+            _authContext = authContext;
         }
 
         /// <summary>
@@ -73,6 +83,11 @@ namespace MediaBrowser.Api.UserLibrary
         /// <returns>System.Object.</returns>
         public async Task<object> Get(GetItems request)
         {
+            if (request == null)
+            {
+                throw new ArgumentNullException("request");
+            }
+
             var result = await GetItems(request).ConfigureAwait(false);
 
             return ToOptimizedSerializedResultUsingCache(result);
@@ -85,101 +100,99 @@ namespace MediaBrowser.Api.UserLibrary
         /// <returns>Task{ItemsResult}.</returns>
         private async Task<ItemsResult> GetItems(GetItems request)
         {
-            var parentItem = string.IsNullOrEmpty(request.ParentId) ? null : _libraryManager.GetItemById(request.ParentId);
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
 
-            var result = await GetItemsToSerialize(request, user, parentItem).ConfigureAwait(false);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var dtoOptions = GetDtoOptions(request);
+            var result = await GetQueryResult(request, dtoOptions, user).ConfigureAwait(false);
+
+            if (result == null)
+            {
+                throw new InvalidOperationException("GetItemsToSerialize returned null");
+            }
+
+            if (result.Items == null)
+            {
+                throw new InvalidOperationException("GetItemsToSerialize result.Items returned null");
+            }
+
+            var dtoList = await _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user).ConfigureAwait(false);
+
+            if (dtoList == null)
+            {
+                throw new InvalidOperationException("GetBaseItemDtos returned null");
+            }
 
             return new ItemsResult
             {
-                TotalRecordCount = result.Item1.TotalRecordCount,
-                Items = _dtoService.GetBaseItemDtos(result.Item1.Items, dtoOptions, user).ToArray()
+                TotalRecordCount = result.TotalRecordCount,
+                Items = dtoList.ToArray()
             };
         }
 
         /// <summary>
         /// Gets the items to serialize.
         /// </summary>
-        /// <param name="request">The request.</param>
-        /// <param name="user">The user.</param>
-        /// <param name="parentItem">The parent item.</param>
-        /// <returns>IEnumerable{BaseItem}.</returns>
-        private async Task<Tuple<QueryResult<BaseItem>, bool>> GetItemsToSerialize(GetItems request, User user, BaseItem parentItem)
+        private async Task<QueryResult<BaseItem>> GetQueryResult(GetItems request, DtoOptions dtoOptions, User user)
         {
             var item = string.IsNullOrEmpty(request.ParentId) ?
-                user == null ? _libraryManager.RootFolder : user.RootFolder :
-                parentItem;
+                null :
+                _libraryManager.GetItemById(request.ParentId);
 
             if (string.Equals(request.IncludeItemTypes, "Playlist", StringComparison.OrdinalIgnoreCase))
             {
-                item = user == null ? _libraryManager.RootFolder : user.RootFolder;
+                if (item == null || user != null)
+                {
+                    item = _libraryManager.RootFolder.Children.OfType<Folder>().FirstOrDefault(i => string.Equals(i.GetType().Name, "PlaylistsFolder", StringComparison.OrdinalIgnoreCase));
+                }
             }
             else if (string.Equals(request.IncludeItemTypes, "BoxSet", StringComparison.OrdinalIgnoreCase))
             {
                 item = user == null ? _libraryManager.RootFolder : user.RootFolder;
             }
 
+            if (item == null)
+            {
+                item = string.IsNullOrEmpty(request.ParentId) ?
+                    user == null ? _libraryManager.RootFolder : user.RootFolder :
+                    _libraryManager.GetItemById(request.ParentId);
+            }
+
             // Default list type = children
 
-            if (!string.IsNullOrEmpty(request.Ids))
+            var folder = item as Folder;
+            if (folder == null)
             {
-                request.Recursive = true;
-                var query = GetItemsQuery(request, user);
-                var result = await ((Folder)item).GetItems(query).ConfigureAwait(false);
-
-                if (string.IsNullOrWhiteSpace(request.SortBy))
-                {
-                    var ids = query.ItemIds.ToList();
-
-                    // Try to preserve order
-                    result.Items = result.Items.OrderBy(i => ids.IndexOf(i.Id.ToString("N"))).ToArray();
-                }
-
-                return new Tuple<QueryResult<BaseItem>, bool>(result, true);
+                folder = user == null ? _libraryManager.RootFolder : _libraryManager.GetUserRootFolder();
             }
 
-            if (request.Recursive)
+            if (request.Recursive || !string.IsNullOrEmpty(request.Ids) || user == null)
             {
-                var result = await ((Folder)item).GetItems(GetItemsQuery(request, user)).ConfigureAwait(false);
-
-                return new Tuple<QueryResult<BaseItem>, bool>(result, true);
-            }
-
-            if (user == null)
-            {
-                var result = await ((Folder)item).GetItems(GetItemsQuery(request, null)).ConfigureAwait(false);
-
-                return new Tuple<QueryResult<BaseItem>, bool>(result, true);
+                return await folder.GetItems(GetItemsQuery(request, dtoOptions, user)).ConfigureAwait(false);
             }
 
             var userRoot = item as UserRootFolder;
 
             if (userRoot == null)
             {
-                var result = await ((Folder)item).GetItems(GetItemsQuery(request, user)).ConfigureAwait(false);
-
-                return new Tuple<QueryResult<BaseItem>, bool>(result, true);
+                return await folder.GetItems(GetItemsQuery(request, dtoOptions, user)).ConfigureAwait(false);
             }
 
-            IEnumerable<BaseItem> items = ((Folder)item).GetChildren(user, true);
+            IEnumerable<BaseItem> items = folder.GetChildren(user, true);
 
             var itemsArray = items.ToArray();
 
-            return new Tuple<QueryResult<BaseItem>, bool>(new QueryResult<BaseItem>
+            return new QueryResult<BaseItem>
             {
                 Items = itemsArray,
                 TotalRecordCount = itemsArray.Length
-
-            }, false);
+            };
         }
 
-        private InternalItemsQuery GetItemsQuery(GetItems request, User user)
+        private InternalItemsQuery GetItemsQuery(GetItems request, DtoOptions dtoOptions, User user)
         {
-            var query = new InternalItemsQuery
+            var query = new InternalItemsQuery(user)
             {
-                User = user,
                 IsPlayed = request.IsPlayed,
                 MediaTypes = request.GetMediaTypes(),
                 IncludeItemTypes = request.GetIncludeItemTypes(),
@@ -187,8 +200,6 @@ namespace MediaBrowser.Api.UserLibrary
                 Recursive = request.Recursive,
                 SortBy = request.GetOrderBy(),
                 SortOrder = request.SortOrder ?? SortOrder.Ascending,
-
-                Filter = i => ApplyAdditionalFilters(request, i, user, _libraryManager),
 
                 IsFavorite = request.IsFavorite,
                 Limit = request.Limit,
@@ -201,7 +212,6 @@ namespace MediaBrowser.Api.UserLibrary
                 NameStartsWith = request.NameStartsWith,
                 NameStartsWithOrGreater = request.NameStartsWithOrGreater,
                 HasImdbId = request.HasImdbId,
-                IsYearMismatched = request.IsYearMismatched,
                 IsPlaceHolder = request.IsPlaceHolder,
                 IsLocked = request.IsLocked,
                 IsInBoxSet = request.IsInBoxSet,
@@ -220,8 +230,8 @@ namespace MediaBrowser.Api.UserLibrary
                 Tags = request.GetTags(),
                 OfficialRatings = request.GetOfficialRatings(),
                 Genres = request.GetGenres(),
+                ArtistIds = request.GetArtistIds(),
                 GenreIds = request.GetGenreIds(),
-                Studios = request.GetStudios(),
                 StudioIds = request.GetStudioIds(),
                 Person = request.Person,
                 PersonIds = request.GetPersonIds(),
@@ -234,7 +244,14 @@ namespace MediaBrowser.Api.UserLibrary
                 MinPlayers = request.MinPlayers,
                 MaxPlayers = request.MaxPlayers,
                 MinCommunityRating = request.MinCommunityRating,
-                MinCriticRating = request.MinCriticRating
+                MinCriticRating = request.MinCriticRating,
+                ParentId = string.IsNullOrWhiteSpace(request.ParentId) ? (Guid?)null : new Guid(request.ParentId),
+                ParentIndexNumber = request.ParentIndexNumber,
+                AiredDuringSeason = request.AiredDuringSeason,
+                AlbumArtistStartsWithOrGreater = request.AlbumArtistStartsWithOrGreater,
+                EnableTotalRecordCount = request.EnableTotalRecordCount,
+                ExcludeItemIds = request.GetExcludeItemIds(),
+                DtoOptions = dtoOptions
             };
 
             if (!string.IsNullOrWhiteSpace(request.Ids))
@@ -264,8 +281,6 @@ namespace MediaBrowser.Api.UserLibrary
                     case ItemFilter.IsPlayed:
                         query.IsPlayed = true;
                         break;
-                    case ItemFilter.IsRecentlyAdded:
-                        break;
                     case ItemFilter.IsResumable:
                         query.IsResumable = true;
                         break;
@@ -278,331 +293,96 @@ namespace MediaBrowser.Api.UserLibrary
                 }
             }
 
-            return query;
-        }
-
-        /// <summary>
-        /// Applies filtering
-        /// </summary>
-        /// <param name="items">The items.</param>
-        /// <param name="filter">The filter.</param>
-        /// <param name="user">The user.</param>
-        /// <param name="repository">The repository.</param>
-        /// <returns>IEnumerable{BaseItem}.</returns>
-        internal static IEnumerable<BaseItem> ApplyFilter(IEnumerable<BaseItem> items, ItemFilter filter, User user, IUserDataManager repository)
-        {
-            // Avoid implicitly captured closure
-            var currentUser = user;
-
-            switch (filter)
+            if (!string.IsNullOrEmpty(request.MinPremiereDate))
             {
-                case ItemFilter.IsFavoriteOrLikes:
-                    return items.Where(item =>
-                    {
-                        var userdata = repository.GetUserData(user.Id, item.GetUserDataKey());
-
-                        if (userdata == null)
-                        {
-                            return false;
-                        }
-
-                        var likes = userdata.Likes ?? false;
-                        var favorite = userdata.IsFavorite;
-
-                        return likes || favorite;
-                    });
-
-                case ItemFilter.Likes:
-                    return items.Where(item =>
-                    {
-                        var userdata = repository.GetUserData(user.Id, item.GetUserDataKey());
-
-                        return userdata != null && userdata.Likes.HasValue && userdata.Likes.Value;
-                    });
-
-                case ItemFilter.Dislikes:
-                    return items.Where(item =>
-                    {
-                        var userdata = repository.GetUserData(user.Id, item.GetUserDataKey());
-
-                        return userdata != null && userdata.Likes.HasValue && !userdata.Likes.Value;
-                    });
-
-                case ItemFilter.IsFavorite:
-                    return items.Where(item =>
-                    {
-                        var userdata = repository.GetUserData(user.Id, item.GetUserDataKey());
-
-                        return userdata != null && userdata.IsFavorite;
-                    });
-
-                case ItemFilter.IsResumable:
-                    return items.Where(item =>
-                    {
-                        var userdata = repository.GetUserData(user.Id, item.GetUserDataKey());
-
-                        return userdata != null && userdata.PlaybackPositionTicks > 0;
-                    });
-
-                case ItemFilter.IsPlayed:
-                    return items.Where(item => item.IsPlayed(currentUser));
-
-                case ItemFilter.IsUnplayed:
-                    return items.Where(item => item.IsUnplayed(currentUser));
-
-                case ItemFilter.IsFolder:
-                    return items.Where(item => item.IsFolder);
-
-                case ItemFilter.IsNotFolder:
-                    return items.Where(item => !item.IsFolder);
-
-                case ItemFilter.IsRecentlyAdded:
-                    return items.Where(item => (DateTime.UtcNow - item.DateCreated).TotalDays <= 10);
+                query.MinPremiereDate = DateTime.Parse(request.MinPremiereDate, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
             }
 
-            return items;
-        }
-
-        private bool ApplyAdditionalFilters(GetItems request, BaseItem i, User user, ILibraryManager libraryManager)
-        {
-            // Artists
-            if (!string.IsNullOrEmpty(request.ArtistIds))
+            if (!string.IsNullOrEmpty(request.MaxPremiereDate))
             {
-                var artistIds = request.ArtistIds.Split(new[] { '|', ',' });
-
-                var audio = i as IHasArtist;
-
-                if (!(audio != null && artistIds.Any(id =>
-                {
-                    var artistItem = libraryManager.GetItemById(id);
-                    return artistItem != null && audio.HasAnyArtist(artistItem.Name);
-                })))
-                {
-                    return false;
-                }
-            }
-
-            // Artists
-            if (!string.IsNullOrEmpty(request.Artists))
-            {
-                var artists = request.Artists.Split('|');
-
-                var audio = i as IHasArtist;
-
-                if (!(audio != null && artists.Any(audio.HasAnyArtist)))
-                {
-                    return false;
-                }
-            }
-
-            // Albums
-            if (!string.IsNullOrEmpty(request.Albums))
-            {
-                var albums = request.Albums.Split('|');
-
-                var audio = i as Audio;
-
-                if (audio != null)
-                {
-                    if (!albums.Any(a => string.Equals(a, audio.Album, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return false;
-                    }
-                }
-
-                var album = i as MusicAlbum;
-
-                if (album != null)
-                {
-                    if (!albums.Any(a => string.Equals(a, album.Name, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return false;
-                    }
-                }
-
-                var musicVideo = i as MusicVideo;
-
-                if (musicVideo != null)
-                {
-                    if (!albums.Any(a => string.Equals(a, musicVideo.Album, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return false;
-                    }
-                }
-
-                return false;
-            }
-
-            // Min official rating
-            if (!string.IsNullOrEmpty(request.MinOfficialRating))
-            {
-                var level = _localization.GetRatingLevel(request.MinOfficialRating);
-
-                if (level.HasValue)
-                {
-                    var rating = i.CustomRating;
-
-                    if (string.IsNullOrEmpty(rating))
-                    {
-                        rating = i.OfficialRating;
-                    }
-
-                    if (!string.IsNullOrEmpty(rating))
-                    {
-                        var itemLevel = _localization.GetRatingLevel(rating);
-
-                        if (!(!itemLevel.HasValue || itemLevel.Value >= level.Value))
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            // Max official rating
-            if (!string.IsNullOrEmpty(request.MaxOfficialRating))
-            {
-                var level = _localization.GetRatingLevel(request.MaxOfficialRating);
-
-                if (level.HasValue)
-                {
-                    var rating = i.CustomRating;
-
-                    if (string.IsNullOrEmpty(rating))
-                    {
-                        rating = i.OfficialRating;
-                    }
-
-                    if (!string.IsNullOrEmpty(rating))
-                    {
-                        var itemLevel = _localization.GetRatingLevel(rating);
-
-                        if (!(!itemLevel.HasValue || itemLevel.Value <= level.Value))
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            // LocationTypes
-            if (!string.IsNullOrEmpty(request.LocationTypes))
-            {
-                var vals = request.LocationTypes.Split(',');
-                if (!vals.Contains(i.LocationType.ToString(), StringComparer.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-            }
-
-            // ExcludeLocationTypes
-            if (!string.IsNullOrEmpty(request.ExcludeLocationTypes))
-            {
-                var vals = request.ExcludeLocationTypes.Split(',');
-                if (vals.Contains(i.LocationType.ToString(), StringComparer.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(request.AlbumArtistStartsWithOrGreater))
-            {
-                var ok = new[] { i }.OfType<IHasAlbumArtist>()
-                    .Any(p => string.Compare(request.AlbumArtistStartsWithOrGreater, p.AlbumArtists.FirstOrDefault(), StringComparison.CurrentCultureIgnoreCase) < 1);
-
-                if (!ok)
-                {
-                    return false;
-                }
+                query.MaxPremiereDate = DateTime.Parse(request.MaxPremiereDate, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
             }
 
             // Filter by Series Status
             if (!string.IsNullOrEmpty(request.SeriesStatus))
             {
-                var vals = request.SeriesStatus.Split(',');
-
-                var ok = new[] { i }.OfType<Series>().Any(p => p.Status.HasValue && vals.Contains(p.Status.Value.ToString(), StringComparer.OrdinalIgnoreCase));
-
-                if (!ok)
-                {
-                    return false;
-                }
+                query.SeriesStatuses = request.SeriesStatus.Split(',').Select(d => (SeriesStatus)Enum.Parse(typeof(SeriesStatus), d, true)).ToArray();
             }
 
             // Filter by Series AirDays
             if (!string.IsNullOrEmpty(request.AirDays))
             {
-                var days = request.AirDays.Split(',').Select(d => (DayOfWeek)Enum.Parse(typeof(DayOfWeek), d, true));
-
-                var ok = new[] { i }.OfType<Series>().Any(p => p.AirDays != null && days.Any(d => p.AirDays.Contains(d)));
-
-                if (!ok)
-                {
-                    return false;
-                }
+                query.AirDays = request.AirDays.Split(',').Select(d => (DayOfWeek)Enum.Parse(typeof(DayOfWeek), d, true)).ToArray();
             }
 
-            if (request.ParentIndexNumber.HasValue)
+            // ExcludeLocationTypes
+            if (!string.IsNullOrEmpty(request.ExcludeLocationTypes))
             {
-                var filterValue = request.ParentIndexNumber.Value;
+                query.ExcludeLocationTypes = request.ExcludeLocationTypes.Split(',').Select(d => (LocationType)Enum.Parse(typeof(LocationType), d, true)).ToArray();
+            }
 
-                var episode = i as Episode;
+            if (!string.IsNullOrEmpty(request.LocationTypes))
+            {
+                query.LocationTypes = request.LocationTypes.Split(',').Select(d => (LocationType)Enum.Parse(typeof(LocationType), d, true)).ToArray();
+            }
 
-                if (episode != null)
+            // Min official rating
+            if (!string.IsNullOrWhiteSpace(request.MinOfficialRating))
+            {
+                query.MinParentalRating = _localization.GetRatingLevel(request.MinOfficialRating);
+            }
+
+            // Max official rating
+            if (!string.IsNullOrWhiteSpace(request.MaxOfficialRating))
+            {
+                query.MaxParentalRating = _localization.GetRatingLevel(request.MaxOfficialRating);
+            }
+
+            // Artists
+            if (!string.IsNullOrEmpty(request.Artists))
+            {
+                query.ArtistIds = request.Artists.Split('|').Select(i =>
                 {
-                    if (episode.ParentIndexNumber.HasValue && episode.ParentIndexNumber.Value != filterValue)
+                    try
                     {
-                        return false;
+                        return _libraryManager.GetArtist(i);
                     }
-                }
-
-                var song = i as Audio;
-
-                if (song != null)
-                {
-                    if (song.ParentIndexNumber.HasValue && song.ParentIndexNumber.Value != filterValue)
+                    catch
                     {
-                        return false;
+                        return null;
                     }
-                }
+                }).Where(i => i != null).Select(i => i.Id.ToString("N")).ToArray();
             }
 
-            if (request.AiredDuringSeason.HasValue)
+            // ExcludeArtistIds
+            if (!string.IsNullOrEmpty(request.ExcludeArtistIds))
             {
-                var episode = i as Episode;
-
-                if (episode == null)
-                {
-                    return false;
-                }
-
-                if (!Series.FilterEpisodesBySeason(new[] { episode }, request.AiredDuringSeason.Value, true).Any())
-                {
-                    return false;
-                }
+                query.ExcludeArtistIds = request.ExcludeArtistIds.Split('|');
             }
 
-            if (!string.IsNullOrEmpty(request.MinPremiereDate))
+            // Albums
+            if (!string.IsNullOrEmpty(request.Albums))
             {
-                var date = DateTime.Parse(request.MinPremiereDate, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
-
-                if (!(i.PremiereDate.HasValue && i.PremiereDate.Value >= date))
-                {
-                    return false;
-                }
+                query.AlbumNames = request.Albums.Split('|');
             }
 
-            if (!string.IsNullOrEmpty(request.MaxPremiereDate))
+            // Studios
+            if (!string.IsNullOrEmpty(request.Studios))
             {
-                var date = DateTime.Parse(request.MaxPremiereDate, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
-
-                if (!(i.PremiereDate.HasValue && i.PremiereDate.Value <= date))
+                query.StudioIds = request.Studios.Split('|').Select(i =>
                 {
-                    return false;
-                }
+                    try
+                    {
+                        return _libraryManager.GetStudio(i);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                }).Where(i => i != null).Select(i => i.Id.ToString("N")).ToArray();
             }
 
-            return true;
+            return query;
         }
     }
 

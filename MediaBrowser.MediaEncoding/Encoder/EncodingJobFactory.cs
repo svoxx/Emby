@@ -10,7 +10,6 @@ using MediaBrowser.Model.MediaInfo;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,6 +60,14 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             state.IsInputVideo = string.Equals(item.MediaType, MediaType.Video, StringComparison.OrdinalIgnoreCase);
 
+            var primaryImage = item.GetImageInfo(ImageType.Primary, 0) ??
+                               item.Parents.Select(i => i.GetImageInfo(ImageType.Primary, 0)).FirstOrDefault(i => i != null);
+
+            if (primaryImage != null)
+            {
+                state.AlbumCoverPath = primaryImage.Path;
+            }
+
             var mediaSources = await _mediaSourceManager.GetPlayackMediaSources(request.ItemId, null, false, new[] { MediaType.Audio, MediaType.Video }, cancellationToken).ConfigureAwait(false);
 
             var mediaSource = string.IsNullOrEmpty(request.MediaSourceId)
@@ -92,7 +99,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             if (videoRequest != null)
             {
                 state.OutputVideoCodec = state.Options.VideoCodec;
-                state.OutputVideoBitrate = GetVideoBitrateParamValue(state.Options, state.VideoStream);
+                state.OutputVideoBitrate = GetVideoBitrateParamValue(state.Options, state.VideoStream, state.OutputVideoCodec);
 
                 if (state.OutputVideoBitrate.HasValue)
                 {
@@ -363,33 +370,53 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 inputChannels = null;
             }
 
+            int? transcoderChannelLimit = null;
             var codec = outputAudioCodec ?? string.Empty;
 
             if (codec.IndexOf("wma", StringComparison.OrdinalIgnoreCase) != -1)
             {
                 // wmav2 currently only supports two channel output
-                return Math.Min(2, inputChannels ?? 2);
+                transcoderChannelLimit = 2;
             }
 
-            if (request.MaxAudioChannels.HasValue)
+            else if (codec.IndexOf("mp3", StringComparison.OrdinalIgnoreCase) != -1)
             {
-                var channelLimit = codec.IndexOf("mp3", StringComparison.OrdinalIgnoreCase) != -1
-                   ? 2
-                   : 6;
-
-                if (inputChannels.HasValue)
-                {
-                    channelLimit = Math.Min(channelLimit, inputChannels.Value);
-                }
-
-                // If we don't have any media info then limit it to 5 to prevent encoding errors due to asking for too many channels
-                return Math.Min(request.MaxAudioChannels.Value, channelLimit);
+                // libmp3lame currently only supports two channel output
+                transcoderChannelLimit = 2;
+            }
+            else
+            {
+                // If we don't have any media info then limit it to 6 to prevent encoding errors due to asking for too many channels
+                transcoderChannelLimit = 6;
             }
 
-            return request.AudioChannels;
+            var isTranscodingAudio = !string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase);
+
+            int? resultChannels = null;
+            if (isTranscodingAudio)
+            {
+                resultChannels = request.TranscodingMaxAudioChannels;
+            }
+            resultChannels = resultChannels ?? request.MaxAudioChannels ?? request.AudioChannels;
+
+            if (inputChannels.HasValue)
+            {
+                resultChannels = resultChannels.HasValue
+                    ? Math.Min(resultChannels.Value, inputChannels.Value)
+                    : inputChannels.Value;
+            }
+
+            if (isTranscodingAudio && transcoderChannelLimit.HasValue)
+            {
+                resultChannels = resultChannels.HasValue
+                    ? Math.Min(resultChannels.Value, transcoderChannelLimit.Value)
+                    : transcoderChannelLimit.Value;
+            }
+
+            return resultChannels ?? request.AudioChannels;
         }
 
-        private int? GetVideoBitrateParamValue(EncodingJobOptions request, MediaStream videoStream)
+        private int? GetVideoBitrateParamValue(EncodingJobOptions request, MediaStream videoStream, string outputVideoCodec)
         {
             var bitrate = request.VideoBitRate;
 
@@ -411,6 +438,18 @@ namespace MediaBrowser.MediaEncoding.Encoder
                     {
                         bitrate = Math.Min(bitrate.Value, videoStream.BitRate.Value);
                     }
+                }
+            }
+
+            if (bitrate.HasValue)
+            {
+                var inputVideoCodec = videoStream == null ? null : videoStream.Codec;
+                bitrate = ResolutionNormalizer.ScaleBitrate(bitrate.Value, inputVideoCodec, outputVideoCodec);
+
+                // If a max bitrate was requested, don't let the scaled bitrate exceed it
+                if (request.VideoBitRate.HasValue)
+                {
+                    bitrate = Math.Min(bitrate.Value, request.VideoBitRate.Value);
                 }
             }
 
@@ -503,10 +542,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
         /// <summary>
         /// Gets the name of the output video codec
         /// </summary>
-        /// <param name="state">The state.</param>
-        /// <param name="options">The options.</param>
         /// <returns>System.String.</returns>
-        internal static string GetVideoEncoder(EncodingJob state, EncodingOptions options)
+        internal static string GetVideoEncoder(IMediaEncoder mediaEncoder, EncodingJob state, EncodingOptions options)
         {
             var codec = state.OutputVideoCodec;
 
@@ -514,7 +551,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             {
                 if (string.Equals(codec, "h264", StringComparison.OrdinalIgnoreCase))
                 {
-                    return GetH264Encoder(state, options);
+                    return GetH264Encoder(mediaEncoder, state, options);
                 }
                 if (string.Equals(codec, "vpx", StringComparison.OrdinalIgnoreCase))
                 {
@@ -535,18 +572,69 @@ namespace MediaBrowser.MediaEncoding.Encoder
             return "copy";
         }
 
-        internal static string GetH264Encoder(EncodingJob state, EncodingOptions options)
+        private static string GetAvailableEncoder(IMediaEncoder mediaEncoder, string preferredEncoder, string defaultEncoder)
         {
-            if (string.Equals(options.HardwareAccelerationType, "qsv", StringComparison.OrdinalIgnoreCase))
+            if (mediaEncoder.SupportsEncoder(preferredEncoder))
             {
-                // It's currently failing on live tv
-                if (state.RunTimeTicks.HasValue)
+                return preferredEncoder;
+            }
+            return defaultEncoder;
+        }
+
+        internal static string GetH264Encoder(IMediaEncoder mediaEncoder, EncodingJob state, EncodingOptions options)
+        {
+            var defaultEncoder = "libx264";
+
+            // Only use alternative encoders for video files.
+            // When using concat with folder rips, if the mfx session fails to initialize, ffmpeg will be stuck retrying and will not exit gracefully
+            // Since transcoding of folder rips is expiremental anyway, it's not worth adding additional variables such as this.
+            if (state.VideoType == VideoType.VideoFile)
+            {
+                var hwType = options.HardwareAccelerationType;
+
+                if (string.Equals(hwType, "qsv", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(hwType, "h264_qsv", StringComparison.OrdinalIgnoreCase))
                 {
-                    return "h264_qsv";
+                    return GetAvailableEncoder(mediaEncoder, "h264_qsv", defaultEncoder);
+                }
+
+                if (string.Equals(hwType, "nvenc", StringComparison.OrdinalIgnoreCase))
+                {
+                    return GetAvailableEncoder(mediaEncoder, "h264_nvenc", defaultEncoder);
+                }
+                if (string.Equals(hwType, "h264_omx", StringComparison.OrdinalIgnoreCase))
+                {
+                    return GetAvailableEncoder(mediaEncoder, "h264_omx", defaultEncoder);
+                }
+                if (string.Equals(hwType, "vaapi", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(options.VaapiDevice))
+                {
+                    if (IsVaapiSupported(state))
+                    {
+                        return GetAvailableEncoder(mediaEncoder, "h264_vaapi", defaultEncoder);
+                    }
                 }
             }
 
-            return "libx264";
+            return defaultEncoder;
+        }
+
+        private static bool IsVaapiSupported(EncodingJob state)
+        {
+            var videoStream = state.VideoStream;
+
+            if (videoStream != null)
+            {
+                // vaapi will throw an error with this input
+                // [vaapi @ 0x7faed8000960] No VAAPI support for codec mpeg4 profile -99.
+                if (string.Equals(videoStream.Codec, "mpeg4", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (videoStream.Level == -99 || videoStream.Level == 15)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         internal static bool CanStreamCopyVideo(EncodingJobOptions request, MediaStream videoStream)
@@ -574,6 +662,14 @@ namespace MediaBrowser.MediaEncoding.Encoder
             if (!string.Equals(request.VideoCodec, videoStream.Codec, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
+            }
+
+            if (string.Equals("h264", videoStream.Codec, StringComparison.OrdinalIgnoreCase))
+            {
+                if (videoStream.IsAVC.HasValue && !videoStream.IsAVC.Value)
+                {
+                    return false;
+                }
             }
 
             // If client is requesting a specific video profile, it must match the source
@@ -660,14 +756,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 }
 
                 if (videoStream.Level.Value > request.Level.Value)
-                {
-                    return false;
-                }
-            }
-
-            if (request.Cabac.HasValue && request.Cabac.Value)
-            {
-                if (videoStream.IsCabac.HasValue && !videoStream.IsCabac.Value)
                 {
                     return false;
                 }
@@ -774,11 +862,11 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 state.TargetPacketLength,
                 state.TargetTimestamp,
                 state.IsTargetAnamorphic,
-                state.IsTargetCabac,
                 state.TargetRefFrames,
                 state.TargetVideoStreamCount,
                 state.TargetAudioStreamCount,
-                state.TargetVideoCodecTag);
+                state.TargetVideoCodecTag,
+                state.IsTargetAVC);
 
             if (mediaProfile != null)
             {

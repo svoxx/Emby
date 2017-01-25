@@ -1,4 +1,5 @@
-(function ($, document) {
+define(['jQuery', 'imageLoader'], function ($, imageLoader) {
+    'use strict';
 
     // The base query options
     var query = {
@@ -41,7 +42,7 @@
 
             var elem = page.querySelector('#items');
             elem.innerHTML = html;
-            ImageLoader.lazyChildren(elem);
+            imageLoader.lazyChildren(elem);
 
             LibraryBrowser.saveQueryValues(getSavedQueryKey(), query);
 
@@ -73,4 +74,4 @@
         updateFilterControls(this);
     });
 
-})(jQuery, document);
+});

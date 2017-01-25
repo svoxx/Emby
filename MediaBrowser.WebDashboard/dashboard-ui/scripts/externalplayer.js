@@ -1,4 +1,5 @@
-﻿define(['appSettings', 'paper-slider', 'paper-button'], function (appSettings) {
+﻿define(['appSettings', 'datetime', 'jQuery', 'actionsheet', 'emby-slider', 'emby-button'], function (appSettings, datetime, $, actionsheet) {
+    'use strict';
 
     function getDeviceProfile(serverAddress, deviceId, item, startPositionTicks, maxBitrate, mediaSourceId, audioStreamIndex, subtitleStreamIndex) {
 
@@ -260,14 +261,16 @@
                 html += '<div class="fldResumePoint hide">';
                 html += '<p style="margin-top: 0;">' + Globalize.translate('LabelResumePoint') + '</p>';
 
-                html += '<paper-slider pin step=".001" min="0" max="100" value="0" class="playstateSlider" style="display:block;margin-left:-12px;width:98%;"></paper-slider>';
+                html += '<div class="sliderContainer">';
+                html += '<input type="range" is="emby-slider" pin step=".001" min="0" max="100" value="0" class="playstateSlider"/>';
+                html += '</div>';
                 html += '<div class="sliderValue" style="text-align:center;margin:2px 0 4px;">0:00:00</div>';
                 html += '</div>';
 
                 html += '<br/>';
             }
 
-            html += '<paper-button class="block submit btnDone" raised>' + Globalize.translate('ButtonImDone') + '</paper-button>';
+            html += '<button is="emby-button" type="button" class="block submit btnDone" raised>' + Globalize.translate('ButtonImDone') + '</button>';
 
             html += '</div>';
 
@@ -322,11 +325,9 @@
 
                 var time = item.RunTimeTicks * (Number(pct) * .01);
 
-                var tooltext = Dashboard.getDisplayTime(time);
+                var tooltext = datetime.getDisplayRunningTime(time);
 
                 $('.sliderValue', elem).html(tooltext);
-
-                console.log("slidin", pct, self.currentDurationTicks, time);
 
             });
         });
@@ -334,21 +335,17 @@
 
     function showMenuForItem(item, players) {
 
-        require(['actionsheet'], function (actionsheet) {
+        actionsheet.show({
+            items: players
+        }).then(function (id) {
+            var player = players.filter(function (p) {
+                return p.id == id;
+            })[0];
 
-            actionsheet.show({
-                items: players,
-                callback: function (id) {
-                    var player = players.filter(function (p) {
-                        return p.id == id;
-                    })[0];
-
-                    if (player) {
-                        window.open(player.url, '_blank');
-                        onPlaybackStart();
-                    }
-                }
-            });
+            if (player) {
+                window.open(player.url, '_blank');
+                onPlaybackStart();
+            }
         });
     }
 

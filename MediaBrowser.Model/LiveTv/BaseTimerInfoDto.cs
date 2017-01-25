@@ -1,21 +1,17 @@
 ﻿using MediaBrowser.Model.Dto;
-using MediaBrowser.Model.Extensions;
 using System;
-using System.ComponentModel;
+using System.Collections.Generic;
 
 namespace MediaBrowser.Model.LiveTv
 {
-    public class BaseTimerInfoDto : IHasPropertyChangedEvent, IHasServerId
+    public class BaseTimerInfoDto : IHasServerId
     {
-        /// <summary>
-        /// Occurs when a property value changes.
-        /// </summary>
-        public event PropertyChangedEventHandler PropertyChanged;
-
         /// <summary>
         /// Id of the recording.
         /// </summary>
         public string Id { get; set; }
+
+        public string Type { get; set; }
 
         /// <summary>
         /// Gets or sets the server identifier.
@@ -108,9 +104,22 @@ namespace MediaBrowser.Model.LiveTv
         public bool IsPrePaddingRequired { get; set; }
 
         /// <summary>
+        /// If the item does not have any backdrops, this will hold the Id of the Parent that has one.
+        /// </summary>
+        /// <value>The parent backdrop item id.</value>
+        public string ParentBackdropItemId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the parent backdrop image tags.
+        /// </summary>
+        /// <value>The parent backdrop image tags.</value>
+        public List<string> ParentBackdropImageTags { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether this instance is post padding required.
         /// </summary>
         /// <value><c>true</c> if this instance is post padding required; otherwise, <c>false</c>.</value>
         public bool IsPostPaddingRequired { get; set; }
+        public KeepUntil KeepUntil { get; set; }
     }
 }

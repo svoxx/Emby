@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -16,8 +15,12 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Entities.Audio;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.IO;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.MediaInfo;
 
@@ -57,7 +60,7 @@ namespace MediaBrowser.Providers.Manager
             return hasChanges;
         }
 
-        public async Task<RefreshResult> RefreshImages(IHasImages item, IEnumerable<IImageProvider> imageProviders, ImageRefreshOptions refreshOptions, MetadataOptions savedOptions, CancellationToken cancellationToken)
+        public async Task<RefreshResult> RefreshImages(IHasImages item, LibraryOptions libraryOptions, IEnumerable<IImageProvider> imageProviders, ImageRefreshOptions refreshOptions, MetadataOptions savedOptions, CancellationToken cancellationToken)
         {
             if (refreshOptions.IsReplacingImage(ImageType.Backdrop))
             {
@@ -85,7 +88,7 @@ namespace MediaBrowser.Providers.Manager
 
                 if (remoteProvider != null)
                 {
-                    await RefreshFromProvider(item, remoteProvider, refreshOptions, savedOptions, backdropLimit, screenshotLimit, downloadedImages, result, cancellationToken).ConfigureAwait(false);
+                    await RefreshFromProvider(item, libraryOptions, remoteProvider, refreshOptions, savedOptions, backdropLimit, screenshotLimit, downloadedImages, result, cancellationToken).ConfigureAwait(false);
                     providerIds.Add(provider.GetType().FullName.GetMD5());
                     continue;
                 }
@@ -155,16 +158,16 @@ namespace MediaBrowser.Providers.Manager
                                 {
                                     var mimeType = MimeTypes.GetMimeType(response.Path);
 
-                                    var stream = _fileSystem.GetFileStream(response.Path, FileMode.Open, FileAccess.Read, FileShare.Read, true);
+                                    var stream = _fileSystem.GetFileStream(response.Path, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.Read, true);
 
-                                    await _providerManager.SaveImage(item, stream, mimeType, imageType, null, response.InternalCacheKey, cancellationToken).ConfigureAwait(false);
+                                    await _providerManager.SaveImage(item, stream, mimeType, imageType, null, cancellationToken).ConfigureAwait(false);
                                 }
                             }
                             else
                             {
                                 var mimeType = "image/" + response.Format.ToString().ToLower();
 
-                                await _providerManager.SaveImage(item, response.Stream, mimeType, imageType, null, response.InternalCacheKey, cancellationToken).ConfigureAwait(false);
+                                await _providerManager.SaveImage(item, response.Stream, mimeType, imageType, null, cancellationToken).ConfigureAwait(false);
                             }
 
                             downloadedImages.Add(imageType);
@@ -250,7 +253,7 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="result">The result.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        private async Task RefreshFromProvider(IHasImages item,
+        private async Task RefreshFromProvider(IHasImages item, LibraryOptions libraryOptions,
             IRemoteImageProvider provider,
             ImageRefreshOptions refreshOptions,
             MetadataOptions savedOptions,
@@ -294,7 +297,7 @@ namespace MediaBrowser.Providers.Manager
                     if (!HasImage(item, imageType) || (refreshOptions.IsReplacingImage(imageType) && !downloadedImages.Contains(imageType)))
                     {
                         minWidth = savedOptions.GetMinWidth(imageType);
-                        var downloaded = await DownloadImage(item, provider, result, list, minWidth, imageType, cancellationToken).ConfigureAwait(false);
+                        var downloaded = await DownloadImage(item, libraryOptions, provider, result, list, minWidth, imageType, cancellationToken).ConfigureAwait(false);
 
                         if (downloaded)
                         {
@@ -306,7 +309,7 @@ namespace MediaBrowser.Providers.Manager
                 if (!item.LockedFields.Contains(MetadataFields.Backdrops))
                 {
                     minWidth = savedOptions.GetMinWidth(ImageType.Backdrop);
-                    await DownloadBackdrops(item, ImageType.Backdrop, backdropLimit, provider, result, list, minWidth, cancellationToken).ConfigureAwait(false);
+                    await DownloadBackdrops(item, libraryOptions, ImageType.Backdrop, backdropLimit, provider, result, list, minWidth, cancellationToken).ConfigureAwait(false);
                 }
 
                 if (!item.LockedFields.Contains(MetadataFields.Screenshots))
@@ -315,7 +318,7 @@ namespace MediaBrowser.Providers.Manager
                     if (hasScreenshots != null)
                     {
                         minWidth = savedOptions.GetMinWidth(ImageType.Screenshot);
-                        await DownloadBackdrops(item, ImageType.Screenshot, screenshotLimit, provider, result, list, minWidth, cancellationToken).ConfigureAwait(false);
+                        await DownloadBackdrops(item, libraryOptions, ImageType.Screenshot, screenshotLimit, provider, result, list, minWidth, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -371,14 +374,14 @@ namespace MediaBrowser.Providers.Manager
                 }
 
                 // Delete the source file
-                var currentFile = new FileInfo(image.Path);
+                var currentFile = _fileSystem.GetFileInfo(image.Path);
 
                 // Deletion will fail if the file is hidden so remove the attribute first
                 if (currentFile.Exists)
                 {
-                    if ((currentFile.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                    if (currentFile.IsHidden)
                     {
-                        currentFile.Attributes &= ~FileAttributes.Hidden;
+                        _fileSystem.SetHidden(currentFile.FullName, false);
                     }
 
                     _fileSystem.DeleteFile(currentFile.FullName);
@@ -473,7 +476,7 @@ namespace MediaBrowser.Providers.Manager
             return changed;
         }
 
-        private async Task<bool> DownloadImage(IHasImages item,
+        private async Task<bool> DownloadImage(IHasImages item, LibraryOptions libraryOptions,
             IRemoteImageProvider provider,
             RefreshResult result,
             IEnumerable<RemoteImageInfo> images,
@@ -485,7 +488,7 @@ namespace MediaBrowser.Providers.Manager
                 .Where(i => i.Type == type && !(i.Width.HasValue && i.Width.Value < minWidth))
                 .ToList();
 
-            if (EnableImageStub(item, type) && eligibleImages.Count > 0)
+            if (EnableImageStub(item, type, libraryOptions) && eligibleImages.Count > 0)
             {
                 SaveImageStub(item, type, eligibleImages.Select(i => i.Url));
                 result.UpdateType = result.UpdateType | ItemUpdateType.ImageUpdate;
@@ -519,14 +522,14 @@ namespace MediaBrowser.Providers.Manager
             return false;
         }
 
-        private bool EnableImageStub(IHasImages item, ImageType type)
+        private bool EnableImageStub(IHasImages item, ImageType type, LibraryOptions libraryOptions)
         {
             if (item is LiveTvProgram)
             {
                 return true;
             }
 
-            if (_config.Configuration.DownloadImagesInAdvance)
+            if (libraryOptions.DownloadImagesInAdvance)
             {
                 return false;
             }
@@ -553,15 +556,7 @@ namespace MediaBrowser.Providers.Manager
             switch (type)
             {
                 case ImageType.Primary:
-                    return false;
-                case ImageType.Thumb:
-                    return false;
-                case ImageType.Logo:
-                    return false;
-                case ImageType.Backdrop:
-                    return false;
-                case ImageType.Screenshot:
-                    return false;
+                    return !(item is Movie || item is Series || item is Game);
                 default:
                     return true;
             }
@@ -586,7 +581,7 @@ namespace MediaBrowser.Providers.Manager
             }, newIndex);
         }
 
-        private async Task DownloadBackdrops(IHasImages item, ImageType imageType, int limit, IRemoteImageProvider provider, RefreshResult result, IEnumerable<RemoteImageInfo> images, int minWidth, CancellationToken cancellationToken)
+        private async Task DownloadBackdrops(IHasImages item, LibraryOptions libraryOptions, ImageType imageType, int limit, IRemoteImageProvider provider, RefreshResult result, IEnumerable<RemoteImageInfo> images, int minWidth, CancellationToken cancellationToken)
         {
             foreach (var image in images.Where(i => i.Type == imageType))
             {
@@ -602,7 +597,7 @@ namespace MediaBrowser.Providers.Manager
 
                 var url = image.Url;
 
-                if (EnableImageStub(item, imageType))
+                if (EnableImageStub(item, imageType, libraryOptions))
                 {
                     SaveImageStub(item, imageType, new[] { url });
                     result.UpdateType = result.UpdateType | ItemUpdateType.ImageUpdate;
@@ -618,7 +613,7 @@ namespace MediaBrowser.Providers.Manager
                     {
                         try
                         {
-                            if (item.GetImages(imageType).Any(i => new FileInfo(i.Path).Length == response.ContentLength.Value))
+                            if (item.GetImages(imageType).Any(i => _fileSystem.GetFileInfo(i.Path).Length == response.ContentLength.Value))
                             {
                                 response.Content.Dispose();
                                 continue;

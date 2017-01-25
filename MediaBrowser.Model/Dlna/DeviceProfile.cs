@@ -18,13 +18,13 @@ namespace MediaBrowser.Model.Dlna
         public string Id { get; set; }
 
         [XmlIgnore]
-        public DeviceProfileType ProfileType { get; set; }
+        public MediaBrowser.Model.Dlna.DeviceProfileType ProfileType { get; set; }
 
         /// <summary>
         /// Gets or sets the identification.
         /// </summary>
         /// <value>The identification.</value>
-        public DeviceIdentification Identification { get; set; }
+        public MediaBrowser.Model.Dlna.DeviceIdentification Identification { get; set; }
 
         public string FriendlyName { get; set; }
         public string Manufacturer { get; set; }
@@ -36,8 +36,8 @@ namespace MediaBrowser.Model.Dlna
         public string SerialNumber { get; set; }
 
         public bool EnableAlbumArtInDidl { get; set; }
-		public bool EnableSingleAlbumArtLimit { get; set; }
-		public bool EnableSingleSubtitleLimit { get; set; }
+        public bool EnableSingleAlbumArtLimit { get; set; }
+        public bool EnableSingleSubtitleLimit { get; set; }
 
         public string SupportedMediaTypes { get; set; }
 
@@ -55,7 +55,7 @@ namespace MediaBrowser.Model.Dlna
         public int? MaxStaticBitrate { get; set; }
 
         public int? MusicStreamingTranscodingBitrate { get; set; }
-        public int? MusicSyncBitrate { get; set; }
+        public int? MaxStaticMusicBitrate { get; set; }
 
         /// <summary>
         /// Controls the content of the X_DLNADOC element in the urn:schemas-dlna-org:device-1-0 namespace.
@@ -99,7 +99,7 @@ namespace MediaBrowser.Model.Dlna
         public ResponseProfile[] ResponseProfiles { get; set; }
 
         public SubtitleProfile[] SubtitleProfiles { get; set; }
-      
+
         public DeviceProfile()
         {
             DirectPlayProfiles = new DirectPlayProfile[] { };
@@ -108,14 +108,13 @@ namespace MediaBrowser.Model.Dlna
             CodecProfiles = new CodecProfile[] { };
             ContainerProfiles = new ContainerProfile[] { };
             SubtitleProfiles = new SubtitleProfile[] { };
-         
+
             XmlRootAttributes = new XmlAttribute[] { };
-            
+
             SupportedMediaTypes = "Audio,Photo,Video";
             MaxStreamingBitrate = 8000000;
             MaxStaticBitrate = 8000000;
             MusicStreamingTranscodingBitrate = 128000;
-            MusicSyncBitrate = 128000;
         }
 
         public List<string> GetSupportedMediaTypes()
@@ -123,7 +122,7 @@ namespace MediaBrowser.Model.Dlna
             List<string> list = new List<string>();
             foreach (string i in (SupportedMediaTypes ?? string.Empty).Split(','))
             {
-                if (!string.IsNullOrEmpty(i)) 
+                if (!string.IsNullOrEmpty(i))
                     list.Add(i);
             }
             return list;
@@ -131,11 +130,11 @@ namespace MediaBrowser.Model.Dlna
 
         public TranscodingProfile GetAudioTranscodingProfile(string container, string audioCodec)
         {
-            container = StringHelper.TrimStart((container ?? string.Empty), '.');
+            container = StringHelper.TrimStart(container ?? string.Empty, '.');
 
             foreach (var i in TranscodingProfiles)
             {
-                if (i.Type != DlnaProfileType.Audio)
+                if (i.Type != MediaBrowser.Model.Dlna.DlnaProfileType.Audio)
                 {
                     continue;
                 }
@@ -157,11 +156,11 @@ namespace MediaBrowser.Model.Dlna
 
         public TranscodingProfile GetVideoTranscodingProfile(string container, string audioCodec, string videoCodec)
         {
-            container = StringHelper.TrimStart((container ?? string.Empty), '.');
+            container = StringHelper.TrimStart(container ?? string.Empty, '.');
 
             foreach (var i in TranscodingProfiles)
             {
-                if (i.Type != DlnaProfileType.Video)
+                if (i.Type != MediaBrowser.Model.Dlna.DlnaProfileType.Video)
                 {
                     continue;
                 }
@@ -188,11 +187,11 @@ namespace MediaBrowser.Model.Dlna
 
         public ResponseProfile GetAudioMediaProfile(string container, string audioCodec, int? audioChannels, int? audioBitrate)
         {
-            container = StringHelper.TrimStart((container ?? string.Empty), '.');
+            container = StringHelper.TrimStart(container ?? string.Empty, '.');
 
             foreach (var i in ResponseProfiles)
             {
-                if (i.Type != DlnaProfileType.Audio)
+                if (i.Type != MediaBrowser.Model.Dlna.DlnaProfileType.Audio)
                 {
                     continue;
                 }
@@ -209,12 +208,12 @@ namespace MediaBrowser.Model.Dlna
                     continue;
                 }
 
-                ConditionProcessor conditionProcessor = new ConditionProcessor();
+                var conditionProcessor = new MediaBrowser.Model.Dlna.ConditionProcessor();
 
                 var anyOff = false;
                 foreach (ProfileCondition c in i.Conditions)
                 {
-                    if (!conditionProcessor.IsAudioConditionSatisfied(c, audioChannels, audioBitrate))
+                    if (!conditionProcessor.IsAudioConditionSatisfied(GetModelProfileCondition(c), audioChannels, audioBitrate))
                     {
                         anyOff = true;
                         break;
@@ -231,13 +230,24 @@ namespace MediaBrowser.Model.Dlna
             return null;
         }
 
+        private MediaBrowser.Model.Dlna.ProfileCondition GetModelProfileCondition(ProfileCondition c)
+        {
+            return new MediaBrowser.Model.Dlna.ProfileCondition
+            {
+                Condition = c.Condition,
+                IsRequired = c.IsRequired,
+                Property = c.Property,
+                Value = c.Value
+            };
+        }
+
         public ResponseProfile GetImageMediaProfile(string container, int? width, int? height)
         {
-            container = StringHelper.TrimStart((container ?? string.Empty), '.');
+            container = StringHelper.TrimStart(container ?? string.Empty, '.');
 
             foreach (var i in ResponseProfiles)
             {
-                if (i.Type != DlnaProfileType.Photo)
+                if (i.Type != MediaBrowser.Model.Dlna.DlnaProfileType.Photo)
                 {
                     continue;
                 }
@@ -248,12 +258,12 @@ namespace MediaBrowser.Model.Dlna
                     continue;
                 }
 
-                ConditionProcessor conditionProcessor = new ConditionProcessor();
+                var conditionProcessor = new MediaBrowser.Model.Dlna.ConditionProcessor();
 
                 var anyOff = false;
                 foreach (ProfileCondition c in i.Conditions)
                 {
-                    if (!conditionProcessor.IsImageConditionSatisfied(c, width, height))
+                    if (!conditionProcessor.IsImageConditionSatisfied(GetModelProfileCondition(c), width, height))
                     {
                         anyOff = true;
                         break;
@@ -270,7 +280,7 @@ namespace MediaBrowser.Model.Dlna
             return null;
         }
 
-        public ResponseProfile GetVideoMediaProfile(string container, 
+        public ResponseProfile GetVideoMediaProfile(string container,
             string audioCodec,
             string videoCodec,
             int? width,
@@ -283,17 +293,17 @@ namespace MediaBrowser.Model.Dlna
             int? packetLength,
             TransportStreamTimestamp timestamp,
             bool? isAnamorphic,
-            bool? isCabac,
             int? refFrames,
             int? numVideoStreams,
             int? numAudioStreams,
-            string videoCodecTag)
+            string videoCodecTag,
+            bool? isAvc)
         {
-            container = StringHelper.TrimStart((container ?? string.Empty), '.');
+            container = StringHelper.TrimStart(container ?? string.Empty, '.');
 
             foreach (var i in ResponseProfiles)
             {
-                if (i.Type != DlnaProfileType.Video)
+                if (i.Type != MediaBrowser.Model.Dlna.DlnaProfileType.Video)
                 {
                     continue;
                 }
@@ -316,12 +326,12 @@ namespace MediaBrowser.Model.Dlna
                     continue;
                 }
 
-                ConditionProcessor conditionProcessor = new ConditionProcessor();
+                var conditionProcessor = new MediaBrowser.Model.Dlna.ConditionProcessor();
 
                 var anyOff = false;
                 foreach (ProfileCondition c in i.Conditions)
                 {
-                    if (!conditionProcessor.IsVideoConditionSatisfied(c, width, height, bitDepth, videoBitrate, videoProfile, videoLevel, videoFramerate, packetLength, timestamp, isAnamorphic, isCabac, refFrames, numVideoStreams, numAudioStreams, videoCodecTag))
+                    if (!conditionProcessor.IsVideoConditionSatisfied(GetModelProfileCondition(c), width, height, bitDepth, videoBitrate, videoProfile, videoLevel, videoFramerate, packetLength, timestamp, isAnamorphic, refFrames, numVideoStreams, numAudioStreams, videoCodecTag, isAvc))
                     {
                         anyOff = true;
                         break;

@@ -10,9 +10,9 @@ namespace MediaBrowser.Providers.Manager
     public static class ProviderUtils
     {
         public static void MergeBaseItemData<T>(MetadataResult<T> sourceResult,
-            MetadataResult<T> targetResult, 
-            List<MetadataFields> lockedFields, 
-            bool replaceData, 
+            MetadataResult<T> targetResult,
+            List<MetadataFields> lockedFields,
+            bool replaceData,
             bool mergeMetadataSettings)
             where T : BaseItem
         {
@@ -37,6 +37,15 @@ namespace MediaBrowser.Providers.Manager
                     {
                         target.Name = source.Name;
                     }
+                }
+            }
+
+            if (replaceData || string.IsNullOrEmpty(target.OriginalTitle))
+            {
+                // Safeguard against incoming data having an emtpy name
+                if (!string.IsNullOrWhiteSpace(source.OriginalTitle))
+                {
+                    target.OriginalTitle = source.OriginalTitle;
                 }
             }
 
@@ -89,7 +98,12 @@ namespace MediaBrowser.Providers.Manager
             {
                 target.CustomRating = source.CustomRating;
             }
-            
+
+            if (replaceData || string.IsNullOrEmpty(target.Tagline))
+            {
+                target.Tagline = source.Tagline;
+            }
+
             if (!lockedFields.Contains(MetadataFields.Overview))
             {
                 if (replaceData || string.IsNullOrEmpty(target.Overview))
@@ -107,7 +121,7 @@ namespace MediaBrowser.Providers.Manager
             {
                 if (replaceData || targetResult.People == null || targetResult.People.Count == 0)
                 {
-                    targetResult.People = sourceResult.People ?? new List<PersonInfo>();
+                    targetResult.People = sourceResult.People;
                 }
             }
 
@@ -142,43 +156,25 @@ namespace MediaBrowser.Providers.Manager
 
             if (!lockedFields.Contains(MetadataFields.Tags))
             {
-                var sourceHasTags = source as IHasTags;
-                var targetHasTags = target as IHasTags;
-
-                if (sourceHasTags != null && targetHasTags != null)
+                if (replaceData || target.Tags.Count == 0)
                 {
-                    if (replaceData || targetHasTags.Tags.Count == 0)
-                    {
-                        targetHasTags.Tags = sourceHasTags.Tags;
-                    }
+                    target.Tags = source.Tags;
                 }
             }
 
             if (!lockedFields.Contains(MetadataFields.Keywords))
             {
-                var sourceHasKeywords = source as IHasKeywords;
-                var targetHasKeywords = target as IHasKeywords;
-
-                if (sourceHasKeywords != null && targetHasKeywords != null)
+                if (replaceData || target.Keywords.Count == 0)
                 {
-                    if (replaceData || targetHasKeywords.Keywords.Count == 0)
-                    {
-                        targetHasKeywords.Keywords = sourceHasKeywords.Keywords;
-                    }
+                    target.Keywords = source.Keywords;
                 }
             }
 
             if (!lockedFields.Contains(MetadataFields.ProductionLocations))
             {
-                var sourceHasProductionLocations = source as IHasProductionLocations;
-                var targetHasProductionLocations = target as IHasProductionLocations;
-
-                if (sourceHasProductionLocations != null && targetHasProductionLocations != null)
+                if (replaceData || target.ProductionLocations.Count == 0)
                 {
-                    if (replaceData || targetHasProductionLocations.ProductionLocations.Count == 0)
-                    {
-                        targetHasProductionLocations.ProductionLocations = sourceHasProductionLocations.ProductionLocations;
-                    }
+                    target.ProductionLocations = source.ProductionLocations;
                 }
             }
 
@@ -203,7 +199,6 @@ namespace MediaBrowser.Providers.Manager
             MergeMetascore(source, target, lockedFields, replaceData);
             MergeCriticRating(source, target, lockedFields, replaceData);
             MergeAwards(source, target, lockedFields, replaceData);
-            MergeTaglines(source, target, lockedFields, replaceData);
             MergeTrailers(source, target, lockedFields, replaceData);
             MergeShortOverview(source, target, lockedFields, replaceData);
 
@@ -238,18 +233,12 @@ namespace MediaBrowser.Providers.Manager
                 targetHasDisplayOrder.DisplayOrder = sourceHasDisplayOrder.DisplayOrder;
             }
         }
-        
+
         private static void MergeShortOverview(BaseItem source, BaseItem target, List<MetadataFields> lockedFields, bool replaceData)
         {
-            var sourceHasShortOverview = source as IHasShortOverview;
-            var targetHasShortOverview = target as IHasShortOverview;
-
-            if (sourceHasShortOverview != null && targetHasShortOverview != null)
+            if (replaceData || string.IsNullOrEmpty(target.ShortOverview))
             {
-                if (replaceData || string.IsNullOrEmpty(targetHasShortOverview.ShortOverview))
-                {
-                    targetHasShortOverview.ShortOverview = sourceHasShortOverview.ShortOverview;
-                }
+                target.ShortOverview = source.ShortOverview;
             }
         }
 
@@ -316,34 +305,14 @@ namespace MediaBrowser.Providers.Manager
 
         private static void MergeCriticRating(BaseItem source, BaseItem target, List<MetadataFields> lockedFields, bool replaceData)
         {
-            var sourceCast = source as IHasCriticRating;
-            var targetCast = target as IHasCriticRating;
-
-            if (sourceCast != null && targetCast != null)
+            if (replaceData || !target.CriticRating.HasValue)
             {
-                if (replaceData || !targetCast.CriticRating.HasValue)
-                {
-                    targetCast.CriticRating = sourceCast.CriticRating;
-                }
-
-                if (replaceData || string.IsNullOrEmpty(targetCast.CriticRatingSummary))
-                {
-                    targetCast.CriticRatingSummary = sourceCast.CriticRatingSummary;
-                }
+                target.CriticRating = source.CriticRating;
             }
-        }
 
-        private static void MergeTaglines(BaseItem source, BaseItem target, List<MetadataFields> lockedFields, bool replaceData)
-        {
-            var sourceCast = source as IHasTaglines;
-            var targetCast = target as IHasTaglines;
-
-            if (sourceCast != null && targetCast != null)
+            if (replaceData || string.IsNullOrEmpty(target.CriticRatingSummary))
             {
-                if (replaceData || targetCast.Taglines.Count == 0)
-                {
-                    targetCast.Taglines = sourceCast.Taglines;
-                }
+                target.CriticRatingSummary = source.CriticRatingSummary;
             }
         }
 

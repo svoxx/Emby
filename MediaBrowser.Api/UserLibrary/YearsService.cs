@@ -4,11 +4,9 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Model.Dto;
-using MediaBrowser.Model.Querying;
-using ServiceStack;
-using System;
 using System.Collections.Generic;
 using System.Linq;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -47,11 +45,6 @@ namespace MediaBrowser.Api.UserLibrary
     [Authenticated]
     public class YearsService : BaseItemsByNameService<Year>
     {
-        public YearsService(IUserManager userManager, ILibraryManager libraryManager, IUserDataManager userDataRepository, IItemRepository itemRepo, IDtoService dtoService)
-            : base(userManager, libraryManager, userDataRepository, itemRepo, dtoService)
-        {
-        }
-
         /// <summary>
         /// Gets the specified request.
         /// </summary>
@@ -72,8 +65,8 @@ namespace MediaBrowser.Api.UserLibrary
         private BaseItemDto GetItem(GetYear request)
         {
             var item = LibraryManager.GetYear(request.Year);
-
-            var dtoOptions = GetDtoOptions(request);
+            
+            var dtoOptions = GetDtoOptions(AuthorizationContext, request);
 
             if (!string.IsNullOrWhiteSpace(request.UserId))
             {
@@ -112,6 +105,10 @@ namespace MediaBrowser.Api.UserLibrary
                 .Where(i => i > 0)
                 .Distinct()
                 .Select(year => LibraryManager.GetYear(year));
+        }
+
+        public YearsService(IUserManager userManager, ILibraryManager libraryManager, IUserDataManager userDataRepository, IItemRepository itemRepository, IDtoService dtoService, IAuthorizationContext authorizationContext) : base(userManager, libraryManager, userDataRepository, itemRepository, dtoService, authorizationContext)
+        {
         }
     }
 }

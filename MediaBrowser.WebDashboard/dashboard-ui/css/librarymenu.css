@@ -10,6 +10,29 @@
     padding-top: 98px !important;
 }
 
+.absolutePageTabContent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* If this is raised, make sure it does not overlap bottom footer */
+    z-index: 1;
+    margin: 0 !important;
+    /* Page needs to supply padding */
+    top: 102px !important;
+    transition: transform 200ms ease-out;
+}
+
+    .absolutePageTabContent.headroomUnpinned {
+        transform: translateY(-92px);
+        bottom: -92px !important;
+    }
+
+.pageTabContent:not(.is-active) {
+    display: none !important;
+}
+
 .sidebarDivider {
     height: 1px;
     background: #eaeaea;
@@ -30,70 +53,11 @@
 }
 
 .viewMenuBar paper-icon-button {
-    color: #fff;
     vertical-align: middle;
-}
-
-.mainDrawerPanel {
-    position: static !important;
-    width: auto !important;
-    height: auto !important;
-    touch-action: auto !important;
-    overflow: visible;
-}
-
-.mainDrawerPanelPreInit #drawer {
-    display: none !important;
-}
-
-.mainDrawerPanel #drawer {
-    z-index: 1099 !important;
-    position: fixed !important;
-    bottom: 0;
-    height: auto !important;
-    /* Need to reset this because it causes the entire panel to be draggable in safari */
-    box-sizing: initial !important;
-}
-
-.verticalScrollingDrawer {
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    overflow-x: hidden;
-}
-
-.dragging .mainDrawerPanel #drawer {
-}
-
-.mainDrawerPanel #main {
-    left: 0 !important;
-    position: static !important;
-    z-index: 1;
-}
-
-.mainDrawerPanel #scrim {
-    /* Give it at least something to make it visible */
-    z-index: 1098;
-    /* It defaults to absolute, not visible after scrolling */
-    position: fixed;
-}
-
-.mainDrawer {
-    height: auto !important;
-}
-
-.mainDrawerContent {
-    padding-bottom: 40px;
 }
 
 .headerButton {
-    margin: 0 5px;
-    background-color: transparent;
-    vertical-align: middle;
-    text-align: center;
-    border: 0 !important;
-    outline: none;
-    cursor: pointer;
-    display: inline-block;
+    flex-shrink: 0;
 }
 
 .menuArrow {
@@ -103,60 +67,26 @@
     display: inline-block;
 }
 
-.headerButtonRight {
-    border-width: 0 !important;
-    display: inline-block;
-}
-
-    .headerButtonRight:first-child {
-        border-width: 0 !important;
-    }
-
 .hideMainDrawer .mainDrawerButton {
     display: none;
 }
 
 .libraryMenuButtonText {
     text-decoration: none;
-    font-weight: 400 !important;
-    font-size: 15px;
-    display: inline-block;
+    display: inline-flex;
     vertical-align: middle;
     padding-left: 0 !important;
     cursor: default;
-    position: relative;
-    top: 1px;
     white-space: nowrap;
-    max-width: 100px;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-@media all and (min-width: 500px) {
-
-    .libraryMenuButtonText {
-        max-width: 200px;
-    }
-}
-
-@media all and (min-width: 600px) {
-
-    .libraryMenuButtonText {
-        max-width: 300px;
-    }
-}
-
-.logoLibraryMenuButtonText {
-    font-family: Montserrat;
-    color: #333;
-}
-
-.ui-body-b .logoLibraryMenuButtonText, .ui-bar-b .logoLibraryMenuButtonText {
-    color: #fff;
+    align-items: center;
+    margin: 0 0 0 .5em;
+    /* Avoid pushing right header off the screen */
+    flex-shrink: 1;
 }
 
 .viewMenuBar {
-    font-weight: bold;
     position: fixed;
     right: 0;
     left: 0;
@@ -165,7 +95,7 @@
     border: 0;
     height: 50px;
     display: flex;
-    align-items: center;
+    flex-direction: column;
 }
 
 .hiddenViewMenuBar .viewMenuBar {
@@ -174,50 +104,70 @@
 
 .libraryViewNav {
     overflow: hidden;
+    z-index: 999;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding: 0 0 0;
+    display: flex;
+    display: block;
+    text-align: center;
+    margin: 0 auto;
+    align-items: center;
+    font-size: 13px;
+}
+
+.ui-body-b .libraryViewNav {
     position: fixed;
     right: 0;
     left: 0;
     top: 50px;
-    z-index: 999;
-    text-align: center;
-    font-size: 14px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    padding: 0 0 0;
-    overflow-x: scroll;
-    -ms-overflow-style: none;
-    overflow: -moz-scrollbars-none;
-    -webkit-overflow-scrolling: touch;
 }
 
-    .libraryViewNav::-webkit-scrollbar {
-        height: 0 !important;
-        display: none;
+.libraryViewNav.bottom {
+    top: auto !important;
+    bottom: 0;
+}
+
+.viewMenuBar, .ui-body-b .libraryViewNav {
+    background-color: #222326;
+    color: #fff;
+}
+
+    .viewMenuBar .primaryIcons {
+        display: flex;
+        flex-grow: 1;
+        width: 100%;
+        align-items: center;
     }
 
-.libraryViewNavWithMinHeight {
-    min-height: 48px;
+.dashboardDocument {
+    font-size: 13px;
 }
 
-.viewMenuBar, .libraryViewNav {
-    background-color: #080808;
-}
-
-    .viewMenuBar.semiTransparent {
-        background-color: rgba(15, 15, 15, .3);
+    .dashboardDocument .viewMenuBar {
+        height: auto;
     }
 
-.paperLibraryViewNav {
-    background-color: transparent !important;
+        .dashboardDocument .viewMenuBar .primaryIcons {
+            padding: .7em 0;
+        }
+
+    .dashboardDocument.withTallToolbar .primaryIcons {
+        padding-bottom: 0;
+    }
+
+.viewMenuBarTabs {
+    width: 100%;
 }
 
-.libraryViewNav iron-icon {
-    display: none;
-}
+    .viewMenuBarTabs .paperTabLink {
+        padding-left: 1.5em;
+        padding-right: 1.5em;
+    }
 
-.libraryViewNav::-webkit-scrollbar {
-    height: 0 !important;
-    display: none;
+.viewMenuBar.semiTransparent {
+    background-color: rgba(15, 15, 15, .3);
 }
 
 .viewMenuLink {
@@ -242,10 +192,7 @@
     }
 
 .viewMenuSecondary {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;
+    margin-left: auto;
     display: flex;
     align-items: center;
 }
@@ -255,80 +202,7 @@
 }
 
 .ui-panel.ui-body-b {
-    background-color: #212121;
-}
-
-.libraryViewNav a {
-    display: inline-block;
-    padding: 14px 13px 11px;
-    color: rgba(255,255,255,.8) !important;
-    text-decoration: none;
-    margin: 0 0;
-    position: relative;
-    font-weight: normal;
-    border-bottom: 2px solid transparent;
-}
-
-.libraryViewNav .ui-btn-active {
-    border-bottom-color: #52B54B;
-    color: #fff !important;
-}
-
-.libraryViewNav .iron-selected a {
-    color: inherit !important;
-    text-decoration: none;
-    text-align: center;
-}
-
-.libraryViewNav #tabsContainer {
-    margin: auto;
-    -ms-flex: none;
-    -webkit-flex: none;
-    flex: none;
-    flex-shrink: 0;
-    flex-grow: 1;
-    touch-action: auto !important;
-}
-
-.libraryViewNav paper-tabs {
-    flex: none;
-    flex-shrink: 0;
-    flex-grow: 1;
-    overflow-x: visible !important;
-}
-
-.libraryViewNav paper-tab {
-    flex: none;
-    flex-shrink: 0;
-    flex-grow: 1;
-}
-
-.basicPaperLibraryTabs .libraryViewNav paper-tabs {
-    display: none;
-}
-
-.fullPaperLibraryTabs .legacyTabs {
-    display: none;
-}
-
-.minimumSizeTabs .libraryViewNav .tab-content {
-    display: block !important;
-}
-
-.minimumSizeTabs .libraryViewNav paper-tab {
-    height: auto !important;
-    flex-grow: 0 !important;
-}
-
-.minimumSizeTabs .libraryViewNav #tabsContainer {
-    flex-grow: 0 !important;
-}
-
-@media all and (max-width: 400px) {
-
-    .libraryMenuButtonText {
-        display: none;
-    }
+    background-color: #1D1D20;
 }
 
 @media all and (max-width: 800px) {
@@ -339,90 +213,64 @@
     }
 }
 
-@media all and (min-width: 800px) {
-
-    .dashboardDocument .dashboardDrawerContent {
-        display: none !important;
-    }
-}
-
-@media all and (max-width: 800px) {
-
-    .dashboardDocument .libraryDrawerContent {
-        display: none !important;
-    }
-}
-
-.drawerUserPanel {
-    color: #fff;
-    padding: 1em 1.2em;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-}
-
-.drawerUserPanelUserImage {
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center center;
-    border-radius: 1000px;
-}
-
-.drawerUserPanelUserName {
-    padding-left: 1em;
-}
-
-.libraryDocument .dashboardDrawerContent {
-    display: none !important;
-}
-
-.dashboardDocument .lnkMySync {
-    display: none !important;
-}
-
-.dashboardDocument .dashboardEntryHeaderButton {
-    display: none !important;
-}
-
-.dashboardDocument .lnkManageServer {
-    display: none !important;
-}
-
-.dashboardDocument .headerVoiceButton {
-    display: none !important;
-}
-
 body:not(.dashboardDocument) .btnNotifications {
     display: none !important;
 }
 
 .darkDrawer {
-    background-color: rgba(30,30,30,1) !important;
-    backdrop-filter: brightness(1.5) blur(4px);
-    box-shadow: none !important;
+    background-color: #1C1C1F !important;
+    /*background-color: rgba(40,40,40,.8) !important;
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);*/
 }
 
     .darkDrawer .sidebarLinkIcon {
-        color: #eee !important;
-    }
-
-    .darkDrawer .sidebarLinkText, .darkDrawer .sidebarLink {
-        color: #fff !important;
-        font-weight: normal !important;
-    }
-
-    .darkDrawer .sidebarHeader {
         color: #bbb !important;
+        margin-left: 1.6em;
     }
 
-    .darkDrawer .sidebarDivider {
-        background: #303030 !important;
+.darkDrawer i.sidebarLinkIcon {
+    margin-left: 1.9em;
+}
+
+.darkDrawer .sidebarLinkText, .darkDrawer .sidebarLink {
+    color: #fff !important;
+    font-weight: normal !important;
+}
+
+.darkDrawer .sidebarHeader {
+    color: #bbb !important;
+}
+
+.darkDrawer .sidebarDivider {
+    background: #282828 !important;
+}
+
+.darkDrawer .sidebarLink:hover {
+    background: #252528;
+}
+
+.darkDrawer .sidebarLink.selectedSidebarLink, .darkDrawer .selectedMediaFolder {
+    background: #252528 !important;
+    color: #52B54B !important;
+}
+
+body:not(.dashboardDocument) .headerAppsButton {
+    display: none;
+}
+
+.mainDrawer-scrollContainer {
+    padding-bottom: 10vh;
+}
+
+@media all and (min-width: 640px) {
+
+    .mainDrawerPanel .viewMenuBarTabs {
+        width: auto;
+        padding-left: 272px;
     }
 
-    .darkDrawer .sidebarLink:hover {
-        background: #444;
+    .viewMenuBarTabs .libraryViewNav {
+        text-align: left !important;
     }
-
-    .darkDrawer .sidebarLink.selectedSidebarLink, .darkDrawer .selectedMediaFolder {
-        background: #444 !important;
-    }
+}

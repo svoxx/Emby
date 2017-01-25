@@ -69,43 +69,14 @@ namespace MediaBrowser.Controller.Providers
         /// <summary>
         /// Saves the image.
         /// </summary>
-        /// <param name="item">The item.</param>
-        /// <param name="source">The source.</param>
-        /// <param name="mimeType">Type of the MIME.</param>
-        /// <param name="type">The type.</param>
-        /// <param name="imageIndex">Index of the image.</param>
-        /// <param name="internalCacheKey">The internal cache key.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        Task SaveImage(IHasImages item, Stream source, string mimeType, ImageType type, int? imageIndex, string internalCacheKey, CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Saves the image.
-        /// </summary>
-        /// <param name="item">The item.</param>
-        /// <param name="source">The source.</param>
-        /// <param name="mimeType">Type of the MIME.</param>
-        /// <param name="type">The type.</param>
-        /// <param name="imageIndex">Index of the image.</param>
-        /// <param name="internalCacheKey">The internal cache key.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task SaveImage(IHasImages item, string source, string mimeType, ImageType type, int? imageIndex, string internalCacheKey, CancellationToken cancellationToken);
+        Task SaveImage(IHasImages item, string source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken);
         
         /// <summary>
         /// Adds the metadata providers.
         /// </summary>
-        /// <param name="imageProviders">The image providers.</param>
-        /// <param name="metadataServices">The metadata services.</param>
-        /// <param name="identityProviders">The identity providers.</param>
-        /// <param name="identityConverters">The identity converters.</param>
-        /// <param name="metadataProviders">The metadata providers.</param>
-        /// <param name="savers">The savers.</param>
-        /// <param name="imageSavers">The image savers.</param>
-        /// <param name="externalIds">The external ids.</param>
-        void AddParts(IEnumerable<IImageProvider> imageProviders, IEnumerable<IMetadataService> metadataServices, IEnumerable<IItemIdentityProvider> identityProviders, IEnumerable<IItemIdentityConverter> identityConverters, IEnumerable<IMetadataProvider> metadataProviders,
+        void AddParts(IEnumerable<IImageProvider> imageProviders, IEnumerable<IMetadataService> metadataServices, IEnumerable<IMetadataProvider> metadataProviders,
             IEnumerable<IMetadataSaver> savers,
-            IEnumerable<IImageSaver> imageSavers,
             IEnumerable<IExternalId> externalIds);
 
         /// <summary>
@@ -135,7 +106,7 @@ namespace MediaBrowser.Controller.Providers
         /// </summary>
         /// <param name="item">The item.</param>
         /// <returns>IEnumerable{ExternalUrl}.</returns>
-        IEnumerable<ExternalUrl> GetExternalUrls(IHasProviderIds item);
+        IEnumerable<ExternalUrl> GetExternalUrls(BaseItem item);
 
         /// <summary>
         /// Gets the external identifier infos.
@@ -190,21 +161,5 @@ namespace MediaBrowser.Controller.Providers
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{HttpResponseInfo}.</returns>
         Task<HttpResponseInfo> GetSearchImage(string providerName, string url, CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Gets the item identity providers.
-        /// </summary>
-        /// <typeparam name="TLookupInfo">The type of the t lookup information.</typeparam>
-        /// <returns>IEnumerable&lt;IItemIdentityProvider&lt;TLookupInfo, TIdentity&gt;&gt;.</returns>
-        IEnumerable<IItemIdentityProvider<TLookupInfo>> GetItemIdentityProviders<TLookupInfo>()
-            where TLookupInfo : ItemLookupInfo;
-
-        /// <summary>
-        /// Gets the item identity converters.
-        /// </summary>
-        /// <typeparam name="TLookupInfo">The type of the t lookup information.</typeparam>
-        /// <returns>IEnumerable&lt;IItemIdentityConverter&lt;TIdentity&gt;&gt;.</returns>
-        IEnumerable<IItemIdentityConverter<TLookupInfo>> GetItemIdentityConverters<TLookupInfo>()
-            where TLookupInfo : ItemLookupInfo;
     }
 }

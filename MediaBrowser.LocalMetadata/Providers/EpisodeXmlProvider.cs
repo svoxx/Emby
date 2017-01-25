@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities.TV;
+﻿using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.LocalMetadata.Parsers;
 using MediaBrowser.Model.Entities;
@@ -7,18 +6,25 @@ using MediaBrowser.Model.Logging;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.LocalMetadata.Providers
 {
     public class EpisodeXmlProvider : BaseXmlProvider<Episode>
     {
         private readonly ILogger _logger;
+        private readonly IProviderManager _providerManager;
+        private readonly IXmlReaderSettingsFactory _xmlSettings;
 
-        public EpisodeXmlProvider(IFileSystem fileSystem, ILogger logger)
+        public EpisodeXmlProvider(IFileSystem fileSystem, ILogger logger, IProviderManager providerManager, IXmlReaderSettingsFactory xmlSettings)
             : base(fileSystem)
         {
             _logger = logger;
+            _providerManager = providerManager;
+            _xmlSettings = xmlSettings;
         }
 
         protected override void Fetch(MetadataResult<Episode> result, string path, CancellationToken cancellationToken)
@@ -26,7 +32,7 @@ namespace MediaBrowser.LocalMetadata.Providers
             var images = new List<LocalImageInfo>();
             var chapters = new List<ChapterInfo>();
 
-            new EpisodeXmlParser(_logger, FileSystem).Fetch(result, images, path, cancellationToken);
+            new EpisodeXmlParser(_logger, FileSystem, _providerManager, _xmlSettings).Fetch(result, images, path, cancellationToken);
 
             result.Images = images;
         }

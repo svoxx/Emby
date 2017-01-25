@@ -8,6 +8,7 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.XbmcMetadata.Configuration;
 using MediaBrowser.XbmcMetadata.Savers;
 using System;
+using System.Linq;
 
 namespace MediaBrowser.XbmcMetadata
 {
@@ -49,11 +50,11 @@ namespace MediaBrowser.XbmcMetadata
                         return;
                     }
 
-                    var items = _libraryManager.GetItems(new InternalItemsQuery
+                    var items = _libraryManager.GetItemList(new InternalItemsQuery
                     {
-                        Person = person.Name
+                        PersonIds = new [] { person.Id.ToString("N") }
 
-                    }).Items;
+                    }).ToList();
 
                     foreach (var item in items)
                     {
@@ -86,6 +87,16 @@ namespace MediaBrowser.XbmcMetadata
             var locationType = item.LocationType;
             if (locationType == LocationType.Remote ||
                 locationType == LocationType.Virtual)
+            {
+                return;
+            }
+
+            if (!item.SupportsLocalMetadata)
+            {
+                return;
+            }
+
+            if (!item.IsSaveLocalMetadataEnabled())
             {
                 return;
             }

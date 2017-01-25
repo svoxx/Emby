@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function populateHistory(packageInfo, page) {
 
@@ -56,43 +57,95 @@
         }
     }
 
-    function populateReviews(id, page) {
+    function renderPluginInfo(page, pkg, pluginSecurityInfo) {
 
-        ApiClient.getPackageReviews(id, null, null, 3).then(function (positive) {
+        if (AppInfo.isNativeApp) {
+            return;
+        }
 
-            var html = '';
+        if (pkg.isPremium) {
+            $('.premiumPackage', page).show();
 
-            if (positive && positive.length > 0) {
+            // Fill in registration info
+            var regStatus = "";
+            if (pkg.isRegistered) {
 
-                html += '<div data-role="collapsible" data-collapsed="true" style="margin-top: 2em;" >';
-                html += '<h3>' + Globalize.translate('HeaderLatestReviews') + '</h3>';
+                regStatus += "<p style='color:green;'>";
 
-                html += "<div><br/>";
+                regStatus += Globalize.translate('MessageFeatureIncludedWithSupporter');
 
-                for (var i = 0; i < positive.length; i++) {
-                    var review = positive[i];
+            } else {
 
-                    html += "<div>";
-                    html += "<span class='storeItemReviewText'>";
-                    html += new Date(review.timestamp).toDateString();
-                    html += " " + RatingHelpers.getStoreRatingHtml(review.rating, review.id, review.name, true);
-                    html += " " + review.title;
-                    html += "</span>";
-                    if (review.review) {
-                        html += "<p class='storeItemReviewText'>";
-                        html += review.review;
-                        html += "</p>";
-                    }
+                var expDateTime = new Date(pkg.expDate).getTime();
+                var nowTime = new Date().getTime();
 
-                    html += "</div>";
-                    html += "<hr/>";
+                if (expDateTime <= nowTime) {
+                    regStatus += "<p style='color:red;'>";
+                    regStatus += Globalize.translate('MessageTrialExpired');
+                } else if (expDateTime > new Date(1970, 1, 1).getTime()) {
+
+                    regStatus += "<p style='color:blue;'>";
+                    regStatus += Globalize.translate('MessageTrialWillExpireIn').replace('{0}', Math.round(expDateTime - nowTime) / (86400000));
                 }
-                html += "</div>";
-                html += "</div>";
             }
 
-            $('#latestReviews', page).html(html).trigger('create');
-        });
+            regStatus += "</p>";
+            $('#regStatus', page).html(regStatus);
+
+            if (pluginSecurityInfo.IsMBSupporter) {
+                $('#regInfo', page).html(pkg.regInfo || "");
+
+                $('.premiumDescription', page).hide();
+                $('.supporterDescription', page).hide();
+
+                if (pkg.price > 0) {
+
+                    $('.premiumHasPrice', page).show();
+                    $('#featureId', page).val(pkg.featureId);
+                    $('#featureName', page).val(pkg.name);
+                    $('#amount', page).val(pkg.price);
+
+                    $('#regPrice', page).html("<h3>" + Globalize.translate('ValuePriceUSD').replace('{0}', "$" + pkg.price.toFixed(2)) + "</h3>");
+                    $('#ppButton', page).hide();
+
+                    var url = "https://mb3admin.com/admin/service/user/getPayPalEmail?id=" + pkg.owner;
+
+                    fetch(url).then(function (response) {
+
+                        return response.json();
+
+                    }).then(function (dev) {
+
+                        if (dev.payPalEmail) {
+                            $('#payPalEmail', page).val(dev.payPalEmail);
+                            $('#ppButton', page).show();
+
+                        }
+                    });
+
+                } else {
+                    // Supporter-only feature
+                    $('.premiumHasPrice', page).hide();
+                }
+            } else {
+
+                if (pkg.price) {
+                    $('.premiumDescription', page).show();
+                    $('.supporterDescription', page).hide();
+                    $('#regInfo', page).html("");
+
+                } else {
+                    $('.premiumDescription', page).hide();
+                    $('.supporterDescription', page).show();
+                    $('#regInfo', page).html("");
+                }
+
+                $('#ppButton', page).hide();
+            }
+
+        } else {
+            $('.premiumPackage', page).hide();
+        }
     }
 
     function renderPackage(pkg, installedPlugins, pluginSecurityInfo, page) {
@@ -103,7 +156,6 @@
 
         populateVersions(pkg, page, installedPlugin);
         populateHistory(pkg, page);
-        if (pkg.totalRatings > 0) populateReviews(pkg.id, page);
 
         $('.pluginName', page).html(pkg.name);
 
@@ -130,15 +182,7 @@
 
         $('#developer', page).html(pkg.owner);
 
-        RegistrationServices.renderPluginInfo(page, pkg, pluginSecurityInfo);
-
-        //Ratings and Reviews
-        var ratingHtml = RatingHelpers.getStoreRatingHtml(pkg.avgRating, pkg.id, pkg.name);
-        ratingHtml += "<span class='storeReviewCount'>";
-        ratingHtml += " " + Globalize.translate('ValueReviewCount').replace('{0}', pkg.totalRatings);
-        ratingHtml += "</span>";
-
-        $('#ratingLine', page).html(ratingHtml);
+        renderPluginInfo(page, pkg, pluginSecurityInfo);
 
         if (pkg.richDescUrl) {
             $('#pViewWebsite', page).show();
@@ -168,71 +212,6 @@
         Dashboard.hideLoadingMsg();
     }
 
-    $(document).on('pageinit', "#addPluginPage", function () {
-
-        $('.addPluginForm').off('submit', AddPluginPage.onSubmit).on('submit', AddPluginPage.onSubmit);
-
-    }).on('pageshow', "#addPluginPage", function () {
-
-        var page = this;
-
-        Dashboard.showLoadingMsg();
-
-        var name = getParameterByName('name');
-        var guid = getParameterByName('guid');
-
-        var promise1 = ApiClient.getPackageInfo(name, guid);
-        var promise2 = ApiClient.getInstalledPlugins();
-        var promise3 = ApiClient.getPluginSecurityInfo();
-
-        Promise.all([promise1, promise2, promise3]).then(function (responses) {
-
-            renderPackage(responses[0], responses[1], responses[2], page);
-
-        });
-
-    }).on('pagebeforeshow pageinit pageshow', "#addPluginPage", function () {
-
-        // This needs both events for the helpurl to get done at the right time
-
-        var page = this;
-
-        var context = getParameterByName('context');
-
-        $('.syncTabs', page).hide();
-        $('.pluginTabs', page).hide();
-        $('.livetvTabs', page).hide();
-        $('.notificationsTabs', page).hide();
-
-        if (context == 'sync') {
-            $('.syncTabs', page).show();
-
-            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Sync');
-            Dashboard.setPageTitle(Globalize.translate('TitleSync'));
-        }
-        else if (context == 'livetv') {
-
-            $('.livetvTabs', page).show();
-
-            Dashboard.setPageTitle(Globalize.translate('TitleLiveTV'));
-            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Live%20TV');
-        }
-        else if (context == 'notifications') {
-
-            $('.notificationsTabs', page).show();
-
-            Dashboard.setPageTitle(Globalize.translate('TitleNotifications'));
-            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Notifications');
-        }
-        else {
-            $('.pluginTabs', page).show();
-
-            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Plugins');
-            Dashboard.setPageTitle(Globalize.translate('TitlePlugins'));
-        }
-
-    });
-
     function performInstallation(page, packageName, guid, updateClass, version) {
 
         var developer = $('#developer', page).html().toLowerCase();
@@ -242,6 +221,8 @@
             if (confirmed) {
 
                 Dashboard.showLoadingMsg();
+
+                page.querySelector('#btnInstall').disabled = true;
 
                 ApiClient.installPlugin(packageName, guid, updateClass, version).then(function () {
 
@@ -276,20 +257,44 @@
         }
     }
 
-    function addPluginpage() {
+    function updateHelpUrl(page, params) {
 
-        var self = this;
+        var context = params.context;
 
-        self.onSubmit = function () {
+        $('.notificationsTabs', page).hide();
+
+        if (context == 'sync') {
+            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Sync');
+            LibraryMenu.setTitle(Globalize.translate('TitleSync'));
+        }
+        else if (context == 'livetv') {
+
+            LibraryMenu.setTitle(Globalize.translate('TitleLiveTV'));
+            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Live%20TV');
+        }
+        else if (context == 'notifications') {
+
+            $('.notificationsTabs', page).show();
+
+            LibraryMenu.setTitle(Globalize.translate('TitleNotifications'));
+            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Notifications');
+        }
+        else {
+            page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Plugins');
+            LibraryMenu.setTitle(Globalize.translate('TitlePlugins'));
+        }
+    }
+
+    return function (view, params) {
+
+        var onSubmit = function () {
 
             Dashboard.showLoadingMsg();
 
             var page = $(this).parents('#addPluginPage')[0];
 
-            page.querySelector('#btnInstall').disabled = true;
-
-            var name = getParameterByName('name');
-            var guid = getParameterByName('guid');
+            var name = params.name;
+            var guid = params.guid;
 
             ApiClient.getInstalledPlugins().then(function (plugins) {
 
@@ -316,8 +321,37 @@
 
             return false;
         };
-    }
 
-    window.AddPluginPage = new addPluginpage();
+        $('.addPluginForm', view).on('submit', onSubmit);
 
-})(jQuery, document, window);
+        updateHelpUrl(view, params);
+
+        view.addEventListener('viewbeforeshow', function () {
+
+            var page = this;
+
+            updateHelpUrl(page, params);
+        });
+
+        view.addEventListener('viewshow', function () {
+
+            var page = this;
+
+            Dashboard.showLoadingMsg();
+
+            var name = params.name;
+            var guid = params.guid;
+
+            var promise1 = ApiClient.getPackageInfo(name, guid);
+            var promise2 = ApiClient.getInstalledPlugins();
+            var promise3 = ApiClient.getPluginSecurityInfo();
+
+            Promise.all([promise1, promise2, promise3]).then(function (responses) {
+
+                renderPackage(responses[0], responses[1], responses[2], page);
+            });
+
+            updateHelpUrl(page, params);
+        });
+    };
+});

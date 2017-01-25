@@ -15,14 +15,7 @@ namespace MediaBrowser.Controller.Channels
         /// Adds the parts.
         /// </summary>
         /// <param name="channels">The channels.</param>
-        /// <param name="factories">The factories.</param>
         void AddParts(IEnumerable<IChannel> channels);
-
-        /// <summary>
-        /// Gets the channel download path.
-        /// </summary>
-        /// <value>The channel download path.</value>
-        string ChannelDownloadPath { get; }
 
         /// <summary>
         /// Gets the channel features.
@@ -30,6 +23,8 @@ namespace MediaBrowser.Controller.Channels
         /// <param name="id">The identifier.</param>
         /// <returns>ChannelFeatures.</returns>
         ChannelFeatures GetChannelFeatures(string id);
+
+        bool SupportsSync(string channelId);
 
         /// <summary>
         /// Gets all channel features.
@@ -113,10 +108,9 @@ namespace MediaBrowser.Controller.Channels
         /// Gets the channel item media sources.
         /// </summary>
         /// <param name="item">The item.</param>
-        /// <param name="includeCachedVersions">if set to <c>true</c> [include cached versions].</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{IEnumerable{MediaSourceInfo}}.</returns>
-        Task<IEnumerable<MediaSourceInfo>> GetStaticMediaSources(IChannelMediaItem item, bool includeCachedVersions, CancellationToken cancellationToken);
+        Task<IEnumerable<MediaSourceInfo>> GetStaticMediaSources(BaseItem item, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the channel folder.
@@ -132,15 +126,5 @@ namespace MediaBrowser.Controller.Channels
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>BaseItemDto.</returns>
         Task<BaseItemDto> GetChannelFolder(string userId, CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Downloads the channel item.
-        /// </summary>
-        /// <param name="item">The item.</param>
-        /// <param name="destinationPath">The destination path.</param>
-        /// <param name="progress">The progress.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task DownloadChannelItem(IChannelMediaItem item, string destinationPath, IProgress<double> progress, CancellationToken cancellationToken);
     }
 }

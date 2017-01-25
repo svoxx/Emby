@@ -1,8 +1,6 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Localization;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
@@ -11,7 +9,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Globalization;
 
 namespace MediaBrowser.Providers.TV
 {
@@ -19,7 +20,7 @@ namespace MediaBrowser.Providers.TV
     {
         private readonly ILocalizationManager _localization;
 
-        public SeriesMetadataService(IServerConfigurationManager serverConfigurationManager, ILogger logger, IProviderManager providerManager, IProviderRepository providerRepo, IFileSystem fileSystem, IUserDataManager userDataManager, ILibraryManager libraryManager, ILocalizationManager localization) : base(serverConfigurationManager, logger, providerManager, providerRepo, fileSystem, userDataManager, libraryManager)
+        public SeriesMetadataService(IServerConfigurationManager serverConfigurationManager, ILogger logger, IProviderManager providerManager, IFileSystem fileSystem, IUserDataManager userDataManager, ILibraryManager libraryManager, ILocalizationManager localization) : base(serverConfigurationManager, logger, providerManager, fileSystem, userDataManager, libraryManager)
         {
             _localization = localization;
         }
@@ -76,11 +77,6 @@ namespace MediaBrowser.Providers.TV
             if (replaceData || targetItem.AirDays == null || targetItem.AirDays.Count == 0)
             {
                 targetItem.AirDays = sourceItem.AirDays;
-            }
-
-            if (mergeMetadataSettings)
-            {
-                targetItem.DisplaySpecialsWithSeasons = sourceItem.DisplaySpecialsWithSeasons;
             }
         }
     }

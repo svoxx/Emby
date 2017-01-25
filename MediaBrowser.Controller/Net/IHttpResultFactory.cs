@@ -1,8 +1,10 @@
-﻿using ServiceStack.Web;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Controller.Net
 {
@@ -11,14 +13,6 @@ namespace MediaBrowser.Controller.Net
     /// </summary>
     public interface IHttpResultFactory
     {
-        /// <summary>
-        /// Throws the error.
-        /// </summary>
-        /// <param name="statusCode">The status code.</param>
-        /// <param name="errorMessage">The error message.</param>
-        /// <param name="responseHeaders">The response headers.</param>
-        void ThrowError(int statusCode, string errorMessage, IDictionary<string, string> responseHeaders = null);
-        
         /// <summary>
         /// Gets the result.
         /// </summary>
@@ -80,7 +74,7 @@ namespace MediaBrowser.Controller.Net
         /// <param name="responseHeaders">The response headers.</param>
         /// <param name="isHeadRequest">if set to <c>true</c> [is head request].</param>
         /// <returns>System.Object.</returns>
-        object GetStaticResult(IRequest requestContext, 
+        Task<object> GetStaticResult(IRequest requestContext, 
             Guid cacheKey, 
             DateTime? lastDateModified,
             TimeSpan? cacheDuration, 
@@ -94,7 +88,7 @@ namespace MediaBrowser.Controller.Net
         /// <param name="requestContext">The request context.</param>
         /// <param name="options">The options.</param>
         /// <returns>System.Object.</returns>
-        object GetStaticResult(IRequest requestContext, StaticResultOptions options);
+        Task<object> GetStaticResult(IRequest requestContext, StaticResultOptions options);
 
         /// <summary>
         /// Gets the static file result.
@@ -103,7 +97,7 @@ namespace MediaBrowser.Controller.Net
         /// <param name="path">The path.</param>
         /// <param name="fileShare">The file share.</param>
         /// <returns>System.Object.</returns>
-        object GetStaticFileResult(IRequest requestContext, string path, FileShare fileShare = FileShare.Read);
+        Task<object> GetStaticFileResult(IRequest requestContext, string path, FileShareMode fileShare = FileShareMode.Read);
 
         /// <summary>
         /// Gets the static file result.
@@ -111,7 +105,7 @@ namespace MediaBrowser.Controller.Net
         /// <param name="requestContext">The request context.</param>
         /// <param name="options">The options.</param>
         /// <returns>System.Object.</returns>
-        object GetStaticFileResult(IRequest requestContext, 
+        Task<object> GetStaticFileResult(IRequest requestContext, 
             StaticFileResultOptions options);
     }
 }

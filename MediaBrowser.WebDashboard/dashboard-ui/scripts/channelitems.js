@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define(['jQuery', 'cardBuilder', 'imageLoader', 'emby-itemscontainer'], function ($, cardBuilder, imageLoader) {
+    'use strict';
 
     var data = {};
 
@@ -11,7 +12,7 @@
                 query: {
                     SortBy: "",
                     SortOrder: "Ascending",
-                    Fields: "PrimaryImageAspectRatio,SyncInfo",
+                    Fields: "PrimaryImageAspectRatio",
                     StartIndex: 0,
                     Limit: LibraryBrowser.getDefaultPageSize()
                 }
@@ -125,11 +126,9 @@
                 filterButton: true
             });
 
-            page.querySelector('.listTopPaging').innerHTML = pagingHtml;
-
             updateFilterControls(page);
 
-            html = LibraryBrowser.getPosterViewHtml({
+            html = cardBuilder.getCardsHtml({
                 items: result.Items,
                 shape: "auto",
                 defaultShape: 'square',
@@ -141,9 +140,15 @@
                 centerText: true
             });
 
+            var i, length;
+            var elems = page.querySelectorAll('.paging');
+            for (i = 0, length = elems.length; i < length; i++) {
+                elems[i].innerHTML = pagingHtml;
+            }
+
             var elem = page.querySelector('#items');
-            elem.innerHTML = html + pagingHtml;
-            ImageLoader.lazyChildren(elem);
+            elem.innerHTML = html;
+            imageLoader.lazyChildren(elem);
 
             $('.btnNextPage', page).on('click', function () {
                 query.StartIndex += query.Limit;
@@ -247,31 +252,7 @@
 
     function updateFilterControls(page) {
 
-        var query = getQuery(page);
-        $('.alphabetPicker', page).alphaValue(query.NameStartsWith);
     }
-
-    pageIdOn('pageinit', "channelItemsPage", function () {
-
-        var page = this;
-
-        $('.alphabetPicker', this).on('alphaselect', function (e, character) {
-
-            var query = getQuery(page);
-            query.NameStartsWithOrGreater = character;
-            query.StartIndex = 0;
-
-            reloadItems(page);
-
-        }).on('alphaclear', function (e) {
-
-            var query = getQuery(page);
-            query.NameStartsWithOrGreater = '';
-
-            reloadItems(page);
-        });
-
-    });
 
     pageIdOn('pagebeforeshow', "channelItemsPage", function () {
 
@@ -280,4 +261,4 @@
         updateFilterControls(page);
     });
 
-})(jQuery, document);
+});

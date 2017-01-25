@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -11,16 +10,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.XbmcMetadata.Savers
 {
     public class MovieNfoSaver : BaseNfoSaver
     {
-        public MovieNfoSaver(IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, IUserManager userManager, IUserDataManager userDataManager, ILogger logger) : base(fileSystem, configurationManager, libraryManager, userManager, userDataManager, logger)
-        {
-        }
-
         protected override string GetLocalSavePath(IHasMetadata item)
         {
             return GetMovieSavePaths(new ItemInfo(item), FileSystem).FirstOrDefault();
@@ -37,7 +35,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 list.Add(Path.Combine(path, "VIDEO_TS", "VIDEO_TS.nfo"));
             }
 
-            if (item.VideoType == VideoType.Dvd || item.VideoType == VideoType.BluRay || item.VideoType == VideoType.HdDvd)
+            if (!item.IsPlaceHolder && (item.VideoType == VideoType.Dvd || item.VideoType == VideoType.BluRay || item.VideoType == VideoType.HdDvd))
             {
                 var path = item.ContainingFolderPath;
 
@@ -45,6 +43,13 @@ namespace MediaBrowser.XbmcMetadata.Savers
             }
             else
             {
+                // http://kodi.wiki/view/NFO_files/Movies
+                // movie.nfo will override all and any .nfo files in the same folder as the media files if you use the "Use foldernames for lookups" setting. If you don't, then moviename.nfo is used
+                //if (!item.IsInMixedFolder && item.ItemType == typeof(Movie))
+                //{
+                //    list.Add(Path.Combine(item.ContainingFolderPath, "movie.nfo"));
+                //}
+
                 list.Add(Path.ChangeExtension(item.Path, ".nfo"));
             }
 
@@ -101,9 +106,9 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             if (movie != null)
             {
-                if (!string.IsNullOrEmpty(movie.TmdbCollectionName))
+                if (!string.IsNullOrEmpty(movie.CollectionName))
                 {
-                    writer.WriteElementString("set", movie.TmdbCollectionName);
+                    writer.WriteElementString("set", movie.CollectionName);
                 }
             }
         }
@@ -119,6 +124,10 @@ namespace MediaBrowser.XbmcMetadata.Savers
             };
 
             return list;
+        }
+
+        public MovieNfoSaver(IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, IUserManager userManager, IUserDataManager userDataManager, ILogger logger, IXmlReaderSettingsFactory xmlReaderSettingsFactory) : base(fileSystem, configurationManager, libraryManager, userManager, userDataManager, logger, xmlReaderSettingsFactory)
+        {
         }
     }
 }

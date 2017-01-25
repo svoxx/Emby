@@ -1,8 +1,9 @@
-﻿(function ($, window, document) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function loadUser(page, user) {
 
-        Dashboard.setPageTitle(user.Name);
+        LibraryMenu.setTitle(user.Name);
 
         if (user.ConnectLinkType == 'Guest') {
 
@@ -41,4 +42,4 @@
 
     });
 
-})(jQuery, window, document);
+});

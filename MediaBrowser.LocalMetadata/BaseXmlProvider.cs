@@ -1,15 +1,15 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Providers;
-using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.LocalMetadata
 {
-    public abstract class BaseXmlProvider<T> : ILocalMetadataProvider<T>, IHasChangeMonitor, IHasOrder
+    public abstract class BaseXmlProvider<T> : ILocalMetadataProvider<T>, IHasItemChangeMonitor, IHasOrder
         where T : IHasMetadata, new()
     {
         protected IFileSystem FileSystem;
@@ -40,7 +40,7 @@ namespace MediaBrowser.LocalMetadata
             {
                 result.HasMetadata = false;
             }
-            catch (DirectoryNotFoundException)
+            catch (IOException)
             {
                 result.HasMetadata = false;
             }
@@ -57,7 +57,7 @@ namespace MediaBrowser.LocalMetadata
 
         protected abstract FileSystemMetadata GetXmlFile(ItemInfo info, IDirectoryService directoryService);
 
-        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService, DateTime date)
+        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService)
         {
             var file = GetXmlFile(new ItemInfo(item), directoryService);
 
@@ -66,7 +66,7 @@ namespace MediaBrowser.LocalMetadata
                 return false;
             }
 
-            return file.Exists && FileSystem.GetLastWriteTimeUtc(file) > date;
+            return file.Exists && FileSystem.GetLastWriteTimeUtc(file) > item.DateLastSaved;
         }
 
         public string Name
@@ -77,7 +77,7 @@ namespace MediaBrowser.LocalMetadata
             }
         }
 
-        public int Order
+        public  virtual int Order
         {
             get
             {
@@ -96,7 +96,5 @@ namespace MediaBrowser.LocalMetadata
                 return "Emby Xml";
             }
         }
-        
-        internal static readonly SemaphoreSlim XmlParsingResourcePool = new SemaphoreSlim(4, 4);
     }
 }

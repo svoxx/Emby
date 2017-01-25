@@ -2,8 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Serialization;
+using MediaBrowser.Common.Extensions;
+using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Extensions;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -18,18 +21,28 @@ namespace MediaBrowser.Controller.Entities
         /// <value>The place of birth.</value>
         public string PlaceOfBirth { get; set; }
 
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            return "Person-" + Name;
+            var list = base.GetUserDataKeys();
+
+            list.Insert(0, GetType().Name + "-" + (Name ?? string.Empty).RemoveDiacritics());
+            return list;
+        }
+        public override string CreatePresentationUniqueKey()
+        {
+            return GetUserDataKeys()[0];
         }
 
         public PersonLookupInfo GetLookupInfo()
         {
             return GetItemLookupInfo<PersonLookupInfo>();
+        }
+
+        public IEnumerable<BaseItem> GetTaggedItems(InternalItemsQuery query)
+        {
+            query.PersonIds = new[] { Id.ToString("N") };
+
+            return LibraryManager.GetItemList(query);
         }
 
         /// <summary>
@@ -82,7 +95,7 @@ namespace MediaBrowser.Controller.Entities
         {
             var itemsWithPerson = LibraryManager.GetItemIds(new InternalItemsQuery
             {
-                Person = Name
+                PersonIds = new[] { Id.ToString("N") }
             });
 
             return inputItems.Where(i => itemsWithPerson.Contains(i.Id));
@@ -110,6 +123,64 @@ namespace MediaBrowser.Controller.Entities
             {
                 return false;
             }
+        }
+
+        public static string GetPath(string name, bool normalizeName = true)
+        {
+            // Trim the period at the end because windows will have a hard time with that
+            var validFilename = normalizeName ?
+                FileSystem.GetValidFilename(name).Trim().TrimEnd('.') :
+                name;
+
+            string subFolderPrefix = null;
+
+            foreach (char c in validFilename)
+            {
+                if (char.IsLetterOrDigit(c))
+                {
+                    subFolderPrefix = c.ToString();
+                    break;
+                }
+            }
+
+            var path = ConfigurationManager.ApplicationPaths.PeoplePath;
+
+            return string.IsNullOrEmpty(subFolderPrefix) ?
+                System.IO.Path.Combine(path, validFilename) :
+                System.IO.Path.Combine(path, subFolderPrefix, validFilename);
+        }
+
+        private string GetRebasedPath()
+        {
+            return GetPath(System.IO.Path.GetFileName(Path), false);
+        }
+
+        public override bool RequiresRefresh()
+        {
+            var newPath = GetRebasedPath();
+            if (!string.Equals(Path, newPath, StringComparison.Ordinal))
+            {
+                Logger.Debug("{0} path has changed from {1} to {2}", GetType().Name, Path, newPath);
+                return true;
+            }
+            return base.RequiresRefresh();
+        }
+
+        /// <summary>
+        /// This is called before any metadata refresh and returns true or false indicating if changes were made
+        /// </summary>
+        public override bool BeforeMetadataRefresh()
+        {
+            var hasChanges = base.BeforeMetadataRefresh();
+
+            var newPath = GetRebasedPath();
+            if (!string.Equals(Path, newPath, StringComparison.Ordinal))
+            {
+                Path = newPath;
+                hasChanges = true;
+            }
+
+            return hasChanges;
         }
     }
 

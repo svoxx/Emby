@@ -1,16 +1,17 @@
-﻿define(['paperdialoghelper', 'paper-fab', 'paper-item-body', 'paper-icon-item'], function (paperDialogHelper) {
+﻿define(['dialogHelper', 'dom', 'components/libraryoptionseditor/libraryoptionseditor', 'emby-button', 'listViewStyle', 'paper-icon-button-light', 'formDialogStyle'], function (dialogHelper, dom, libraryoptionseditor) {
+    'use strict';
 
     var currentDeferred;
     var hasChanges;
     var currentOptions;
 
-    function addMediaLocation(page, path) {
+    function addMediaLocation(page, path, networkSharePath) {
 
         var virtualFolder = currentOptions.library;
 
         var refreshAfterChange = currentOptions.refresh;
 
-        ApiClient.addMediaPath(virtualFolder.Name, path, refreshAfterChange).then(function () {
+        ApiClient.addMediaPath(virtualFolder.Name, path, networkSharePath, refreshAfterChange).then(function () {
 
             hasChanges = true;
             refreshLibraryFromServer(page);
@@ -23,9 +24,29 @@
         });
     }
 
-    function onRemoveClick() {
+    function updateMediaLocation(page, path, networkSharePath) {
+        var virtualFolder = currentOptions.library;
+        ApiClient.updateMediaPath(virtualFolder.Name, {
 
-        var button = this;
+            Path: path,
+            NetworkPath: networkSharePath
+
+        }).then(function () {
+
+            hasChanges = true;
+            refreshLibraryFromServer(page);
+
+        }, function () {
+
+            require(['toast'], function (toast) {
+                toast(Globalize.translate('ErrorAddingMediaPathToVirtualFolder'));
+            });
+        });
+    }
+
+    function onRemoveClick(btnRemovePath) {
+
+        var button = btnRemovePath;
         var index = parseInt(button.getAttribute('data-index'));
 
         var virtualFolder = currentOptions.library;
@@ -34,14 +55,21 @@
 
         require(['confirm'], function (confirm) {
 
-            confirm(Globalize.translate('MessageConfirmRemoveMediaLocation'), Globalize.translate('HeaderRemoveMediaLocation')).then(function () {
+            confirm({
+
+                title: Globalize.translate('HeaderRemoveMediaLocation'),
+                text: Globalize.translate('MessageConfirmRemoveMediaLocation'),
+                confirmText: Globalize.translate('ButtonDelete'),
+                primary: 'cancel'
+
+            }).then(function () {
 
                 var refreshAfterChange = currentOptions.refresh;
 
                 ApiClient.removeMediaPath(virtualFolder.Name, location, refreshAfterChange).then(function () {
 
                     hasChanges = true;
-                    refreshLibraryFromServer($(button).parents('.editorContent')[0]);
+                    refreshLibraryFromServer(dom.parentWithClass(button, 'dlg-libraryeditor'));
 
                 }, function () {
 
@@ -53,21 +81,47 @@
         });
     }
 
-    function getFolderHtml(path, index) {
+    function onListItemClick(e) {
+
+        var btnRemovePath = dom.parentWithClass(e.target, 'btnRemovePath');
+        if (btnRemovePath) {
+            onRemoveClick(btnRemovePath);
+            return;
+        }
+
+        var listItem = dom.parentWithClass(e.target, 'listItem');
+        if (!listItem) {
+            return;
+        }
+
+        var index = parseInt(listItem.getAttribute('data-index'));
+        var page = dom.parentWithClass(listItem, 'dlg-libraryeditor');
+        showDirectoryBrowser(page, index);
+    }
+
+    function getFolderHtml(pathInfo, index) {
 
         var html = '';
 
-        html += '<paper-icon-item role="menuitem" class="lnkPath">';
+        html += '<div class="listItem lnkPath" data-index="' + index + '">';
 
-        html += '<paper-fab mini style="background:#52B54B;" icon="folder" item-icon></paper-fab>';
+        html += '<i class="listItemIcon md-icon">folder</i>';
 
-        html += '<paper-item-body>';
-        html += path;
-        html += '</paper-item-body>';
+        var cssClass = pathInfo.NetworkPath ? 'listItemBody two-line' : 'listItemBody';
 
-        html += '<paper-icon-button icon="remove-circle" class="btnRemovePath" data-index="' + index + '"></paper-icon-button>';
+        html += '<div class="' + cssClass + '">';
 
-        html += '</paper-icon-item>';
+        html += '<h3 class="listItemBodyText">';
+        html += pathInfo.Path;
+        html += '</h3>';
+        if (pathInfo.NetworkPath) {
+            html += '<div class="listItemBodyText secondary">' + pathInfo.NetworkPath + '</div>';
+        }
+        html += '</div>';
+
+        html += '<button is="paper-icon-button-light" class="listItemButton btnRemovePath" data-index="' + index + '"><i class="md-icon">remove_circle</i></button>';
+
+        html += '</div>';
 
         return html;
     }
@@ -90,27 +144,60 @@
     }
 
     function renderLibrary(page, options) {
-        var foldersHtml = options.library.Locations.map(getFolderHtml).join('');
+
+        var pathInfos = (options.library.LibraryOptions || {}).PathInfos || [];
+
+        if (!pathInfos.length) {
+            pathInfos = options.library.Locations.map(function (p) {
+                return {
+                    Path: p
+                };
+            });
+        }
+
+        var foldersHtml = pathInfos.map(getFolderHtml).join('');
 
         page.querySelector('.folderList').innerHTML = foldersHtml;
 
-        $(page.querySelectorAll('.btnRemovePath')).on('click', onRemoveClick);
+        var listItems = page.querySelectorAll('.listItem');
+        for (var i = 0, length = listItems.length; i < length; i++) {
+            listItems[i].addEventListener('click', onListItemClick);
+        }
     }
 
     function onAddButtonClick() {
 
-        var page = $(this).parents('.editorContent')[0];
+        var page = dom.parentWithClass(this, 'dlg-libraryeditor');
+
+        showDirectoryBrowser(page);
+    }
+
+    function showDirectoryBrowser(context, listIndex) {
 
         require(['directorybrowser'], function (directoryBrowser) {
 
             var picker = new directoryBrowser();
 
+            var pathInfos = (currentOptions.library.LibraryOptions || {}).PathInfos || [];
+            var pathInfo = listIndex == null ? {} : (pathInfos[listIndex] || {});
+            // legacy
+            var location = listIndex == null ? null : (currentOptions.library.Locations[listIndex]);
+            var originalPath = pathInfo.Path || location;
+
             picker.show({
 
-                callback: function (path) {
+                enableNetworkSharePath: true,
+                pathReadOnly: listIndex != null,
+                path: originalPath,
+                networkSharePath: pathInfo.NetworkPath,
+                callback: function (path, networkSharePath) {
 
                     if (path) {
-                        addMediaLocation(page, path);
+                        if (originalPath) {
+                            updateMediaLocation(context, originalPath, networkSharePath);
+                        } else {
+                            addMediaLocation(context, path, networkSharePath);
+                        }
                     }
                     picker.close();
                 }
@@ -119,16 +206,32 @@
         });
     }
 
-    function initEditor(page, options) {
-        renderLibrary(page, options);
+    function initEditor(dlg, options) {
+        renderLibrary(dlg, options);
 
-        $('.btnAddFolder', page).on('click', onAddButtonClick);
+        dlg.querySelector('.btnAddFolder').addEventListener('click', onAddButtonClick);
+
+        libraryoptionseditor.embed(dlg.querySelector('.libraryOptions'), options.library.CollectionType, options.library.LibraryOptions);
+    }
+
+    function onDialogClosing() {
+
+        var dlg = this;
+
+        var libraryOptions = libraryoptionseditor.getLibraryOptions(dlg.querySelector('.libraryOptions'));
+
+        libraryOptions = Object.assign(currentOptions.library.LibraryOptions || {}, libraryOptions);
+
+        ApiClient.updateVirtualFolderOptions(currentOptions.library.ItemId, libraryOptions);
     }
 
     function onDialogClosed() {
 
-        $(this).remove();
         Dashboard.hideLoadingMsg();
+
+        // hardcoding this to true for now until libraryOptions are taken into account
+        hasChanges = true;
+
         currentDeferred.resolveWith(null, [hasChanges]);
     }
 
@@ -150,44 +253,37 @@
             xhr.onload = function (e) {
 
                 var template = this.response;
-                var dlg = paperDialogHelper.createDialog({
-                    size: 'small',
+                var dlg = dialogHelper.createDialog({
+                    size: 'medium',
 
                     // In (at least) chrome this is causing the text field to not be editable
-                    modal: false
+                    modal: false,
+                    removeOnClose: true,
+                    scrollY: false
                 });
 
+                dlg.classList.add('dlg-libraryeditor');
                 dlg.classList.add('ui-body-a');
                 dlg.classList.add('background-theme-a');
-                dlg.classList.add('popupEditor');
+                dlg.classList.add('formDialog');
 
-                var html = '';
-                html += '<h2 class="dialogHeader">';
-                html += '<paper-fab icon="arrow-back" mini class="btnCloseDialog" tabindex="-1"></paper-fab>';
+                dlg.innerHTML = Globalize.translateDocument(template);
 
-                html += '<div style="display:inline-block;margin-left:.6em;vertical-align:middle;">' + options.library.Name + '</div>';
-                html += '</h2>';
+                dlg.querySelector('.formDialogHeaderTitle').innerHTML = options.library.Name;
 
-                html += '<div class="editorContent" style="max-width:800px;margin:auto;">';
-                html += Globalize.translateDocument(template);
-                html += '</div>';
+                initEditor(dlg, options);
 
-                dlg.innerHTML = html;
-                document.body.appendChild(dlg);
+                dlg.addEventListener('closing', onDialogClosing);
+                dlg.addEventListener('close', onDialogClosed);
 
-                var editorContent = dlg.querySelector('.editorContent');
-                initEditor(editorContent, options);
+                dialogHelper.open(dlg);
 
-                $(dlg).on('iron-overlay-closed', onDialogClosed);
+                dlg.querySelector('.btnCancel').addEventListener('click', function () {
 
-                paperDialogHelper.open(dlg);
-
-                $('.btnCloseDialog', dlg).on('click', function () {
-
-                    paperDialogHelper.close(dlg);
+                    dialogHelper.close(dlg);
                 });
 
-                refreshLibraryFromServer(editorContent);
+                refreshLibraryFromServer(dlg);
             }
 
             xhr.send();

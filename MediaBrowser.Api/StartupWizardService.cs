@@ -7,10 +7,11 @@ using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.LiveTv;
-using ServiceStack;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -52,32 +53,33 @@ namespace MediaBrowser.Api
         private readonly IUserManager _userManager;
         private readonly IConnectManager _connectManager;
         private readonly ILiveTvManager _liveTvManager;
+        private readonly IMediaEncoder _mediaEncoder;
 
-        public StartupWizardService(IServerConfigurationManager config, IServerApplicationHost appHost, IUserManager userManager, IConnectManager connectManager, ILiveTvManager liveTvManager)
+        public StartupWizardService(IServerConfigurationManager config, IServerApplicationHost appHost, IUserManager userManager, IConnectManager connectManager, ILiveTvManager liveTvManager, IMediaEncoder mediaEncoder)
         {
             _config = config;
             _appHost = appHost;
             _userManager = userManager;
             _connectManager = connectManager;
             _liveTvManager = liveTvManager;
+            _mediaEncoder = mediaEncoder;
         }
 
         public void Post(ReportStartupWizardComplete request)
         {
             _config.Configuration.IsStartupWizardCompleted = true;
-            _config.Configuration.EnableLocalizedGuids = true;
-            _config.Configuration.EnableCustomPathSubFolders = true;
-            _config.Configuration.EnableDateLastRefresh = true;
+            SetWizardFinishValues(_config.Configuration);
             _config.SaveConfiguration();
         }
 
-        public object Get(GetStartupInfo request)
+        public async Task<object> Get(GetStartupInfo request)
         {
-            var info = _appHost.GetSystemInfo();
+            var info = await _appHost.GetSystemInfo().ConfigureAwait(false);
 
             return new StartupInfo
             {
-                SupportsRunningAsService = info.SupportsRunningAsService
+                SupportsRunningAsService = info.SupportsRunningAsService,
+                HasMediaEncoder = !string.IsNullOrWhiteSpace(_mediaEncoder.EncoderPath)
             };
         }
 
@@ -86,8 +88,6 @@ namespace MediaBrowser.Api
             var result = new StartupConfiguration
             {
                 UICulture = _config.Configuration.UICulture,
-                EnableInternetProviders = _config.Configuration.EnableInternetProviders,
-                SaveLocalMeta = _config.Configuration.SaveLocalMeta,
                 MetadataCountryCode = _config.Configuration.MetadataCountryCode,
                 PreferredMetadataLanguage = _config.Configuration.PreferredMetadataLanguage
             };
@@ -109,11 +109,22 @@ namespace MediaBrowser.Api
             return result;
         }
 
+        private void SetWizardFinishValues(ServerConfiguration config)
+        {
+            config.EnableLocalizedGuids = true;
+            config.EnableStandaloneMusicKeys = true;
+            config.EnableCaseSensitiveItemIds = true;
+            config.EnableFolderView = true;
+            config.EnableSimpleArtistDetection = true;
+            config.SkipDeserializationForBasicTypes = true;
+            config.SkipDeserializationForPrograms = true;
+            config.SkipDeserializationForAudio = true;
+            config.EnableSeriesPresentationUniqueKey = true;
+        }
+
         public void Post(UpdateStartupConfiguration request)
         {
             _config.Configuration.UICulture = request.UICulture;
-            _config.Configuration.EnableInternetProviders = request.EnableInternetProviders;
-            _config.Configuration.SaveLocalMeta = request.SaveLocalMeta;
             _config.Configuration.MetadataCountryCode = request.MetadataCountryCode;
             _config.Configuration.PreferredMetadataLanguage = request.PreferredMetadataLanguage;
             _config.SaveConfiguration();
@@ -136,12 +147,6 @@ namespace MediaBrowser.Api
         public async Task<object> Post(UpdateStartupUser request)
         {
             var user = _userManager.Users.First();
-
-            // TODO: This should be handled internally by xbmc metadata
-            const string metadataKey = "xbmcmetadata";
-            var metadata = _config.GetConfiguration<XbmcMetadataOptions>(metadataKey);
-            metadata.UserId = user.Id.ToString("N");
-            _config.SaveConfiguration(metadataKey, metadata);
 
             user.Name = request.Name;
             await _userManager.UpdateUser(user).ConfigureAwait(false);
@@ -210,8 +215,6 @@ namespace MediaBrowser.Api
     public class StartupConfiguration
     {
         public string UICulture { get; set; }
-        public bool EnableInternetProviders { get; set; }
-        public bool SaveLocalMeta { get; set; }
         public string MetadataCountryCode { get; set; }
         public string PreferredMetadataLanguage { get; set; }
         public string LiveTvTunerType { get; set; }
@@ -223,6 +226,7 @@ namespace MediaBrowser.Api
     public class StartupInfo
     {
         public bool SupportsRunningAsService { get; set; }
+        public bool HasMediaEncoder { get; set; }
     }
 
     public class StartupUser

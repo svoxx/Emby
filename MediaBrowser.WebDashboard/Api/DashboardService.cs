@@ -1,31 +1,29 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Localization;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Extensions;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Net;
 using MediaBrowser.Model.Serialization;
-using ServiceStack;
-using ServiceStack.Web;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using CommonIO;
-using WebMarkupMin.Core.Minifiers;
+using MediaBrowser.Common.Plugins;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.Plugins;
+using MediaBrowser.Model.Reflection;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.WebDashboard.Api
 {
     /// <summary>
     /// Class GetDashboardConfigurationPages
     /// </summary>
-    [Route("/dashboard/ConfigurationPages", "GET")]
     [Route("/web/ConfigurationPages", "GET")]
     public class GetDashboardConfigurationPages : IReturn<List<ConfigurationPageInfo>>
     {
@@ -39,7 +37,6 @@ namespace MediaBrowser.WebDashboard.Api
     /// <summary>
     /// Class GetDashboardConfigurationPage
     /// </summary>
-    [Route("/dashboard/ConfigurationPage", "GET")]
     [Route("/web/ConfigurationPage", "GET")]
     public class GetDashboardConfigurationPage
     {
@@ -51,7 +48,6 @@ namespace MediaBrowser.WebDashboard.Api
     }
 
     [Route("/web/Package", "GET")]
-    [Route("/dashboard/Package", "GET")]
     public class GetDashboardPackage
     {
         public string Mode { get; set; }
@@ -66,7 +62,6 @@ namespace MediaBrowser.WebDashboard.Api
     /// Class GetDashboardResource
     /// </summary>
     [Route("/web/{ResourceName*}", "GET")]
-    [Route("/dashboard/{ResourceName*}", "GET")]
     public class GetDashboardResource
     {
         /// <summary>
@@ -84,19 +79,19 @@ namespace MediaBrowser.WebDashboard.Api
     /// <summary>
     /// Class DashboardService
     /// </summary>
-    public class DashboardService : IRestfulService, IHasResultFactory
+    public class DashboardService : IService, IRequiresRequest
     {
         /// <summary>
         /// Gets or sets the logger.
         /// </summary>
         /// <value>The logger.</value>
-        public ILogger Logger { get; set; }
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Gets or sets the HTTP result factory.
         /// </summary>
         /// <value>The HTTP result factory.</value>
-        public IHttpResultFactory ResultFactory { get; set; }
+        private readonly IHttpResultFactory _resultFactory;
 
         /// <summary>
         /// Gets or sets the request context.
@@ -117,6 +112,8 @@ namespace MediaBrowser.WebDashboard.Api
         private readonly IFileSystem _fileSystem;
         private readonly ILocalizationManager _localization;
         private readonly IJsonSerializer _jsonSerializer;
+        private readonly IAssemblyInfo _assemblyInfo;
+        private readonly IMemoryStreamFactory _memoryStreamFactory;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DashboardService" /> class.
@@ -124,13 +121,17 @@ namespace MediaBrowser.WebDashboard.Api
         /// <param name="appHost">The app host.</param>
         /// <param name="serverConfigurationManager">The server configuration manager.</param>
         /// <param name="fileSystem">The file system.</param>
-        public DashboardService(IServerApplicationHost appHost, IServerConfigurationManager serverConfigurationManager, IFileSystem fileSystem, ILocalizationManager localization, IJsonSerializer jsonSerializer)
+        public DashboardService(IServerApplicationHost appHost, IServerConfigurationManager serverConfigurationManager, IFileSystem fileSystem, ILocalizationManager localization, IJsonSerializer jsonSerializer, IAssemblyInfo assemblyInfo, ILogger logger, IHttpResultFactory resultFactory, IMemoryStreamFactory memoryStreamFactory)
         {
             _appHost = appHost;
             _serverConfigurationManager = serverConfigurationManager;
             _fileSystem = fileSystem;
             _localization = localization;
             _jsonSerializer = jsonSerializer;
+            _assemblyInfo = assemblyInfo;
+            _logger = logger;
+            _resultFactory = resultFactory;
+            _memoryStreamFactory = memoryStreamFactory;
         }
 
         /// <summary>
@@ -138,11 +139,34 @@ namespace MediaBrowser.WebDashboard.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetDashboardConfigurationPage request)
+        public Task<object> Get(GetDashboardConfigurationPage request)
         {
-            var page = ServerEntryPoint.Instance.PluginConfigurationPages.First(p => p.Name.Equals(request.Name, StringComparison.OrdinalIgnoreCase));
+            IPlugin plugin = null;
+            Stream stream = null;
 
-            return ResultFactory.GetStaticResult(Request, page.Plugin.Version.ToString().GetMD5(), null, null, MimeTypes.GetMimeType("page.html"), () => GetPackageCreator().ModifyHtml(page.GetHtmlStream(), null, _appHost.ApplicationVersion.ToString(), null, false));
+            var page = ServerEntryPoint.Instance.PluginConfigurationPages.FirstOrDefault(p => string.Equals(p.Name, request.Name, StringComparison.OrdinalIgnoreCase));
+            if (page != null)
+            {
+                plugin = page.Plugin;
+                stream = page.GetHtmlStream();
+            }
+
+            if (plugin == null)
+            {
+                var altPage = GetPluginPages().FirstOrDefault(p => string.Equals(p.Item1.Name, request.Name, StringComparison.OrdinalIgnoreCase));
+                if (altPage != null)
+                {
+                    plugin = altPage.Item2;
+                    stream = _assemblyInfo.GetManifestResourceStream(plugin.GetType(), altPage.Item1.EmbeddedResourcePath);
+                }
+            }
+
+            if (plugin != null && stream != null)
+            {
+                return _resultFactory.GetStaticResult(Request, plugin.Version.ToString().GetMD5(), null, null, MimeTypes.GetMimeType("page.html"), () => GetPackageCreator().ModifyHtml("dummy.html", stream, null, _appHost.ApplicationVersion.ToString(), null));
+            }
+
+            throw new ResourceNotFoundException();
         }
 
         /// <summary>
@@ -170,7 +194,7 @@ namespace MediaBrowser.WebDashboard.Api
 
             if (request.PageType.HasValue)
             {
-                pages = pages.Where(p => p.ConfigurationPageType == request.PageType.Value);
+                pages = pages.Where(p => p.ConfigurationPageType == request.PageType.Value).ToList();
             }
 
             // Don't allow a failing plugin to fail them all
@@ -183,14 +207,38 @@ namespace MediaBrowser.WebDashboard.Api
                 }
                 catch (Exception ex)
                 {
-                    Logger.ErrorException("Error getting plugin information from {0}", ex, p.GetType().Name);
+                    _logger.ErrorException("Error getting plugin information from {0}", ex, p.GetType().Name);
                     return null;
                 }
             })
                 .Where(i => i != null)
                 .ToList();
 
-            return ResultFactory.GetOptimizedResult(Request, configPages);
+            configPages.AddRange(_appHost.Plugins.SelectMany(GetConfigPages));
+
+            return _resultFactory.GetOptimizedResult(Request, configPages);
+        }
+
+        private IEnumerable<Tuple<PluginPageInfo, IPlugin>> GetPluginPages()
+        {
+            return _appHost.Plugins.SelectMany(GetPluginPages);
+        }
+
+        private IEnumerable<Tuple<PluginPageInfo, IPlugin>> GetPluginPages(IPlugin plugin)
+        {
+            var hasConfig = plugin as IHasWebPages;
+
+            if (hasConfig == null)
+            {
+                return new List<Tuple<PluginPageInfo, IPlugin>>();
+            }
+
+            return hasConfig.GetPages().Select(i => new Tuple<PluginPageInfo, IPlugin>(i, plugin));
+        }
+
+        private IEnumerable<ConfigurationPageInfo> GetConfigPages(IPlugin plugin)
+        {
+            return GetPluginPages(plugin).Select(i => new ConfigurationPageInfo(plugin, i.Item1));
         }
 
         public object Get(GetRobotsTxt request)
@@ -206,7 +254,7 @@ namespace MediaBrowser.WebDashboard.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetDashboardResource request)
+        public async Task<object> Get(GetDashboardResource request)
         {
             var path = request.ResourceName;
 
@@ -235,7 +283,8 @@ namespace MediaBrowser.WebDashboard.Api
                 !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) &&
                 !contentType.StartsWith("font/", StringComparison.OrdinalIgnoreCase))
             {
-                return ResultFactory.GetResult(GetResourceStream(path, localizationCulture).Result, contentType);
+                var stream = await GetResourceStream(path, localizationCulture).ConfigureAwait(false);
+                return _resultFactory.GetResult(stream, contentType);
             }
 
             TimeSpan? cacheDuration = null;
@@ -247,11 +296,9 @@ namespace MediaBrowser.WebDashboard.Api
                 cacheDuration = TimeSpan.FromDays(365);
             }
 
-            var assembly = GetType().Assembly.GetName();
+            var cacheKey = (_appHost.ApplicationVersion + (localizationCulture ?? string.Empty) + path).GetMD5();
 
-            var cacheKey = (assembly.Version + (localizationCulture ?? string.Empty) + path).GetMD5();
-
-            return ResultFactory.GetStaticResult(Request, cacheKey, null, cacheDuration, contentType, () => GetResourceStream(path, localizationCulture));
+            return await _resultFactory.GetStaticResult(Request, cacheKey, null, cacheDuration, contentType, () => GetResourceStream(path, localizationCulture)).ConfigureAwait(false);
         }
 
         private string GetLocalizationCulture()
@@ -267,21 +314,59 @@ namespace MediaBrowser.WebDashboard.Api
         /// <returns>Task{Stream}.</returns>
         private Task<Stream> GetResourceStream(string path, string localizationCulture)
         {
-            var minify = _serverConfigurationManager.Configuration.EnableDashboardResourceMinification;
-
             return GetPackageCreator()
-                .GetResource(path, null, localizationCulture, _appHost.ApplicationVersion.ToString(), minify);
+                .GetResource(path, null, localizationCulture, _appHost.ApplicationVersion.ToString());
         }
 
         private PackageCreator GetPackageCreator()
         {
-            return new PackageCreator(_fileSystem, _localization, Logger, _serverConfigurationManager, _jsonSerializer);
+            return new PackageCreator(_fileSystem, _logger, _serverConfigurationManager, _memoryStreamFactory);
+        }
+
+        private List<string> GetDeployIgnoreExtensions()
+        {
+            var list = new List<string>();
+
+            list.Add(".log");
+            list.Add(".txt");
+            list.Add(".map");
+            list.Add(".md");
+            list.Add(".gz");
+            list.Add(".bat");
+            list.Add(".sh");
+
+            return list;
+        }
+
+        private List<Tuple<string, bool>> GetDeployIgnoreFilenames()
+        {
+            var list = new List<Tuple<string, bool>>();
+
+            list.Add(new Tuple<string, bool>("copying", true));
+            list.Add(new Tuple<string, bool>("license", true));
+            list.Add(new Tuple<string, bool>("license-mit", true));
+            list.Add(new Tuple<string, bool>("gitignore", false));
+            list.Add(new Tuple<string, bool>("npmignore", false));
+            list.Add(new Tuple<string, bool>("jshintrc", false));
+            list.Add(new Tuple<string, bool>("gruntfile", false));
+            list.Add(new Tuple<string, bool>("bowerrc", false));
+            list.Add(new Tuple<string, bool>("jscsrc", false));
+            list.Add(new Tuple<string, bool>("hero.svg", false));
+            list.Add(new Tuple<string, bool>("travis.yml", false));
+            list.Add(new Tuple<string, bool>("build.js", false));
+            list.Add(new Tuple<string, bool>("editorconfig", false));
+            list.Add(new Tuple<string, bool>("gitattributes", false));
+
+            return list;
         }
 
         public async Task<object> Get(GetDashboardPackage request)
         {
-            var path = Path.Combine(_serverConfigurationManager.ApplicationPaths.ProgramDataPath,
-                "webclient-dump");
+            var mode = request.Mode;
+
+            var path = string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase) ?
+                Path.Combine(_serverConfigurationManager.ApplicationPaths.ProgramDataPath, "webclient-dump")
+                : "C:\\dev\\emby-web-mobile\\src";
 
             try
             {
@@ -300,77 +385,48 @@ namespace MediaBrowser.WebDashboard.Api
 
             var appVersion = _appHost.ApplicationVersion.ToString();
 
-            var mode = request.Mode;
-
-            if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
-            {
-                _fileSystem.DeleteFile(Path.Combine(path, "scripts", "registrationservices.js"));
-            }
-
             // Try to trim the output size a bit
             var bowerPath = Path.Combine(path, "bower_components");
 
-            if (!string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
+            foreach (var ext in GetDeployIgnoreExtensions())
             {
-                var versionedBowerPath = Path.Combine(Path.GetDirectoryName(bowerPath), "bower_components" + _appHost.ApplicationVersion);
-                Directory.Move(bowerPath, versionedBowerPath);
-                bowerPath = versionedBowerPath;
+                DeleteFilesByExtension(bowerPath, ext);
             }
 
-            DeleteFilesByExtension(bowerPath, ".log");
-            DeleteFilesByExtension(bowerPath, ".txt");
-            DeleteFilesByExtension(bowerPath, ".map");
-            DeleteFilesByExtension(bowerPath, ".md");
-            DeleteFilesByExtension(bowerPath, ".json");
-            DeleteFilesByExtension(bowerPath, ".gz");
-            DeleteFilesByExtension(bowerPath, ".bat");
-            DeleteFilesByExtension(bowerPath, ".sh");
-            DeleteFilesByName(bowerPath, "copying", true);
-            DeleteFilesByName(bowerPath, "license", true);
-            DeleteFilesByName(bowerPath, "license-mit", true);
-            DeleteFilesByName(bowerPath, "gitignore");
-            DeleteFilesByName(bowerPath, "npmignore");
-            DeleteFilesByName(bowerPath, "jshintrc");
-            DeleteFilesByName(bowerPath, "gruntfile");
-            DeleteFilesByName(bowerPath, "bowerrc");
-            DeleteFilesByName(bowerPath, "jscsrc");
-            DeleteFilesByName(bowerPath, "hero.svg");
-            DeleteFilesByName(bowerPath, "travis.yml");
-            DeleteFilesByName(bowerPath, "build.js");
-            DeleteFilesByName(bowerPath, "editorconfig");
-            DeleteFilesByName(bowerPath, "gitattributes");
+            DeleteFilesByExtension(bowerPath, ".json", "strings\\");
+
+            foreach (var ignore in GetDeployIgnoreFilenames())
+            {
+                DeleteFilesByName(bowerPath, ignore.Item1, ignore.Item2);
+            }
+
             DeleteFoldersByName(bowerPath, "demo");
             DeleteFoldersByName(bowerPath, "test");
             DeleteFoldersByName(bowerPath, "guides");
             DeleteFoldersByName(bowerPath, "grunt");
             DeleteFoldersByName(bowerPath, "rollups");
 
+            if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
+            {
+                DeleteFoldersByName(Path.Combine(bowerPath, "emby-webcomponents", "fonts"), "montserrat");
+                DeleteFoldersByName(Path.Combine(bowerPath, "emby-webcomponents", "fonts"), "opensans");
+                DeleteFoldersByName(Path.Combine(bowerPath, "emby-webcomponents", "fonts"), "roboto");
+            }
+
             _fileSystem.DeleteDirectory(Path.Combine(bowerPath, "jquery", "src"), true);
-          
+
             DeleteCryptoFiles(Path.Combine(bowerPath, "cryptojslib", "components"));
 
             DeleteFoldersByName(Path.Combine(bowerPath, "jquery"), "src");
             DeleteFoldersByName(Path.Combine(bowerPath, "jstree"), "src");
-            DeleteFoldersByName(Path.Combine(bowerPath, "Sortable"), "meteor");
-            DeleteFoldersByName(Path.Combine(bowerPath, "Sortable"), "st");
-            DeleteFoldersByName(Path.Combine(bowerPath, "Swiper"), "src");
+            //DeleteFoldersByName(Path.Combine(bowerPath, "Sortable"), "meteor");
+            //DeleteFoldersByName(Path.Combine(bowerPath, "Sortable"), "st");
+            //DeleteFoldersByName(Path.Combine(bowerPath, "Swiper"), "src");
 
-            _fileSystem.DeleteDirectory(Path.Combine(bowerPath, "marked"), true);
-            _fileSystem.DeleteDirectory(Path.Combine(bowerPath, "marked-element"), true);
-            _fileSystem.DeleteDirectory(Path.Combine(bowerPath, "prism"), true);
-            _fileSystem.DeleteDirectory(Path.Combine(bowerPath, "prism-element"), true);
-           
             if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
             {
                 // Delete things that are unneeded in an attempt to keep the output as trim as possible
                 _fileSystem.DeleteDirectory(Path.Combine(path, "css", "images", "tour"), true);
-
-                _fileSystem.DeleteFile(Path.Combine(path, "thirdparty", "jquerymobile-1.4.5", "jquery.mobile-1.4.5.min.map"));
-            }
-            else
-            {
-                MinifyCssDirectory(path);
-                MinifyJsDirectory(path);
             }
 
             await DumpHtml(creator.DashboardUIPath, path, mode, culture, appVersion);
@@ -396,7 +452,7 @@ namespace MediaBrowser.WebDashboard.Api
             }
         }
 
-        private void DeleteFilesByExtension(string path, string extension)
+        private void DeleteFilesByExtension(string path, string extension, string exclude = null)
         {
             var files = _fileSystem.GetFiles(path, true)
                 .Where(i => string.Equals(i.Extension, extension, StringComparison.OrdinalIgnoreCase))
@@ -404,6 +460,13 @@ namespace MediaBrowser.WebDashboard.Api
 
             foreach (var file in files)
             {
+                if (!string.IsNullOrWhiteSpace(exclude))
+                {
+                    if (file.FullName.IndexOf(exclude, StringComparison.OrdinalIgnoreCase) != -1)
+                    {
+                        continue;
+                    }
+                }
                 _fileSystem.DeleteFile(file.FullName);
             }
         }
@@ -432,105 +495,21 @@ namespace MediaBrowser.WebDashboard.Api
             }
         }
 
-        private void MinifyCssDirectory(string path)
-        {
-            foreach (var file in Directory.GetFiles(path, "*.css", SearchOption.AllDirectories))
-            {
-                if (file.IndexOf(".min.", StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    continue;
-                }
-                if (file.IndexOf("bower_", StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var text = _fileSystem.ReadAllText(file, Encoding.UTF8);
-
-                    var result = new KristensenCssMinifier().Minify(text, false, Encoding.UTF8);
-
-                    if (result.Errors.Count > 0)
-                    {
-                        Logger.Error("Error minifying css: " + result.Errors[0].Message);
-                    }
-                    else
-                    {
-                        text = result.MinifiedContent;
-                        _fileSystem.WriteAllText(file, text, Encoding.UTF8);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.ErrorException("Error minifying css", ex);
-                }
-            }
-        }
-
-        private void MinifyJsDirectory(string path)
-        {
-            foreach (var file in Directory.GetFiles(path, "*.js", SearchOption.AllDirectories))
-            {
-                if (file.IndexOf(".min.", StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    continue;
-                }
-                if (file.IndexOf("bower_", StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var text = _fileSystem.ReadAllText(file, Encoding.UTF8);
-
-                    var result = new CrockfordJsMinifier().Minify(text, false, Encoding.UTF8);
-
-                    if (result.Errors.Count > 0)
-                    {
-                        Logger.Error("Error minifying javascript: " + result.Errors[0].Message);
-                    }
-                    else
-                    {
-                        text = result.MinifiedContent;
-                        _fileSystem.WriteAllText(file, text, Encoding.UTF8);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.ErrorException("Error minifying css", ex);
-                }
-            }
-        }
-
         private async Task DumpHtml(string source, string destination, string mode, string culture, string appVersion)
         {
-            foreach (var file in Directory.GetFiles(source, "*", SearchOption.TopDirectoryOnly))
+            foreach (var file in _fileSystem.GetFiles(source))
             {
-                var filename = Path.GetFileName(file);
+                var filename = file.Name;
 
                 await DumpFile(filename, Path.Combine(destination, filename), mode, culture, appVersion).ConfigureAwait(false);
-            }
-
-            var excludeFiles = new List<string>();
-
-            if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
-            {
-                excludeFiles.Add("supporterkey.html");
-            }
-
-            foreach (var file in excludeFiles)
-            {
-                _fileSystem.DeleteFile(Path.Combine(destination, file));
             }
         }
 
         private async Task DumpFile(string resourceVirtualPath, string destinationFilePath, string mode, string culture, string appVersion)
         {
-            using (var stream = await GetPackageCreator().GetResource(resourceVirtualPath, mode, culture, appVersion, true).ConfigureAwait(false))
+            using (var stream = await GetPackageCreator().GetResource(resourceVirtualPath, mode, culture, appVersion).ConfigureAwait(false))
             {
-                using (var fs = _fileSystem.GetFileStream(destinationFilePath, FileMode.Create, FileAccess.Write, FileShare.Read))
+                using (var fs = _fileSystem.GetFileStream(destinationFilePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read))
                 {
                     stream.CopyTo(fs);
                 }
@@ -542,14 +521,12 @@ namespace MediaBrowser.WebDashboard.Api
             _fileSystem.CreateDirectory(destination);
 
             //Now Create all of the directories
-            foreach (string dirPath in Directory.GetDirectories(source, "*",
-                SearchOption.AllDirectories))
-                _fileSystem.CreateDirectory(dirPath.Replace(source, destination));
+            foreach (var dirPath in _fileSystem.GetDirectories(source, true))
+                _fileSystem.CreateDirectory(dirPath.FullName.Replace(source, destination));
 
             //Copy all the files & Replaces any files with the same name
-            foreach (string newPath in Directory.GetFiles(source, "*.*",
-                SearchOption.AllDirectories))
-                _fileSystem.CopyFile(newPath, newPath.Replace(source, destination), true);
+            foreach (var newPath in _fileSystem.GetFiles(source, true))
+                _fileSystem.CopyFile(newPath.FullName, newPath.FullName.Replace(source, destination), true);
         }
     }
 

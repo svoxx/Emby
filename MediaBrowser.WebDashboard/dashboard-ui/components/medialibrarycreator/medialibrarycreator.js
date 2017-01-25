@@ -1,21 +1,25 @@
-﻿define(['paperdialoghelper', 'paper-dialog', 'paper-input', 'paper-fab', 'paper-item-body', 'paper-icon-item'], function (paperDialogHelper) {
+﻿define(['dialogHelper', 'jQuery', 'components/libraryoptionseditor/libraryoptionseditor', 'emby-input', 'emby-select', 'paper-icon-button-light', 'listViewStyle', 'formDialogStyle'], function (dialogHelper, $, libraryoptionseditor) {
+    'use strict';
 
     var currentDeferred;
     var hasChanges;
     var currentOptions;
-    var paths = [];
+    var pathInfos = [];
 
     function onSubmit() {
 
-        if (paths.length == 0) {
-            Dashboard.alert({
-                message: Globalize.translate('PleaseAddAtLeastOneFolder')
+        if (pathInfos.length == 0) {
+            require(['alert'], function (alert) {
+                alert({
+                    text: Globalize.translate('PleaseAddAtLeastOneFolder'),
+                    type: 'error'
+                });
             });
             return false;
         }
 
         var form = this;
-        var dlg = $(form).parents('paper-dialog')[0];
+        var dlg = $(form).parents('.dialog')[0];
 
         var name = $('#txtValue', form).val();
         var type = $('#selectCollectionType', form).val();
@@ -24,10 +28,14 @@
             type = null;
         }
 
-        ApiClient.addVirtualFolder(name, type, currentOptions.refresh, paths).then(function () {
+        var libraryOptions = libraryoptionseditor.getLibraryOptions(dlg.querySelector('.libraryOptions'));
+
+        libraryOptions.PathInfos = pathInfos;
+
+        ApiClient.addVirtualFolder(name, type, currentOptions.refresh, libraryOptions).then(function () {
 
             hasChanges = true;
-            paperDialogHelper.close(dlg);
+            dialogHelper.close(dlg);
 
         }, function () {
 
@@ -56,11 +64,21 @@
 
         $('#selectCollectionType', page).html(getCollectionTypeOptionsHtml(collectionTypeOptions)).val('').on('change', function () {
 
-            if (this.value == 'mixed') {
-                return;
+            var value = this.value;
+
+            var dlg = $(this).parents('.dialog')[0];
+
+            libraryoptionseditor.setContentType(dlg.querySelector('.libraryOptions'), (value == 'mixed' ? '' : value));
+
+            if (value) {
+                dlg.querySelector('.libraryOptions').classList.remove('hide');
+            } else {
+                dlg.querySelector('.libraryOptions').classList.add('hide');
             }
 
-            var dlg = $(this).parents('paper-dialog')[0];
+            if (value == 'mixed') {
+                return;
+            }
 
             var index = this.selectedIndex;
             if (index != -1) {
@@ -68,8 +86,6 @@
                 var name = this.options[index].innerHTML
                     .replace('*', '')
                     .replace('&amp;', '&');
-
-                var value = this.value;
 
                 $('#txtValue', dlg).val(name);
 
@@ -81,6 +97,7 @@
 
                 $('.collectionTypeFieldDescription', dlg).html(folderOption.message || '');
             }
+
         });
 
         $('.btnAddFolder', page).on('click', onAddButtonClick);
@@ -89,7 +106,7 @@
 
     function onAddButtonClick() {
 
-        var page = $(this).parents('.editorContent')[0];
+        var page = $(this).parents('.dlg-librarycreator')[0];
 
         require(['directorybrowser'], function (directoryBrowser) {
 
@@ -97,10 +114,11 @@
 
             picker.show({
 
-                callback: function (path) {
+                enableNetworkSharePath: true,
+                callback: function (path, networkSharePath) {
 
                     if (path) {
-                        addMediaLocation(page, path);
+                        addMediaLocation(page, path, networkSharePath);
                     }
                     picker.close();
                 }
@@ -109,27 +127,33 @@
         });
     }
 
-    function getFolderHtml(path, index) {
+    function getFolderHtml(pathInfo, index) {
 
         var html = '';
 
-        html += '<paper-icon-item role="menuitem" class="lnkPath">';
+        html += '<div class="listItem lnkPath">';
 
-        html += '<paper-fab mini style="background:#52B54B;" icon="folder" item-icon></paper-fab>';
+        html += '<i class="listItemIcon md-icon">folder</i>';
 
-        html += '<paper-item-body>';
-        html += path;
-        html += '</paper-item-body>';
+        var cssClass = pathInfo.NetworkPath ? 'listItemBody two-line' : 'listItemBody';
 
-        html += '<paper-icon-button icon="remove-circle" class="btnRemovePath" data-index="' + index + '"></paper-icon-button>';
+        html += '<div class="' + cssClass + '">';
+        html += '<div class="listItemBodyText">' + pathInfo.Path + '</div>';
 
-        html += '</paper-icon-item>';
+        if (pathInfo.NetworkPath) {
+            html += '<div class="listItemBodyText secondary">' + pathInfo.NetworkPath + '</div>';
+        }
+        html += '</div>';
+
+        html += '<button is="paper-icon-button-light"" class="listItemButton btnRemovePath" data-index="' + index + '"><i class="md-icon">remove_circle</i></button>';
+
+        html += '</div>';
 
         return html;
     }
 
     function renderPaths(page) {
-        var foldersHtml = paths.map(getFolderHtml).join('');
+        var foldersHtml = pathInfos.map(getFolderHtml).join('');
 
         var folderList = page.querySelector('.folderList');
         folderList.innerHTML = foldersHtml;
@@ -143,14 +167,21 @@
         $(page.querySelectorAll('.btnRemovePath')).on('click', onRemoveClick);
     }
 
-    function addMediaLocation(page, path) {
+    function addMediaLocation(page, path, networkSharePath) {
 
-        if (paths.filter(function (p) {
+        if (pathInfos.filter(function (p) {
 
-            return p.toLowerCase() == path.toLowerCase();
+            return p.Path.toLowerCase() == path.toLowerCase();
 
         }).length == 0) {
-            paths.push(path);
+
+            var pathInfo = {
+                Path: path
+            };
+            if (networkSharePath) {
+                pathInfo.NetworkPath = networkSharePath;
+            }
+            pathInfos.push(pathInfo);
             renderPaths(page);
         }
     }
@@ -160,20 +191,25 @@
         var button = this;
         var index = parseInt(button.getAttribute('data-index'));
 
-        var location = paths[index];
-        paths = paths.filter(function (p) {
+        var location = pathInfos[index];
+        pathInfos = pathInfos.filter(function (p) {
 
-            return p.toLowerCase() != location.toLowerCase();
+            return p.Path.toLowerCase() != location.toLowerCase();
         });
-        var page = $(this).parents('.editorContent')[0];
+        var page = $(this).parents('.dlg-librarycreator')[0];
         renderPaths(page);
     }
 
     function onDialogClosed() {
 
-        $(this).remove();
         Dashboard.hideLoadingMsg();
         currentDeferred.resolveWith(null, [hasChanges]);
+    }
+
+    function initLibraryOptions(dlg) {
+        libraryoptionseditor.embed(dlg.querySelector('.libraryOptions')).then(function () {
+            $('#selectCollectionType', dlg).trigger('change');
+        });
     }
 
     function editor() {
@@ -194,47 +230,37 @@
             xhr.onload = function (e) {
 
                 var template = this.response;
-                var dlg = paperDialogHelper.createDialog({
-                    size: 'small',
+                var dlg = dialogHelper.createDialog({
+                    size: 'medium',
 
                     // In (at least) chrome this is causing the text field to not be editable
-                    modal: false
+                    modal: false,
+
+                    removeOnClose: true,
+                    scrollY: false
                 });
 
                 dlg.classList.add('ui-body-a');
                 dlg.classList.add('background-theme-a');
-                dlg.classList.add('popupEditor');
+                dlg.classList.add('dlg-librarycreator');
+                dlg.classList.add('formDialog');
 
-                var html = '';
-                html += '<h2 class="dialogHeader">';
-                html += '<paper-fab icon="arrow-back" mini class="btnCloseDialog" tabindex="-1"></paper-fab>';
+                dlg.innerHTML = Globalize.translateDocument(template);
 
-                var title = Globalize.translate('ButtonAddMediaLibrary');
+                initEditor(dlg, options.collectionTypeOptions);
 
-                html += '<div style="display:inline-block;margin-left:.6em;vertical-align:middle;">' + title + '</div>';
-                html += '</h2>';
+                dlg.addEventListener('close', onDialogClosed);
 
-                html += '<div class="editorContent" style="max-width:800px;margin:auto;">';
-                html += Globalize.translateDocument(template);
-                html += '</div>';
+                dialogHelper.open(dlg);
 
-                dlg.innerHTML = html;
-                document.body.appendChild(dlg);
+                dlg.querySelector('.btnCancel').addEventListener('click', function () {
 
-                var editorContent = dlg.querySelector('.editorContent');
-                initEditor(editorContent, options.collectionTypeOptions);
-
-                $(dlg).on('iron-overlay-closed', onDialogClosed);
-
-                paperDialogHelper.open(dlg);
-
-                $('.btnCloseDialog', dlg).on('click', function () {
-
-                    paperDialogHelper.close(dlg);
+                    dialogHelper.close(dlg);
                 });
 
-                paths = [];
-                renderPaths(editorContent);
+                pathInfos = [];
+                renderPaths(dlg);
+                initLibraryOptions(dlg);
             }
 
             xhr.send();

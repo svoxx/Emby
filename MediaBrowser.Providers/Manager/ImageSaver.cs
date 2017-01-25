@@ -16,7 +16,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.Providers.Manager
 {
@@ -38,6 +39,7 @@ namespace MediaBrowser.Providers.Manager
         private readonly ILibraryMonitor _libraryMonitor;
         private readonly IFileSystem _fileSystem;
         private readonly ILogger _logger;
+        private readonly IMemoryStreamFactory _memoryStreamProvider;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ImageSaver" /> class.
@@ -46,12 +48,13 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="libraryMonitor">The directory watchers.</param>
         /// <param name="fileSystem">The file system.</param>
         /// <param name="logger">The logger.</param>
-        public ImageSaver(IServerConfigurationManager config, ILibraryMonitor libraryMonitor, IFileSystem fileSystem, ILogger logger)
+        public ImageSaver(IServerConfigurationManager config, ILibraryMonitor libraryMonitor, IFileSystem fileSystem, ILogger logger, IMemoryStreamFactory memoryStreamProvider)
         {
             _config = config;
             _libraryMonitor = libraryMonitor;
             _fileSystem = fileSystem;
             _logger = logger;
+            _memoryStreamProvider = memoryStreamProvider;
         }
 
         /// <summary>
@@ -70,7 +73,7 @@ namespace MediaBrowser.Providers.Manager
             return SaveImage(item, source, mimeType, type, imageIndex, null, cancellationToken);
         }
 
-        public async Task SaveImage(IHasImages item, Stream source, string mimeType, ImageType type, int? imageIndex, string internalCacheKey, CancellationToken cancellationToken)
+        public async Task SaveImage(IHasImages item, Stream source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(mimeType))
             {
@@ -107,9 +110,9 @@ namespace MediaBrowser.Providers.Manager
                     }
                 }
             }
-            if (!string.IsNullOrEmpty(internalCacheKey))
+            if (saveLocallyWithMedia.HasValue && !saveLocallyWithMedia.Value)
             {
-                saveLocally = false;
+                saveLocally = saveLocallyWithMedia.Value;
             }
 
             if (!imageIndex.HasValue && item.AllowsMultipleImages(type))
@@ -124,7 +127,7 @@ namespace MediaBrowser.Providers.Manager
             var retryPaths = GetSavePaths(item, type, imageIndex, mimeType, false);
 
             // If there are more than one output paths, the stream will need to be seekable
-            var memoryStream = new MemoryStream();
+            var memoryStream = _memoryStreamProvider.CreateNew();
             using (source)
             {
                 await source.CopyToAsync(memoryStream).ConfigureAwait(false);
@@ -133,6 +136,9 @@ namespace MediaBrowser.Providers.Manager
             source = memoryStream;
 
             var currentImage = GetCurrentImage(item, type, index);
+            var currentImageIsLocalFile = currentImage != null && currentImage.IsLocalFile;
+            var currentImagePath = currentImage == null ? null : currentImage.Path;
+
             var savedPaths = new List<string>();
 
             using (source)
@@ -157,22 +163,24 @@ namespace MediaBrowser.Providers.Manager
             SetImagePath(item, type, imageIndex, savedPaths[0]);
 
             // Delete the current path
-            if (currentImage != null && currentImage.IsLocalFile && !savedPaths.Contains(currentImage.Path, StringComparer.OrdinalIgnoreCase))
+            if (currentImageIsLocalFile && !savedPaths.Contains(currentImagePath, StringComparer.OrdinalIgnoreCase))
             {
-                var currentPath = currentImage.Path;
+                var currentPath = currentImagePath;
+
+                _logger.Debug("Deleting previous image {0}", currentPath);
 
                 _libraryMonitor.ReportFileSystemChangeBeginning(currentPath);
 
                 try
                 {
-                    var currentFile = new FileInfo(currentPath);
+                    var currentFile = _fileSystem.GetFileInfo(currentPath);
 
                     // This will fail if the file is hidden
                     if (currentFile.Exists)
                     {
-                        if ((currentFile.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                        if (currentFile.IsHidden)
                         {
-                            currentFile.Attributes &= ~FileAttributes.Hidden;
+                            _fileSystem.SetHidden(currentFile.FullName, false);
                         }
 
                         _fileSystem.DeleteFile(currentFile.FullName);
@@ -206,6 +214,20 @@ namespace MediaBrowser.Providers.Manager
                     throw;
                 }
             }
+            catch (IOException ex)
+            {
+                var retry = !string.IsNullOrWhiteSpace(retryPath) &&
+                    !string.Equals(path, retryPath, StringComparison.OrdinalIgnoreCase);
+
+                if (retry)
+                {
+                    _logger.Error("IOException saving to {0}. {2}. Will retry saving to {1}", path, retryPath, ex.Message);
+                }
+                else
+                {
+                    throw;
+                }
+            }
 
             source.Position = 0;
             await SaveImageToLocation(source, retryPath, cancellationToken).ConfigureAwait(false);
@@ -233,18 +255,22 @@ namespace MediaBrowser.Providers.Manager
                 _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
                 // If the file is currently hidden we'll have to remove that or the save will fail
-                var file = new FileInfo(path);
+                var file = _fileSystem.GetFileInfo(path);
 
                 // This will fail if the file is hidden
                 if (file.Exists)
                 {
-                    if ((file.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                    if (file.IsHidden)
                     {
-                        file.Attributes &= ~FileAttributes.Hidden;
+                        _fileSystem.SetHidden(file.FullName, false);
+                    }
+                    if (file.IsReadOnly)
+                    {
+                        _fileSystem.SetReadOnly(path, false);
                     }
                 }
 
-                using (var fs = _fileSystem.GetFileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                using (var fs = _fileSystem.GetFileStream(path, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                 {
                     await source.CopyToAsync(fs, StreamDefaults.DefaultCopyToBufferSize, cancellationToken)
                             .ConfigureAwait(false);
@@ -252,10 +278,7 @@ namespace MediaBrowser.Providers.Manager
 
                 if (_config.Configuration.SaveMetadataHidden)
                 {
-                    file.Refresh();
-
-                    // Add back the attribute
-                    file.Attributes |= FileAttributes.Hidden;
+                    _fileSystem.SetHidden(file.FullName, true);
                 }
             }
             finally
@@ -276,7 +299,7 @@ namespace MediaBrowser.Providers.Manager
         /// <returns>IEnumerable{System.String}.</returns>
         private string[] GetSavePaths(IHasImages item, ImageType type, int? imageIndex, string mimeType, bool saveLocally)
         {
-            if (_config.Configuration.ImageSavingConvention == ImageSavingConvention.Legacy || !saveLocally)
+            if (!saveLocally || (_config.Configuration.ImageSavingConvention == ImageSavingConvention.Legacy))
             {
                 return new[] { GetStandardSavePath(item, type, imageIndex, mimeType, saveLocally) };
             }
@@ -335,6 +358,11 @@ namespace MediaBrowser.Providers.Manager
             var season = item as Season;
             var extension = MimeTypes.ToExtension(mimeType);
 
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                throw new ArgumentException(string.Format("Unable to determine image file extension from mime type {0}", mimeType));
+            }
+
             if (type == ImageType.Thumb && saveLocally)
             {
                 if (season != null && season.IndexNumber.HasValue)
@@ -350,7 +378,7 @@ namespace MediaBrowser.Providers.Manager
                     return Path.Combine(seriesFolder, imageFilename);
                 }
 
-                if (item.IsInMixedFolder)
+                if (item.DetectIsInMixedFolder())
                 {
                     return GetSavePathForItemInMixedFolder(item, type, "landscape", extension);
                 }
@@ -375,11 +403,11 @@ namespace MediaBrowser.Providers.Manager
             }
 
             string filename;
-            var folderName = item is MusicAlbum || 
-                item is MusicArtist || 
-                item is PhotoAlbum || 
-                (saveLocally && _config.Configuration.ImageSavingConvention == ImageSavingConvention.Legacy) ? 
-                "folder" : 
+            var folderName = item is MusicAlbum ||
+                item is MusicArtist ||
+                item is PhotoAlbum ||
+                (saveLocally && _config.Configuration.ImageSavingConvention == ImageSavingConvention.Legacy) ?
+                "folder" :
                 "poster";
 
             switch (type)
@@ -421,12 +449,12 @@ namespace MediaBrowser.Providers.Manager
 
             if (saveLocally)
             {
-                if (item is Episode)
+                if (type == ImageType.Primary && item is Episode)
                 {
                     path = Path.Combine(Path.GetDirectoryName(item.Path), "metadata", filename + extension);
                 }
 
-                else if (item.IsInMixedFolder)
+                else if (item.DetectIsInMixedFolder())
                 {
                     path = GetSavePathForItemInMixedFolder(item, type, filename, extension);
                 }
@@ -493,7 +521,7 @@ namespace MediaBrowser.Providers.Manager
 
                 if (imageIndex.Value == 0)
                 {
-                    if (item.IsInMixedFolder)
+                    if (item.DetectIsInMixedFolder())
                     {
                         return new[] { GetSavePathForItemInMixedFolder(item, type, "fanart", extension) };
                     }
@@ -519,7 +547,7 @@ namespace MediaBrowser.Providers.Manager
 
                 var outputIndex = imageIndex.Value;
 
-                if (item.IsInMixedFolder)
+                if (item.DetectIsInMixedFolder())
                 {
                     return new[] { GetSavePathForItemInMixedFolder(item, type, "fanart" + outputIndex.ToString(UsCulture), extension) };
                 }
@@ -562,7 +590,7 @@ namespace MediaBrowser.Providers.Manager
                     return new[] { Path.Combine(seasonFolder, imageFilename) };
                 }
 
-                if (item.IsInMixedFolder || item is MusicVideo)
+                if (item.DetectIsInMixedFolder() || item is MusicVideo)
                 {
                     return new[] { GetSavePathForItemInMixedFolder(item, type, string.Empty, extension) };
                 }

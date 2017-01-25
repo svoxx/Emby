@@ -5,9 +5,9 @@ using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Playlists;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System.Linq;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -72,7 +72,7 @@ namespace MediaBrowser.Api
     }
 
     [Route("/Playlists/{Id}/Items", "GET", Summary = "Gets the original items of a playlist")]
-    public class GetPlaylistItems : IReturn<QueryResult<BaseItemDto>>, IHasItemFields
+    public class GetPlaylistItems : IReturn<QueryResult<BaseItemDto>>, IHasDtoOptions
     {
         [ApiMember(Name = "Id", IsRequired = true, DataType = "string", ParameterType = "path", Verb = "DELETE")]
         public string Id { get; set; }
@@ -104,6 +104,18 @@ namespace MediaBrowser.Api
         /// <value>The fields.</value>
         [ApiMember(Name = "Fields", Description = "Optional. Specify additional fields of information to return in the output. This allows multiple, comma delimeted. Options: Budget, Chapters, CriticRatingSummary, DateCreated, Genres, HomePageUrl, IndexOptions, MediaStreams, Overview, ParentId, Path, People, ProviderIds, PrimaryImageAspectRatio, Revenue, SortName, Studios, Taglines", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string Fields { get; set; }
+
+        [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableImages { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? ImageTypeLimit { get; set; }
+
+        [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string EnableImageTypes { get; set; }
     }
 
     [Authenticated]
@@ -113,13 +125,15 @@ namespace MediaBrowser.Api
         private readonly IDtoService _dtoService;
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly IAuthorizationContext _authContext;
 
-        public PlaylistService(IDtoService dtoService, IPlaylistManager playlistManager, IUserManager userManager, ILibraryManager libraryManager)
+        public PlaylistService(IDtoService dtoService, IPlaylistManager playlistManager, IUserManager userManager, ILibraryManager libraryManager, IAuthorizationContext authContext)
         {
             _dtoService = dtoService;
             _playlistManager = playlistManager;
             _userManager = userManager;
             _libraryManager = libraryManager;
+            _authContext = authContext;
         }
 
         public void Post(MoveItem request)
@@ -157,7 +171,7 @@ namespace MediaBrowser.Api
             Task.WaitAll(task);
         }
 
-        public object Get(GetPlaylistItems request)
+        public async Task<object> Get(GetPlaylistItems request)
         {
             var playlist = (Playlist)_libraryManager.GetItemById(request.Id);
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
@@ -176,9 +190,9 @@ namespace MediaBrowser.Api
                 items = items.Take(request.Limit.Value).ToArray();
             }
 
-            var dtoOptions = GetDtoOptions(request);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var dtos = _dtoService.GetBaseItemDtos(items.Select(i => i.Item2), dtoOptions, user)
+            var dtos = (await _dtoService.GetBaseItemDtos(items.Select(i => i.Item2), dtoOptions, user).ConfigureAwait(false))
                    .ToArray();
 
             var index = 0;

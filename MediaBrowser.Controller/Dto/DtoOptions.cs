@@ -17,13 +17,18 @@ namespace MediaBrowser.Controller.Dto
         public List<ImageType> ImageTypes { get; set; }
         public int ImageTypeLimit { get; set; }
         public bool EnableImages { get; set; }
+        public bool AddProgramRecordingInfo { get; set; }
         public string DeviceId { get; set; }
+        public bool EnableUserData { get; set; }
+        public bool AddCurrentProgram { get; set; }
 
         public DtoOptions()
         {
             Fields = new List<ItemFields>();
             ImageTypeLimit = int.MaxValue;
             EnableImages = true;
+            EnableUserData = true;
+            AddCurrentProgram = true;
 
             Fields = Enum.GetNames(typeof (ItemFields))
                     .Select(i => (ItemFields) Enum.Parse(typeof (ItemFields), i, true))

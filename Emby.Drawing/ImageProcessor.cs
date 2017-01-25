@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Entities;
@@ -16,10 +15,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Model.IO;
 using Emby.Drawing.Common;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Net;
+using MediaBrowser.Model.Threading;
+using TagLib;
 
 namespace Emby.Drawing
 {
@@ -62,7 +65,7 @@ namespace Emby.Drawing
             IFileSystem fileSystem,
             IJsonSerializer jsonSerializer,
             IImageEncoder imageEncoder,
-            int maxConcurrentImageProcesses, Func<ILibraryManager> libraryManager)
+            int maxConcurrentImageProcesses, Func<ILibraryManager> libraryManager, ITimerFactory timerFactory)
         {
             _logger = logger;
             _fileSystem = fileSystem;
@@ -72,7 +75,7 @@ namespace Emby.Drawing
             _appPaths = appPaths;
 
             ImageEnhancers = new List<IImageEnhancer>();
-            _saveImageSizeTimer = new Timer(SaveImageSizeCallback, null, Timeout.Infinite, Timeout.Infinite);
+            _saveImageSizeTimer = timerFactory.Create(SaveImageSizeCallback, null, Timeout.Infinite, Timeout.Infinite);
 
             Dictionary<Guid, ImageSize> sizeDictionary;
 
@@ -86,7 +89,7 @@ namespace Emby.Drawing
                 // No biggie
                 sizeDictionary = new Dictionary<Guid, ImageSize>();
             }
-            catch (DirectoryNotFoundException)
+            catch (IOException)
             {
                 // No biggie
                 sizeDictionary = new Dictionary<Guid, ImageSize>();
@@ -153,7 +156,7 @@ namespace Emby.Drawing
         {
             var file = await ProcessImage(options).ConfigureAwait(false);
 
-            using (var fileStream = _fileSystem.GetFileStream(file.Item1, FileMode.Open, FileAccess.Read, FileShare.Read, true))
+            using (var fileStream = _fileSystem.GetFileStream(file.Item1, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.Read, true))
             {
                 await fileStream.CopyToAsync(toStream).ConfigureAwait(false);
             }
@@ -164,7 +167,7 @@ namespace Emby.Drawing
             return _imageEncoder.SupportedOutputFormats;
         }
 
-        public async Task<Tuple<string, string>> ProcessImage(ImageProcessingOptions options)
+        public async Task<Tuple<string, string, DateTime>> ProcessImage(ImageProcessingOptions options)
         {
             if (options == null)
             {
@@ -179,13 +182,12 @@ namespace Emby.Drawing
             }
 
             var originalImagePath = originalImage.Path;
+            var dateModified = originalImage.DateModified;
 
             if (!_imageEncoder.SupportsImageEncoding)
             {
-                return new Tuple<string, string>(originalImagePath, MimeTypes.GetMimeType(originalImagePath));
+                return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
-
-            var dateModified = originalImage.DateModified;
 
             if (options.CropWhiteSpace && _imageEncoder.SupportsImageEncoding)
             {
@@ -212,7 +214,7 @@ namespace Emby.Drawing
             if (options.HasDefaultOptions(originalImagePath))
             {
                 // Just spit out the original file if all the options are default
-                return new Tuple<string, string>(originalImagePath, MimeTypes.GetMimeType(originalImagePath));
+                return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
 
             ImageSize? originalImageSize;
@@ -222,7 +224,7 @@ namespace Emby.Drawing
                 if (options.HasDefaultOptions(originalImagePath, originalImageSize.Value))
                 {
                     // Just spit out the original file if all the options are default
-                    return new Tuple<string, string>(originalImagePath, MimeTypes.GetMimeType(originalImagePath));
+                    return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
                 }
             }
             catch
@@ -234,11 +236,7 @@ namespace Emby.Drawing
             var quality = options.Quality;
 
             var outputFormat = GetOutputFormat(options.SupportedOutputFormats[0]);
-            var cacheFilePath = GetCacheFilePath(originalImagePath, newSize, quality, dateModified, outputFormat, options.AddPlayedIndicator, options.PercentPlayed, options.UnplayedCount, options.BackgroundColor, options.ForegroundLayer);
-
-            var semaphore = GetLock(cacheFilePath);
-
-            await semaphore.WaitAsync().ConfigureAwait(false);
+            var cacheFilePath = GetCacheFilePath(originalImagePath, newSize, quality, dateModified, outputFormat, options.AddPlayedIndicator, options.PercentPlayed, options.UnplayedCount, options.Blur, options.BackgroundColor, options.ForegroundLayer);
 
             var imageProcessingLockTaken = false;
 
@@ -252,15 +250,20 @@ namespace Emby.Drawing
                     var newHeight = Convert.ToInt32(newSize.Height);
 
                     _fileSystem.CreateDirectory(Path.GetDirectoryName(cacheFilePath));
+                    var tmpPath = Path.ChangeExtension(Path.Combine(_appPaths.TempDirectory, Guid.NewGuid().ToString("N")), Path.GetExtension(cacheFilePath));
+                    _fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
 
                     await _imageProcessingSemaphore.WaitAsync().ConfigureAwait(false);
 
                     imageProcessingLockTaken = true;
 
-                    _imageEncoder.EncodeImage(originalImagePath, cacheFilePath, AutoOrient(options.Item), newWidth, newHeight, quality, options, outputFormat);
+                    _imageEncoder.EncodeImage(originalImagePath, tmpPath, AutoOrient(options.Item), newWidth, newHeight, quality, options, outputFormat);
+                    CopyFile(tmpPath, cacheFilePath);
+
+                    return new Tuple<string, string, DateTime>(tmpPath, GetMimeType(outputFormat, cacheFilePath), _fileSystem.GetLastWriteTimeUtc(tmpPath));
                 }
 
-                return new Tuple<string, string>(cacheFilePath, GetMimeType(outputFormat, cacheFilePath));
+                return new Tuple<string, string, DateTime>(cacheFilePath, GetMimeType(outputFormat, cacheFilePath), _fileSystem.GetLastWriteTimeUtc(cacheFilePath));
             }
             catch (Exception ex)
             {
@@ -268,7 +271,7 @@ namespace Emby.Drawing
                 _logger.ErrorException("Error encoding image", ex);
 
                 // Just spit out the original file if all the options are default
-                return new Tuple<string, string>(originalImagePath, MimeTypes.GetMimeType(originalImagePath));
+                return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
             finally
             {
@@ -276,8 +279,18 @@ namespace Emby.Drawing
                 {
                     _imageProcessingSemaphore.Release();
                 }
+            }
+        }
 
-                semaphore.Release();
+        private void CopyFile(string src, string destination)
+        {
+            try
+            {
+                _fileSystem.CopyFile(src, destination, true);
+            }
+            catch
+            {
+
             }
         }
 
@@ -413,27 +426,21 @@ namespace Emby.Drawing
 
             var croppedImagePath = GetCachePath(CroppedWhitespaceImageCachePath, name, Path.GetExtension(originalImagePath));
 
-            var semaphore = GetLock(croppedImagePath);
-
-            await semaphore.WaitAsync().ConfigureAwait(false);
-
             // Check again in case of contention
             if (_fileSystem.FileExists(croppedImagePath))
             {
-                semaphore.Release();
                 return GetResult(croppedImagePath);
             }
-
-            var imageProcessingLockTaken = false;
 
             try
             {
                 _fileSystem.CreateDirectory(Path.GetDirectoryName(croppedImagePath));
+                var tmpPath = Path.ChangeExtension(Path.Combine(_appPaths.TempDirectory, Guid.NewGuid().ToString("N")), Path.GetExtension(croppedImagePath));
+                _fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
 
-                await _imageProcessingSemaphore.WaitAsync().ConfigureAwait(false);
-                imageProcessingLockTaken = true;
-
-                _imageEncoder.CropWhiteSpace(originalImagePath, croppedImagePath);
+                _imageEncoder.CropWhiteSpace(originalImagePath, tmpPath);
+                CopyFile(tmpPath, croppedImagePath);
+                return GetResult(tmpPath);
             }
             catch (NotImplementedException)
             {
@@ -447,17 +454,6 @@ namespace Emby.Drawing
 
                 return new Tuple<string, DateTime>(originalImagePath, dateModified);
             }
-            finally
-            {
-                if (imageProcessingLockTaken)
-                {
-                    _imageProcessingSemaphore.Release();
-                }
-
-                semaphore.Release();
-            }
-
-            return GetResult(croppedImagePath);
         }
 
         private Tuple<string, DateTime> GetResult(string path)
@@ -473,7 +469,7 @@ namespace Emby.Drawing
         /// <summary>
         /// Gets the cache file path based on a set of parameters
         /// </summary>
-        private string GetCacheFilePath(string originalPath, ImageSize outputSize, int quality, DateTime dateModified, ImageFormat format, bool addPlayedIndicator, double percentPlayed, int? unwatchedCount, string backgroundColor, string foregroundLayer)
+        private string GetCacheFilePath(string originalPath, ImageSize outputSize, int quality, DateTime dateModified, ImageFormat format, bool addPlayedIndicator, double percentPlayed, int? unwatchedCount, int? blur, string backgroundColor, string foregroundLayer)
         {
             var filename = originalPath;
 
@@ -500,6 +496,11 @@ namespace Emby.Drawing
             if (unwatchedCount.HasValue)
             {
                 filename += "p=" + unwatchedCount.Value;
+            }
+
+            if (blur.HasValue)
+            {
+                filename += "blur=" + blur.Value;
             }
 
             if (!string.IsNullOrEmpty(backgroundColor))
@@ -572,7 +573,7 @@ namespace Emby.Drawing
         {
             try
             {
-                using (var file = TagLib.File.Create(path))
+                using (var file = TagLib.File.Create(new StreamFileAbstraction(Path.GetFileName(path), _fileSystem.OpenRead(path), null)))
                 {
                     var image = file as TagLib.Image.File;
 
@@ -592,7 +593,7 @@ namespace Emby.Drawing
             return ImageHeader.GetDimensions(path, _logger, _fileSystem);
         }
 
-        private readonly Timer _saveImageSizeTimer;
+        private readonly ITimer _saveImageSizeTimer;
         private const int SaveImageSizeTimeout = 5000;
         private readonly object _saveImageSizeLock = new object();
         private void StartSaveImageSizeTimer()
@@ -774,40 +775,38 @@ namespace Emby.Drawing
             // All enhanced images are saved as png to allow transparency
             var enhancedImagePath = GetCachePath(EnhancedImageCachePath, cacheGuid + ".png");
 
-            var semaphore = GetLock(enhancedImagePath);
-
-            await semaphore.WaitAsync().ConfigureAwait(false);
-
             // Check again in case of contention
             if (_fileSystem.FileExists(enhancedImagePath))
             {
-                semaphore.Release();
                 return enhancedImagePath;
             }
 
-            var imageProcessingLockTaken = false;
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(enhancedImagePath));
+
+            var tmpPath = Path.Combine(_appPaths.TempDirectory, Path.ChangeExtension(Guid.NewGuid().ToString(), Path.GetExtension(enhancedImagePath)));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
+
+            await _imageProcessingSemaphore.WaitAsync().ConfigureAwait(false);
 
             try
             {
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(enhancedImagePath));
+                await ExecuteImageEnhancers(supportedEnhancers, originalImagePath, tmpPath, item, imageType, imageIndex).ConfigureAwait(false);
 
-                await _imageProcessingSemaphore.WaitAsync().ConfigureAwait(false);
-
-                imageProcessingLockTaken = true;
-
-                await ExecuteImageEnhancers(supportedEnhancers, originalImagePath, enhancedImagePath, item, imageType, imageIndex).ConfigureAwait(false);
+                try
+                {
+                    _fileSystem.CopyFile(tmpPath, enhancedImagePath, true);
+                }
+                catch
+                {
+                    
+                }
             }
             finally
             {
-                if (imageProcessingLockTaken)
-                {
-                    _imageProcessingSemaphore.Release();
-                }
-
-                semaphore.Release();
+                _imageProcessingSemaphore.Release();
             }
 
-            return enhancedImagePath;
+            return tmpPath;
         }
 
         /// <summary>
@@ -825,37 +824,11 @@ namespace Emby.Drawing
             // Run the enhancers sequentially in order of priority
             foreach (var enhancer in imageEnhancers)
             {
-                var typeName = enhancer.GetType().Name;
-
-                try
-                {
-                    await enhancer.EnhanceImageAsync(item, inputPath, outputPath, imageType, imageIndex).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.ErrorException("{0} failed enhancing {1}", ex, typeName, item.Name);
-
-                    throw;
-                }
+                await enhancer.EnhanceImageAsync(item, inputPath, outputPath, imageType, imageIndex).ConfigureAwait(false);
 
                 // Feed the output into the next enhancer as input
                 inputPath = outputPath;
             }
-        }
-
-        /// <summary>
-        /// The _semaphoreLocks
-        /// </summary>
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _semaphoreLocks = new ConcurrentDictionary<string, SemaphoreSlim>();
-
-        /// <summary>
-        /// Gets the lock.
-        /// </summary>
-        /// <param name="filename">The filename.</param>
-        /// <returns>System.Object.</returns>
-        private SemaphoreSlim GetLock(string filename)
-        {
-            return _semaphoreLocks.GetOrAdd(filename, key => new SemaphoreSlim(1, 1));
         }
 
         /// <summary>
@@ -924,20 +897,11 @@ namespace Emby.Drawing
 
         public async Task CreateImageCollage(ImageCollageOptions options)
         {
-            await _imageProcessingSemaphore.WaitAsync().ConfigureAwait(false);
+            _logger.Info("Creating image collage and saving to {0}", options.OutputPath);
 
-            try
-            {
-                _logger.Info("Creating image collage and saving to {0}", options.OutputPath);
+            _imageEncoder.CreateImageCollage(options);
 
-                _imageEncoder.CreateImageCollage(options);
-
-                _logger.Info("Completed creation of image collage and saved to {0}", options.OutputPath);
-            }
-            finally
-            {
-                _imageProcessingSemaphore.Release();
-            }
+            _logger.Info("Completed creation of image collage and saved to {0}", options.OutputPath);
         }
 
         public IEnumerable<IImageEnhancer> GetSupportedEnhancers(IHasImages item, ImageType imageType)

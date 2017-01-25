@@ -1,109 +1,104 @@
-define(['paperdialoghelper', 'layoutManager', 'dialogText', 'html!./icons.html', 'css!./style.css', 'paper-button', 'paper-input'], function (paperdialoghelper, layoutManager, dialogText) {
+define(['dialogHelper', 'layoutManager', 'scrollHelper', 'globalize', 'dom', 'require', 'material-icons', 'emby-button', 'paper-icon-button-light', 'emby-input', 'formDialogStyle'], function (dialogHelper, layoutManager, scrollHelper, globalize, dom, require) {
+    'use strict';
 
-    return function (options) {
+    function setInputProperties(dlg, options) {
+        var txtInput = dlg.querySelector('#txtInput');
 
-        if (typeof options === 'string') {
-            options = {
-                title: '',
-                text: options
-            };
+        if (txtInput.label) {
+            txtInput.label(options.label || '');
+        } else {
+            txtInput.setAttribute('label', options.label || '');
         }
+        txtInput.value = options.value || '';
+    }
+
+    function showDialog(options, template) {
 
         var dialogOptions = {
-            removeOnClose: true
+            removeOnClose: true,
+            scrollY: false
         };
-
-        var backButton = false;
-        var raisedButtons = false;
 
         if (layoutManager.tv) {
             dialogOptions.size = 'fullscreen';
-            backButton = true;
-            raisedButtons = true;
+        }
+
+        var dlg = dialogHelper.createDialog(dialogOptions);
+
+        dlg.classList.add('formDialog');
+
+        dlg.innerHTML = globalize.translateHtml(template, 'sharedcomponents');
+
+        if (layoutManager.tv) {
+            scrollHelper.centerFocus.on(dlg.querySelector('.formDialogContent'), false);
         } else {
-
-            dialogOptions.modal = false;
-            dialogOptions.entryAnimationDuration = 160;
-            dialogOptions.exitAnimationDuration = 200;
+            dlg.querySelector('.dialogContentInner').classList.add('dialogContentInner-mini');
+            dlg.classList.add('dialog-fullscreen-lowres');
         }
 
-        var dlg = paperdialoghelper.createDialog(dialogOptions);
+        dlg.querySelector('.btnCancel').addEventListener('click', function (e) {
+            dialogHelper.close(dlg);
+        });
 
-        dlg.classList.add('promptDialog');
-
-        var html = '';
-        var submitValue = '';
-
-        html += '<div class="promptDialogContent">';
-        if (backButton) {
-            html += '<paper-icon-button tabindex="-1" icon="dialog:arrow-back" class="btnPromptExit"></paper-icon-button>';
-        }
-
-        if (options.title) {
-            html += '<h2>';
-            html += options.title;
-            html += '</h2>';
-        }
-
-        html += '<form>';
-
-        html += '<paper-input autoFocus class="txtPromptValue" value="' + (options.value || '') + '" label="' + (options.label || '') + '"></paper-input>';
+        dlg.querySelector('.formDialogHeaderTitle').innerHTML = options.title || '';
 
         if (options.description) {
-            html += '<div class="fieldDescription">';
-            html += options.description;
-            html += '</div>';
-        }
-
-        html += '<br/>';
-        if (raisedButtons) {
-            html += '<paper-button raised class="btnSubmit"><iron-icon icon="dialog:check"></iron-icon><span>' + dialogText.get('Ok') + '</span></paper-button>';
+            dlg.querySelector('.fieldDescription').innerHTML = options.description;
         } else {
-            html += '<div style="text-align:right;">';
-            html += '<paper-button class="btnSubmit">' + dialogText.get('Ok') + '</paper-button>';
-            html += '<paper-button class="btnPromptExit">' + dialogText.get('Cancel') + '</paper-button>';
-            html += '</div>';
+            dlg.querySelector('.fieldDescription').classList.add('hide');
         }
-        html += '</form>';
 
-        html += '</div>';
+        setInputProperties(dlg, options);
 
-        dlg.innerHTML = html;
-
-        document.body.appendChild(dlg);
+        var submitValue;
 
         dlg.querySelector('form').addEventListener('submit', function (e) {
 
-            submitValue = dlg.querySelector('.txtPromptValue').value;
-            paperdialoghelper.close(dlg);
+            submitValue = dlg.querySelector('#txtInput').value;
             e.preventDefault();
+            e.stopPropagation();
+
+            // Important, don't close the dialog until after the form has completed submitting, or it will cause an error in Chrome
+            setTimeout(function () {
+                dialogHelper.close(dlg);
+            }, 300);
+
             return false;
         });
 
-        dlg.querySelector('.btnSubmit').addEventListener('click', function (e) {
+        dlg.querySelector('.submitText').innerHTML = options.confirmText || globalize.translate('sharedcomponents#ButtonOk');
 
-            // Do a fake form submit this the button isn't a real submit button
-            var fakeSubmit = document.createElement('input');
-            fakeSubmit.setAttribute('type', 'submit');
-            fakeSubmit.style.display = 'none';
-            var form = dlg.querySelector('form');
-            form.appendChild(fakeSubmit);
-            fakeSubmit.click();
-            form.removeChild(fakeSubmit);
-        });
+        dlg.style.minWidth = (Math.min(400, dom.getWindowSize().innerWidth - 50)) + 'px';
 
-        dlg.querySelector('.btnPromptExit').addEventListener('click', function (e) {
+        return dialogHelper.open(dlg).then(function () {
 
-            paperdialoghelper.close(dlg);
-        });
+            if (layoutManager.tv) {
+                scrollHelper.centerFocus.off(dlg.querySelector('.formDialogContent'), false);
+            }
 
-        return paperdialoghelper.open(dlg).then(function () {
             var value = submitValue;
+
             if (value) {
                 return value;
             } else {
                 return Promise.reject();
             }
+        });
+    }
+
+    return function (options) {
+
+        return new Promise(function (resolve, reject) {
+            require(['text!./prompt.template.html'], function (template) {
+
+                if (typeof options === 'string') {
+                    options = {
+                        title: '',
+                        text: options
+                    };
+                }
+                showDialog(options, template).then(resolve, reject);
+            });
         });
     };
 });

@@ -3,6 +3,7 @@ using MediaBrowser.Model.Channels;
 using MediaBrowser.Model.Querying;
 using System;
 using System.Linq;
+using MediaBrowser.Model.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -30,7 +31,14 @@ namespace MediaBrowser.Controller.Channels
             return base.IsVisible(user);
         }
 
-        public override async Task<QueryResult<BaseItem>> GetItems(InternalItemsQuery query)
+        [IgnoreDataMember]
+        public override SourceType SourceType
+        {
+            get { return SourceType.Channel; }
+            set { }
+        }
+
+        protected override async Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
         {
             try
             {
@@ -49,10 +57,7 @@ namespace MediaBrowser.Controller.Channels
             catch
             {
                 // Already logged at lower levels
-                return new QueryResult<BaseItem>
-                {
-
-                };
+                return new QueryResult<BaseItem>();
             }
         }
 
@@ -74,6 +79,13 @@ namespace MediaBrowser.Controller.Channels
         protected override bool IsAllowTagFilterEnforced()
         {
             return false;
+        }
+
+        internal static bool IsChannelVisible(BaseItem channelItem, User user)
+        {
+            var channel = ChannelManager.GetChannel(channelItem.ChannelId);
+
+            return channel.IsVisible(user);
         }
     }
 }

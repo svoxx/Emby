@@ -1,4 +1,5 @@
-﻿define([], function () {
+﻿define(['dom'], function (dom) {
+    'use strict';
 
     /**
    * Copyright 2012, Digital Fusion
@@ -15,8 +16,14 @@
         thresholdX = thresholdX || 0;
         thresholdY = thresholdY || 0;
 
-        var vpWidth = window.innerWidth,
-            vpHeight = window.innerHeight;
+        if (!elem.getBoundingClientRect) {
+            return true;
+        }
+
+        var windowSize = dom.getWindowSize();
+
+        var vpWidth = windowSize.innerWidth,
+            vpHeight = windowSize.innerHeight;
 
         // Use this native browser method, if available.
         var rec = elem.getBoundingClientRect(),

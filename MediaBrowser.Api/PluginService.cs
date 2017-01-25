@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common;
-using MediaBrowser.Common.Extensions;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Security;
 using MediaBrowser.Common.Updates;
@@ -9,14 +8,13 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Registration;
 using MediaBrowser.Model.Serialization;
-using ServiceStack;
-using ServiceStack.Web;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -228,7 +226,7 @@ namespace MediaBrowser.Api
                         .ToList();
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 //Logger.ErrorException("Error getting plugin list", ex);
                 // Play it safe here

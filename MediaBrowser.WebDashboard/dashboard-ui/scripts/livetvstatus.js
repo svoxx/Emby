@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery', 'scripts/taskbutton', 'listViewStyle'], function ($, taskButton) {
+    'use strict';
 
     function resetTuner(page, id) {
 
@@ -30,21 +31,21 @@
             for (var i = 0, length = tuners.length; i < length; i++) {
 
                 var tuner = tuners[i];
-                html += '<paper-icon-item>';
+                html += '<div class="listItem">';
 
-                html += '<paper-fab mini style="background:#52B54B;" icon="live-tv" item-icon></paper-fab>';
+                html += '<i class="listItemIcon md-icon">live_tv</i>';
 
-                html += '<paper-item-body two-line>';
+                html += '<div class="listItemBody two-line">';
 
-                html += '<div>';
+                html += '<h3 class="listItemBodyText">';
                 html += tuner.Name;
-                html += '</div>';
+                html += '</h3>';
 
-                html += '<div secondary>';
+                html += '<div class="listItemBodyText secondary">';
                 html += tuner.SourceType;
                 html += '</div>';
 
-                html += '<div secondary>';
+                html += '<div class="listItemBodyText secondary">';
                 if (tuner.Status == 'RecordingTv') {
                     if (tuner.ChannelName) {
 
@@ -73,9 +74,13 @@
                 }
                 html += '</div>';
 
-                html += '</paper-item-body>';
-                html += '<paper-icon-button icon="refresh" data-tunerid="' + tuner.Id + '" title="' + Globalize.translate('ButtonResetTuner') + '" class="btnResetTuner"></paper-icon-button>';
-                html += '</paper-icon-item>';
+                html += '</div>';
+
+                if (tuner.CanReset) {
+                    html += '<button type="button" is="paper-icon-button-light" data-tunerid="' + tuner.Id + '" title="' + Globalize.translate('ButtonResetTuner') + '" class="btnResetTuner"><i class="md-icon">refresh</i></button>';
+                }
+
+                html += '</div>';
             }
 
             html += '</div>';
@@ -160,7 +165,7 @@
             $('.servicesSection', page).hide();
         }
 
-        $('.servicesList', page).html(servicesToDisplay.map(getServiceHtml).join('')).trigger('create');
+        $('.servicesList', page).html(servicesToDisplay.map(getServiceHtml).join(''));
 
         var tuners = [];
         for (var i = 0, length = liveTvInfo.Services.length; i < length; i++) {
@@ -194,24 +199,24 @@
 
                 var href = 'livetvtunerprovider-' + device.Type + '.html?id=' + device.Id;
 
-                html += '<paper-icon-item>';
+                html += '<div class="listItem">';
 
-                html += '<paper-fab mini style="background:#52B54B;" icon="live-tv" item-icon></paper-fab>';
+                html += '<i class="listItemIcon md-icon">live_tv</i>';
 
-                html += '<paper-item-body two-line>';
+                html += '<div class="listItemBody two-line">';
                 html += '<a class="clearLink" href="' + href + '">';
-                html += '<div>';
-                html += getTunerName(device.Type);
-                html += '</div>';
+                html += '<h3 class="listItemBodyText">';
+                html += device.FriendlyName || getTunerName(device.Type);
+                html += '</h3>';
 
-                html += '<div secondary>';
+                html += '<div class="listItemBodyText secondary">';
                 html += device.Url;
                 html += '</div>';
                 html += '</a>';
-                html += '</paper-item-body>';
+                html += '</div>';
 
-                html += '<paper-icon-button icon="delete" data-id="' + device.Id + '" title="' + Globalize.translate('ButtonDelete') + '" class="btnDeleteDevice"></paper-icon-button>';
-                html += '</paper-icon-item>';
+                html += '<button type="button" is="paper-icon-button-light" class="btnDeleteDevice" data-id="' + device.Id + '" title="' + Globalize.translate('ButtonDelete') + '"><i class="md-icon">delete</i></button>';
+                html += '</div>';
             }
 
             html += '</div>';
@@ -259,6 +264,12 @@
 
             loadPage(page, liveTvInfo);
 
+        }, function () {
+
+            loadPage(page, {
+                Services: [],
+                IsEnabled: true
+            });
         });
     }
 
@@ -298,22 +309,22 @@
             for (var i = 0, length = providers.length; i < length; i++) {
 
                 var provider = providers[i];
-                html += '<paper-icon-item>';
+                html += '<div class="listItem">';
 
-                html += '<paper-fab mini style="background:#52B54B;" icon="dvr" item-icon></paper-fab>';
+                html += '<i class="listItemIcon md-icon">dvr</i>';
 
-                html += '<paper-item-body two-line>';
+                html += '<div class="listItemBody two-line">';
 
                 html += '<a class="clearLink" href="' + getProviderConfigurationUrl(provider.Type) + '&id=' + provider.Id + '">';
 
-                html += '<div>';
+                html += '<h3 class="listItemBodyText">';
                 html += getProviderName(provider.Type);
-                html += '</div>';
+                html += '</h3>';
 
                 html += '</a>';
-                html += '</paper-item-body>';
-                html += '<paper-icon-button icon="delete" data-id="' + provider.Id + '" title="' + Globalize.translate('ButtonDelete') + '" class="btnDelete"></paper-icon-button>';
-                html += '</paper-icon-item>';
+                html += '</div>';
+                html += '<button type="button" is="paper-icon-button-light" class="btnOptions" data-id="' + provider.Id + '"><i class="md-icon">more_vert</i></button>';
+                html += '</div>';
             }
 
             html += '</div>';
@@ -321,11 +332,59 @@
 
         var elem = $('.providerList', page).html(html);
 
-        $('.btnDelete', elem).on('click', function () {
+        $('.btnOptions', elem).on('click', function () {
 
             var id = this.getAttribute('data-id');
 
-            deleteProvider(page, id);
+            showProviderOptions(page, id, this);
+        });
+    }
+
+    function showProviderOptions(page, providerId, button) {
+
+        var items = [];
+
+        items.push({
+            name: Globalize.translate('ButtonDelete'),
+            id: 'delete'
+        });
+
+        items.push({
+            name: Globalize.translate('MapChannels'),
+            id: 'map'
+        });
+
+        require(['actionsheet'], function (actionsheet) {
+
+            actionsheet.show({
+                items: items,
+                positionTo: button
+
+            }).then(function (id) {
+
+                switch (id) {
+
+                    case 'delete':
+                        deleteProvider(page, providerId);
+                        break;
+                    case 'map':
+                        mapChannels(page, providerId);
+                        break;
+                    default:
+                        break;
+                }
+            });
+
+        });
+    }
+
+    function mapChannels(page, providerId) {
+
+        require(['components/channelmapper/channelmapper'], function (channelmapper) {
+            new channelmapper({
+                serverId: ApiClient.serverInfo().Id,
+                providerId: providerId
+            }).show();
         });
     }
 
@@ -364,9 +423,11 @@
         switch (providerId) {
 
             case 'm3u':
-                return 'M3U Playlist';
+                return 'M3U';
             case 'hdhomerun':
                 return 'HDHomerun';
+            case 'satip':
+                return 'DVB';
             default:
                 return 'Unknown';
         }
@@ -380,6 +441,8 @@
 
             case 'schedulesdirect':
                 return 'Schedules Direct';
+            case 'xmltv':
+                return 'Xml TV';
             case 'emby':
                 return 'Emby Guide';
             default:
@@ -393,6 +456,8 @@
 
         switch (providerId) {
 
+            case 'xmltv':
+                return 'livetvguideprovider.html?type=xmltv';
             case 'schedulesdirect':
                 return 'livetvguideprovider.html?type=schedulesdirect';
             case 'emby':
@@ -415,6 +480,11 @@
         //    name: 'Emby Guide',
         //    id: 'emby'
         //});
+
+        menuItems.push({
+            name: 'Xml TV',
+            id: 'xmltv'
+        });
 
         menuItems.push({
             name: Globalize.translate('ButtonOther'),
@@ -444,6 +514,11 @@
     function addDevice(button) {
 
         var menuItems = [];
+
+        //menuItems.push({
+        //    name: getTunerName('satip'),
+        //    id: 'satip'
+        //});
 
         menuItems.push({
             name: 'HDHomerun',
@@ -480,6 +555,22 @@
         });
     }
 
+    function getTabs() {
+        return [
+        {
+            href: 'livetvstatus.html',
+            name: Globalize.translate('TabDevices')
+        },
+         {
+             href: 'livetvsettings.html',
+             name: Globalize.translate('TabSettings')
+         },
+         {
+             href: 'appservices.html?context=livetv',
+             name: Globalize.translate('TabServices')
+         }];
+    }
+
     $(document).on('pageinit', "#liveTvStatusPage", function () {
 
         var page = this;
@@ -499,15 +590,17 @@
 
     }).on('pageshow', "#liveTvStatusPage", function () {
 
+        LibraryMenu.setTabs('livetvadmin', 0, getTabs);
         var page = this;
 
         reload(page);
 
         // on here
-        $('.btnRefresh', page).taskButton({
+        taskButton({
             mode: 'on',
             progressElem: page.querySelector('.refreshGuideProgress'),
-            taskKey: 'RefreshGuide'
+            taskKey: 'RefreshGuide',
+            button: page.querySelector('.btnRefresh')
         });
 
     }).on('pagehide', "#liveTvStatusPage", function () {
@@ -515,10 +608,13 @@
         var page = this;
 
         // off here
-        $('.btnRefreshGuide', page).taskButton({
-            mode: 'off'
+        taskButton({
+            mode: 'off',
+            progressElem: page.querySelector('.refreshGuideProgress'),
+            taskKey: 'RefreshGuide',
+            button: page.querySelector('.btnRefresh')
         });
 
     });
 
-})(jQuery, document, window);
+});

@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery', 'libraryBrowser', 'imageLoader', 'indicators'], function ($, libraryBrowser, imageLoader, indicators) {
+    'use strict';
 
     var currentItem;
 
@@ -18,9 +19,9 @@
 
         currentItem = item;
 
-        LibraryBrowser.renderName(item, $('.itemName', page), false);
-        LibraryBrowser.renderParentName(item, $('.parentName', page));
-        LibraryBrowser.renderDetailPageBackdrop(page, item);
+        libraryBrowser.renderName(item, $('.itemName', page)[0], false);
+        libraryBrowser.renderParentName(item, $('.parentName', page)[0]);
+        libraryBrowser.renderDetailPageBackdrop(page, item, imageLoader);
 
         renderImage(page, item);
 
@@ -35,12 +36,12 @@
         $('.collectionItems', page).empty();
 
         if (item.MediaSources && item.MediaSources.length) {
-            ItemDetailPage.renderMediaSources(page, item);
+            ItemDetailPage.renderMediaSources(page, null, item);
         }
 
         var chapters = item.Chapters || [];
 
-        if (!chapters.length || !AppInfo.enableDetailPageChapters) {
+        if (!chapters.length) {
             $('#scenesCollapsible', page).hide();
         } else {
             $('#scenesCollapsible', page).show();
@@ -58,7 +59,7 @@
     }
 
     function renderImage(page, item) {
-        LibraryBrowser.renderDetailImage(page.querySelector('.detailImageContainer'), item, false);
+        libraryBrowser.renderDetailImage(page.querySelector('.detailImageContainer'), item, false, null, imageLoader, indicators);
     }
 
     $(document).on('pageinit', "#publicSharedItemPage", function () {
@@ -87,4 +88,4 @@
 
     });
 
-})(jQuery, document, window);
+});

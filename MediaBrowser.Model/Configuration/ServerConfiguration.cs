@@ -8,6 +8,9 @@ namespace MediaBrowser.Model.Configuration
     /// </summary>
     public class ServerConfiguration : BaseApplicationConfiguration
     {
+        public const int DefaultHttpPort = 8096;
+        public const int DefaultHttpsPort = 8920;
+
         /// <summary>
         /// Gets or sets a value indicating whether [enable u pn p].
         /// </summary>
@@ -43,6 +46,7 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [use HTTPS]; otherwise, <c>false</c>.</value>
         public bool EnableHttps { get; set; }
+        public bool EnableSeriesPresentationUniqueKey { get; set; }
 
         /// <summary>
         /// Gets or sets the value pointing to the file system where the ssl certiifcate is located..
@@ -63,16 +67,19 @@ namespace MediaBrowser.Model.Configuration
         public bool IsPortAuthorized { get; set; }
 
         /// <summary>
-        /// Gets or sets the item by name path.
+        /// Gets or sets a value indicating whether [enable case sensitive item ids].
         /// </summary>
-        /// <value>The item by name path.</value>
-        public string ItemsByNamePath { get; set; }
+        /// <value><c>true</c> if [enable case sensitive item ids]; otherwise, <c>false</c>.</value>
+        public bool EnableCaseSensitiveItemIds { get; set; }
 
         /// <summary>
         /// Gets or sets the metadata path.
         /// </summary>
         /// <value>The metadata path.</value>
         public string MetadataPath { get; set; }
+        public string MetadataNetworkPath { get; set; }
+
+        public string LastVersion { get; set; }
 
         /// <summary>
         /// Gets or sets the display name of the season zero.
@@ -85,12 +92,6 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [save local meta]; otherwise, <c>false</c>.</value>
         public bool SaveLocalMeta { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether [enable localized guids].
-        /// </summary>
-        /// <value><c>true</c> if [enable localized guids]; otherwise, <c>false</c>.</value>
-        public bool EnableLocalizedGuids { get; set; }
 
         /// <summary>
         /// Gets or sets the preferred metadata language.
@@ -154,14 +155,13 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [enable dashboard response caching]; otherwise, <c>false</c>.</value>
         public bool EnableDashboardResponseCaching { get; set; }
-        public bool EnableDashboardResourceMinification { get; set; }
 
         /// <summary>
         /// Allows the dashboard to be served from a custom path.
         /// </summary>
         /// <value>The dashboard source path.</value>
         public string DashboardSourcePath { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the image saving convention.
         /// </summary>
@@ -171,6 +171,9 @@ namespace MediaBrowser.Model.Configuration
         public MetadataOptions[] MetadataOptions { get; set; }
 
         public bool EnableAutomaticRestart { get; set; }
+        public bool SkipDeserializationForBasicTypes { get; set; }
+        public bool SkipDeserializationForPrograms { get; set; }
+        public bool SkipDeserializationForAudio { get; set; }
 
         public PathSubstitution[] PathSubstitutions { get; set; }
 
@@ -179,57 +182,58 @@ namespace MediaBrowser.Model.Configuration
 
         public string UICulture { get; set; }
 
-        public PeopleMetadataOptions PeopleMetadataOptions { get; set; }
-        public bool FindInternetTrailers { get; set; }
-
         public bool SaveMetadataHidden { get; set; }
 
         public NameValuePair[] ContentTypes { get; set; }
 
-        public bool EnableAudioArchiveFiles { get; set; }
-        public bool EnableVideoArchiveFiles { get; set; }
         public int RemoteClientBitrateLimit { get; set; }
-
-        public bool DenyIFrameEmbedding { get; set; }
-
-        public AutoOnOff EnableLibraryMonitor { get; set; }
 
         public int SharingExpirationDays { get; set; }
 
-        public bool EnableWindowsShortcuts { get; set; }
-
-        public bool EnableDateLastRefresh { get; set; }
-
-        public string[] Migrations { get; set; }
-
-        public int MigrationVersion { get; set; }
-
-        public bool DownloadImagesInAdvance { get; set; }
+        public int SchemaVersion { get; set; }
 
         public bool EnableAnonymousUsageReporting { get; set; }
-        
+        public bool EnableStandaloneMusicKeys { get; set; }
+        public bool EnableLocalizedGuids { get; set; }
+        public bool EnableFolderView { get; set; }
+        public bool EnableGroupingIntoCollections { get; set; }
+        public bool DisplaySpecialsWithinSeasons { get; set; }
+        public bool DisplayCollectionsView { get; set; }
+        public string[] LocalNetworkAddresses { get; set; }
+        public string[] CodecsUsed { get; set; }
+        public string[] Migrations { get; set; }
+        public bool EnableChannelView { get; set; }
+        public bool EnableExternalContentInSuggestions { get; set; }
+        public bool EnableSimpleArtistDetection { get; set; }
+
+        public int ImageExtractionTimeoutMs { get; set; }
         /// <summary>
         /// Initializes a new instance of the <see cref="ServerConfiguration" /> class.
         /// </summary>
         public ServerConfiguration()
         {
+            LocalNetworkAddresses = new string[] { };
+            CodecsUsed = new string[] { };
             Migrations = new string[] { };
+            ImageExtractionTimeoutMs = 0;
+
+            EnableLocalizedGuids = true;
+            DisplaySpecialsWithinSeasons = true;
+            EnableExternalContentInSuggestions = true;
 
             ImageSavingConvention = ImageSavingConvention.Compatible;
-            PublicPort = 8096;
-            PublicHttpsPort = 8920;
-            HttpServerPortNumber = 8096;
-            HttpsPortNumber = 8920;
+            PublicPort = DefaultHttpPort;
+            PublicHttpsPort = DefaultHttpsPort;
+            HttpServerPortNumber = DefaultHttpPort;
+            HttpsPortNumber = DefaultHttpsPort;
             EnableHttps = false;
             EnableDashboardResponseCaching = true;
-            EnableDashboardResourceMinification = true;
             EnableAnonymousUsageReporting = true;
 
             EnableAutomaticRestart = true;
-            DenyIFrameEmbedding = true;
+            EnableFolderView = true;
 
             EnableUPnP = true;
-
             SharingExpirationDays = 30;
             MinResumePct = 5;
             MaxResumePct = 90;
@@ -237,11 +241,9 @@ namespace MediaBrowser.Model.Configuration
             // 5 minutes
             MinResumeDurationSeconds = 300;
 
-            EnableLibraryMonitor = AutoOnOff.Auto;
             LibraryMonitorDelay = 60;
 
             EnableInternetProviders = true;
-            FindInternetTrailers = true;
 
             PathSubstitutions = new PathSubstitution[] { };
             ContentTypes = new NameValuePair[] { };
@@ -256,8 +258,6 @@ namespace MediaBrowser.Model.Configuration
             SeasonZeroDisplayName = "Specials";
 
             UICulture = "en-us";
-
-            PeopleMetadataOptions = new PeopleMetadataOptions();
 
             MetadataOptions = new[]
             {
@@ -430,7 +430,8 @@ namespace MediaBrowser.Model.Configuration
                             Limit = 0,
                             Type = ImageType.Disc
                         }
-                    }
+                    },
+                    DisabledMetadataFetchers = new []{ "TheAudioDB" }
                 },
 
                 new MetadataOptions(1, 1280)
@@ -461,14 +462,13 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Art
                         },
 
-                        // Don't download this by default
-                        // Generally not used
                         new ImageOption
                         {
-                            Limit = 0,
+                            Limit = 1,
                             Type = ImageType.Logo
                         }
-                    }
+                    },
+                    DisabledMetadataFetchers = new []{ "TheAudioDB" }
                 },
 
                 new MetadataOptions(1, 1280)
@@ -554,7 +554,7 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Thumb
                         }
                     },
-                    DisabledMetadataFetchers = new []{ "The Open Movie Database", "TheMovieDb" }
+                    DisabledMetadataFetchers = new []{ "TheMovieDb" }
                 },
 
                 new MetadataOptions(0, 1280)
@@ -575,8 +575,8 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Primary
                         }
                     },
-                    DisabledMetadataFetchers = new []{ "The Open Movie Database" },
-                    DisabledImageFetchers = new []{ "TheMovieDb" }
+                    DisabledMetadataFetchers = new []{ "The Open Movie Database", "TheMovieDb" },
+                    DisabledImageFetchers = new []{ "The Open Movie Database", "TheMovieDb" }
                 }
             };
         }

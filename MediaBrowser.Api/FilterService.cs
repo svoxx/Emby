@@ -2,10 +2,11 @@
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -80,7 +81,7 @@ namespace MediaBrowser.Api
                 .OrderBy(i => i)
                 .ToArray();
 
-            result.Tags = items.OfType<IHasTags>()
+            result.Tags = items
                 .SelectMany(i => i.Tags)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(i => i)
@@ -103,7 +104,14 @@ namespace MediaBrowser.Api
                 User = user,
                 MediaTypes = request.GetMediaTypes(),
                 IncludeItemTypes = request.GetIncludeItemTypes(),
-                Recursive = true
+                Recursive = true,
+                EnableTotalRecordCount = false,
+                DtoOptions = new Controller.Dto.DtoOptions
+                {
+                    Fields = new List<ItemFields> { ItemFields.Genres, ItemFields.Tags },
+                    EnableImages = false,
+                    EnableUserData = false
+                }
             };
 
             return query;

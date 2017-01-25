@@ -1,4 +1,5 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     function reload(page, providerId) {
 
@@ -14,6 +15,7 @@
 
                 page.querySelector('.txtDevicePath').value = info.Url || '';
                 page.querySelector('.chkFavorite').checked = info.ImportFavoritesOnly;
+                page.querySelector('.chkTranscode').checked = info.AllowHWTranscoding;
                 page.querySelector('.chkEnabled').checked = info.IsEnabled;
 
             });
@@ -30,6 +32,7 @@
             Type: 'hdhomerun',
             Url: page.querySelector('.txtDevicePath').value,
             ImportFavoritesOnly: page.querySelector('.chkFavorite').checked,
+            AllowHWTranscoding: page.querySelector('.chkTranscode').checked,
             IsEnabled: page.querySelector('.chkEnabled').checked,
             DataVersion: 1
         };
@@ -75,4 +78,4 @@
         reload(page, providerId);
     });
 
-})(jQuery, document, window);
+});

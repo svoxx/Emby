@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -10,7 +9,6 @@ using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Providers.Movies;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -18,7 +16,9 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Net;
 
@@ -61,7 +61,7 @@ namespace MediaBrowser.Providers.People
 
             var tmdbSettings = await MovieDbProvider.Current.GetTmdbSettings(cancellationToken).ConfigureAwait(false);
 
-            var tmdbImageUrl = tmdbSettings.images.base_url + "original";
+            var tmdbImageUrl = tmdbSettings.images.secure_base_url + "original";
 
             if (!string.IsNullOrEmpty(tmdbId))
             {
@@ -82,7 +82,7 @@ namespace MediaBrowser.Providers.People
                 };
 
                 result.SetProviderId(MetadataProviders.Tmdb, info.id.ToString(_usCulture));
-                result.SetProviderId(MetadataProviders.Imdb, info.imdb_id.ToString(_usCulture));
+                result.SetProviderId(MetadataProviders.Imdb, info.imdb_id);
 
                 return new[] { result };
             }
@@ -99,7 +99,7 @@ namespace MediaBrowser.Providers.People
 
                     var requestCount = _requestCount;
 
-                    if (requestCount >= 20)
+                    if (requestCount >= 40)
                     {
                         //_logger.Debug("Throttling Tmdb people");
 
@@ -111,7 +111,7 @@ namespace MediaBrowser.Providers.People
                 }
             }
 
-            var url = string.Format(@"http://api.themoviedb.org/3/search/person?api_key={1}&query={0}", WebUtility.UrlEncode(searchInfo.Name), MovieDbProvider.ApiKey);
+            var url = string.Format(@"https://api.themoviedb.org/3/search/person?api_key={1}&query={0}", WebUtility.UrlEncode(searchInfo.Name), MovieDbProvider.ApiKey);
 
             using (var json = await MovieDbProvider.Current.GetMovieDbResponse(new HttpRequestOptions
             {
@@ -181,7 +181,11 @@ namespace MediaBrowser.Providers.People
 
                 item.Name = info.name;
                 item.HomePageUrl = info.homepage;
-                item.PlaceOfBirth = info.place_of_birth;
+
+                if (!string.IsNullOrWhiteSpace(info.place_of_birth))
+                {
+                    item.ProductionLocations = new List<string> { info.place_of_birth };
+                }
                 item.Overview = info.biography;
 
                 DateTime date;
@@ -236,7 +240,7 @@ namespace MediaBrowser.Providers.People
                 return;
             }
 
-            var url = string.Format(@"http://api.themoviedb.org/3/person/{1}?api_key={0}&append_to_response=credits,images,external_ids", MovieDbProvider.ApiKey, id);
+            var url = string.Format(@"https://api.themoviedb.org/3/person/{1}?api_key={0}&append_to_response=credits,images,external_ids", MovieDbProvider.ApiKey, id);
 
             using (var json = await MovieDbProvider.Current.GetMovieDbResponse(new HttpRequestOptions
             {
@@ -248,7 +252,7 @@ namespace MediaBrowser.Providers.People
             {
                 _fileSystem.CreateDirectory(Path.GetDirectoryName(dataFilePath));
 
-                using (var fs = _fileSystem.GetFileStream(dataFilePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                using (var fs = _fileSystem.GetFileStream(dataFilePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                 {
                     await json.CopyToAsync(fs).ConfigureAwait(false);
                 }
@@ -404,8 +408,7 @@ namespace MediaBrowser.Providers.People
             return _httpClient.GetResponse(new HttpRequestOptions
             {
                 CancellationToken = cancellationToken,
-                Url = url,
-                ResourcePool = MovieDbProvider.Current.MovieDbResourcePool
+                Url = url
             });
         }
     }

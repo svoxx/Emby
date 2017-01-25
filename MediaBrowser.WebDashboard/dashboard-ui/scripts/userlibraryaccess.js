@@ -1,55 +1,50 @@
-﻿(function ($, window, document) {
+﻿define(['jQuery', 'fnchecked'], function ($) {
+    'use strict';
 
     function loadMediaFolders(page, user, mediaFolders) {
 
         var html = '';
 
-        html += '<fieldset data-role="controlgroup">';
+        html += '<h3 class="checkboxListLabel">' + Globalize.translate('HeaderLibraries') + '</h3>';
 
-        html += '<legend>' + Globalize.translate('HeaderLibraries') + '</legend>';
+        html += '<div class="checkboxList paperList checkboxList-paperList">';
 
         for (var i = 0, length = mediaFolders.length; i < length; i++) {
 
             var folder = mediaFolders[i];
 
-            var id = 'mediaFolder' + i;
-
             var isChecked = user.Policy.EnableAllFolders || user.Policy.EnabledFolders.indexOf(folder.Id) != -1;
             var checkedAttribute = isChecked ? ' checked="checked"' : '';
 
-            html += '<input class="chkFolder" data-id="' + folder.Id + '" type="checkbox" id="' + id + '"' + checkedAttribute + ' />';
-            html += '<label for="' + id + '">' + folder.Name + '</label>';
+            html += '<label><input type="checkbox" is="emby-checkbox" class="chkFolder" data-id="' + folder.Id + '" ' + checkedAttribute + '><span>' + folder.Name + '</span></label>';
         }
 
-        html += '</fieldset>';
+        html += '</div>';
 
         $('.folderAccess', page).html(html).trigger('create');
 
-        $('#chkEnableAllFolders', page).checked(user.Policy.EnableAllFolders).checkboxradio('refresh').trigger('change');
+        $('#chkEnableAllFolders', page).checked(user.Policy.EnableAllFolders).trigger('change');
     }
 
     function loadChannels(page, user, channels) {
 
         var html = '';
 
-        html += '<fieldset data-role="controlgroup">';
+        html += '<h3 class="checkboxListLabel">' + Globalize.translate('HeaderChannels') + '</h3>';
 
-        html += '<legend>' + Globalize.translate('HeaderChannels') + '</legend>';
+        html += '<div class="checkboxList paperList checkboxList-paperList">';
 
         for (var i = 0, length = channels.length; i < length; i++) {
 
             var folder = channels[i];
 
-            var id = 'channels' + i;
-
             var isChecked = user.Policy.EnableAllChannels || user.Policy.EnabledChannels.indexOf(folder.Id) != -1;
             var checkedAttribute = isChecked ? ' checked="checked"' : '';
 
-            html += '<input class="chkChannel" data-id="' + folder.Id + '" type="checkbox" id="' + id + '"' + checkedAttribute + ' />';
-            html += '<label for="' + id + '">' + folder.Name + '</label>';
+            html += '<label><input type="checkbox" is="emby-checkbox" class="chkChannel" data-id="' + folder.Id + '" ' + checkedAttribute + '><span>' + folder.Name + '</span></label>';
         }
 
-        html += '</fieldset>';
+        html += '</div>';
 
         $('.channelAccess', page).show().html(html).trigger('create');
 
@@ -59,37 +54,31 @@
             $('.channelAccessContainer', page).hide();
         }
 
-        $('#chkEnableAllChannels', page).checked(user.Policy.EnableAllChannels).checkboxradio('refresh').trigger('change');
+        $('#chkEnableAllChannels', page).checked(user.Policy.EnableAllChannels).trigger('change');
     }
 
     function loadDevices(page, user, devices) {
 
         var html = '';
 
-        html += '<fieldset data-role="controlgroup">';
+        html += '<h3 class="checkboxListLabel">' + Globalize.translate('HeaderDevices') + '</h3>';
 
-        html += '<legend>' + Globalize.translate('HeaderDevices') + '</legend>';
+        html += '<div class="checkboxList paperList checkboxList-paperList">';
 
         for (var i = 0, length = devices.length; i < length; i++) {
 
             var device = devices[i];
 
-            var id = 'device' + i;
-
             var checkedAttribute = user.Policy.EnableAllDevices || user.Policy.EnabledDevices.indexOf(device.Id) != -1 ? ' checked="checked"' : '';
 
-            html += '<input class="chkDevice" data-id="' + device.Id + '" type="checkbox" id="' + id + '"' + checkedAttribute + ' />';
-            html += '<label for="' + id + '">' + device.Name;
-
-            html += '<br/><span style="font-weight:normal;font-size: 90%;">' + device.AppName + '</span>';
-            html += '</label>';
+            html += '<label><input type="checkbox" is="emby-checkbox" class="chkDevice" data-id="' + device.Id + '" ' + checkedAttribute + '><span>' + device.Name + ' - ' + device.AppName + '</span></label>';
         }
 
-        html += '</fieldset>';
+        html += '</div>';
 
         $('.deviceAccess', page).show().html(html).trigger('create');
 
-        $('#chkEnableAllDevices', page).checked(user.Policy.EnableAllDevices).checkboxradio('refresh').trigger('change');
+        $('#chkEnableAllDevices', page).checked(user.Policy.EnableAllDevices).trigger('change');
 
         if (user.Policy.IsAdministrator) {
             page.querySelector('.deviceAccessContainer').classList.add('hide');
@@ -102,7 +91,7 @@
 
         $(page).trigger('userloaded', [user]);
 
-        Dashboard.setPageTitle(user.Name);
+        LibraryMenu.setTitle(user.Name);
 
         loadChannels(page, user, channels);
         loadMediaFolders(page, user, mediaFolders);
@@ -125,29 +114,29 @@
         user.Policy.EnableAllFolders = $('#chkEnableAllFolders', page).checked();
         user.Policy.EnabledFolders = user.Policy.EnableAllFolders ?
             [] :
-            $('.chkFolder:checked', page).map(function () {
-
-                return this.getAttribute('data-id');
-
-            }).get();
+            $('.chkFolder', page).get().filter(function (c) {
+                return c.checked;
+            }).map(function (c) {
+                return c.getAttribute('data-id');
+            });
 
         user.Policy.EnableAllChannels = $('#chkEnableAllChannels', page).checked();
         user.Policy.EnabledChannels = user.Policy.EnableAllChannels ?
             [] :
-            $('.chkChannel:checked', page).map(function () {
-
-                return this.getAttribute('data-id');
-
-            }).get();
+            $('.chkChannel', page).get().filter(function (c) {
+                return c.checked;
+            }).map(function (c) {
+                return c.getAttribute('data-id');
+            });
 
         user.Policy.EnableAllDevices = $('#chkEnableAllDevices', page).checked();
         user.Policy.EnabledDevices = user.Policy.EnableAllDevices ?
             [] :
-            $('.chkDevice:checked', page).map(function () {
-
-                return this.getAttribute('data-id');
-
-            }).get();
+            $('.chkDevice', page).get().filter(function (c) {
+                return c.checked;
+            }).map(function (c) {
+                return c.getAttribute('data-id');
+            });
 
         // Legacy
         user.Policy.BlockedChannels = null;
@@ -247,4 +236,4 @@
         });
     });
 
-})(jQuery, window, document);
+});

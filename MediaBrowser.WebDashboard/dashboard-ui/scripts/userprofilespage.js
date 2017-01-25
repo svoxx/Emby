@@ -1,4 +1,5 @@
-﻿(function (document, window, $) {
+﻿define(['jQuery', 'humanedate', 'paper-icon-button-light', 'cardStyle'], function ($) {
+    'use strict';
 
     function deleteUser(page, id) {
 
@@ -6,7 +7,14 @@
 
         require(['confirm'], function (confirm) {
 
-            confirm(msg, Globalize.translate('DeleteUser')).then(function () {
+            confirm({
+                
+                title: Globalize.translate('DeleteUser'),
+                text: msg,
+                confirmText: Globalize.translate('ButtonDelete'),
+                primary: 'cancel'
+
+            }).then(function () {
 
                 Dashboard.showLoadingMsg();
 
@@ -85,7 +93,7 @@
 
         var html = '';
 
-        var cssClass = "card squareCard bottomPaddedCard";
+        var cssClass = "card squareCard scalableCard squareCard-scalable";
 
         if (user.Policy.IsDisabled) {
             cssClass += ' grayscale';
@@ -94,9 +102,9 @@
         html += "<div data-userid='" + user.Id + "' class='" + cssClass + "'>";
 
         html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="cardPadder cardPadder-square"></div>';
 
         var href = "useredit.html?userId=" + user.Id + "";
         html += '<a class="cardContent" href="' + href + '">';
@@ -122,7 +130,9 @@
         html += '<div class="' + imageClass + '" style="background-image:url(\'' + imgUrl + '\');">';
 
         if (user.ConnectUserId && addConnectIndicator) {
-            html += '<div class="playedIndicator" title="' + Globalize.translate('TooltipLinkedToEmbyConnect') + '"><iron-icon icon="cloud"></iron-icon></div>';
+            html += '<div class="cardIndicators">';
+            html += '<div class="playedIndicator" title="' + Globalize.translate('TooltipLinkedToEmbyConnect') + '"><i class="md-icon playedIndicatorIcon indicatorIcon">cloud</i></div>';
+            html += "</div>";
         }
 
         html += "</div>";
@@ -133,15 +143,25 @@
         // cardScalable
         html += "</div>";
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
 
-        html += '<div class="cardText" style="text-align:right; float:right;padding:0;">';
-        html += '<paper-icon-button icon="' + AppInfo.moreIcon + '" class="btnUserMenu"></paper-icon-button>';
+        html += '<div style="text-align:right; float:right;padding:0;">';
+        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu autoSize"><i class="md-icon">more_vert</i></button>';
         html += "</div>";
 
         html += '<div class="cardText" style="padding-top:10px;padding-bottom:10px;">';
         html += user.Name;
         html += "</div>";
+
+        html += '<div class="cardText cardText-secondary">';
+        var lastSeen = getLastSeenText(user.LastActivityDate);
+        if (lastSeen != "") {
+            html += lastSeen;
+        }
+        else {
+            html += "&nbsp;";
+        }
+        html += '</div>';
 
         // cardFooter
         html += "</div>";
@@ -153,6 +173,15 @@
         html += "</div>";
 
         return html;
+    }
+
+    function getLastSeenText(lastActivityDate) {
+
+        if (!lastActivityDate) {
+            return "";
+        }
+
+        return "Last seen " + humane_date(lastActivityDate);
     }
 
     function getUserSectionHtml(users, addConnectIndicator) {
@@ -172,7 +201,7 @@
 
         var html = getUserSectionHtml(users, addConnectIndicator);
 
-        elem.html(html).trigger('create');
+        elem.html(html);
 
         $('.btnUserMenu', elem).on('click', function () {
             showUserMenu(this);
@@ -202,9 +231,9 @@
 
         require(['actionsheet'], function (actionsheet) {
 
-            var card = $(elem).parents('.card');
-            var page = $(elem).parents('.page');
-            var id = card.attr('data-id');
+            var card = $(elem).parents('.card')[0];
+            var page = $(elem).parents('.page')[0];
+            var id = card.getAttribute('data-id');
 
             actionsheet.show({
                 items: menuItems,
@@ -228,14 +257,14 @@
 
         var html = '';
 
-        var cssClass = "card squareCard bottomPaddedCard";
+        var cssClass = "card squareCard";
 
         html += "<div data-id='" + user.Id + "' class='" + cssClass + "'>";
 
-        html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
+        html += '<div class="cardBox cardBox-bottompadded visualCardBox">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="cardPadder cardPadder-square"></div>';
 
         var href = "#";
         html += '<a class="cardContent" href="' + href + '">';
@@ -252,10 +281,10 @@
         // cardScalable
         html += "</div>";
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
 
         html += '<div class="cardText" style="text-align:right; float:right;padding:0;">';
-        html += '<paper-icon-button icon="' + AppInfo.moreIcon + '" class="btnUserMenu"></paper-icon-button>';
+        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu"><i class="md-icon">more_vert</i></button>';
         html += "</div>";
 
         html += '<div class="cardText" style="padding-top:10px;padding-bottom:10px;">';
@@ -284,7 +313,7 @@
 
         var html = users.map(getPendingUserHtml).join('');
 
-        var elem = $('.pending', page).html(html).trigger('create');
+        var elem = $('.pending', page).html(html);
 
         $('.btnUserMenu', elem).on('click', function () {
             showPendingUserMenu(this);
@@ -327,25 +356,23 @@
         });
     }
 
+    function showLinkUser(page, userId) {
+        
+        require(['components/guestinviter/connectlink'], function (connectlink) {
+
+            connectlink.show().then(function () {
+                loadData(page);
+            });
+        });
+    }
+
     function showInvitePopup(page) {
 
         Dashboard.getCurrentUser().then(function (user) {
 
             if (!user.ConnectUserId) {
 
-                var msg = Globalize.translate('MessageConnectAccountRequiredToInviteGuest');
-
-                msg += '<br/>';
-                msg += '<br/>';
-                msg += '<a href="useredit.html?userId=' + user.Id + '">' + Globalize.translate('ButtonLinkMyEmbyAccount') + '</a>';
-                msg += '<br/>';
-
-                require(['alert'], function (alert) {
-                    alert({
-                        title: Globalize.translate('HeaderInviteGuest'),
-                        text: msg
-                    });
-                });
+                showLinkUser(page, user.Id);
                 return;
             }
 
@@ -379,4 +406,4 @@
         loadData(page);
     });
 
-})(document, window, jQuery);
+});

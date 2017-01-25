@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace MediaBrowser.Api.Playback
@@ -37,6 +38,7 @@ namespace MediaBrowser.Api.Playback
         /// </summary>
         /// <value>The log file stream.</value>
         public Stream LogFileStream { get; set; }
+        public IDirectStreamProvider DirectStreamProvider { get; set; }
 
         public string InputContainer { get; set; }
 
@@ -62,14 +64,46 @@ namespace MediaBrowser.Api.Playback
             get { return Request is VideoStreamRequest; }
         }
         public bool IsInputVideo { get; set; }
-        public bool IsInputArchive { get; set; }
 
         public VideoType VideoType { get; set; }
         public IsoType? IsoType { get; set; }
 
         public List<string> PlayableStreamFileNames { get; set; }
 
-        public int SegmentLength = 3;
+        public int SegmentLength
+        {
+            get
+            {
+                if (string.Equals(OutputVideoCodec, "copy", StringComparison.OrdinalIgnoreCase))
+                {
+                    var userAgent = UserAgent ?? string.Empty;
+                    if (userAgent.IndexOf("AppleTV", StringComparison.OrdinalIgnoreCase) != -1)
+                    {
+                        return 10;
+                    }
+                    if (userAgent.IndexOf("cfnetwork", StringComparison.OrdinalIgnoreCase) != -1 ||
+                        userAgent.IndexOf("ipad", StringComparison.OrdinalIgnoreCase) != -1 ||
+                        userAgent.IndexOf("iphone", StringComparison.OrdinalIgnoreCase) != -1 ||
+                        userAgent.IndexOf("ipod", StringComparison.OrdinalIgnoreCase) != -1)
+                    {
+                        return 10;
+                    }
+
+                    if (!RunTimeTicks.HasValue)
+                    {
+                        return 3;
+                    }
+                    return 6;
+                }
+
+                if (!RunTimeTicks.HasValue)
+                {
+                    return 3;
+                }
+                return 3;
+            }
+        }
+
         public int HlsListSize
         {
             get
@@ -84,15 +118,18 @@ namespace MediaBrowser.Api.Playback
         public long? InputFileSize { get; set; }
 
         public string OutputAudioSync = "1";
-        public string OutputVideoSync = "vfr";
+        public string OutputVideoSync = "-1";
 
         public List<string> SupportedAudioCodecs { get; set; }
+        public List<string> SupportedVideoCodecs { get; set; }
+        public string UserAgent { get; set; }
 
         public StreamState(IMediaSourceManager mediaSourceManager, ILogger logger)
         {
             _mediaSourceManager = mediaSourceManager;
             _logger = logger;
             SupportedAudioCodecs = new List<string>();
+            SupportedVideoCodecs = new List<string>();
             PlayableStreamFileNames = new List<string>();
             RemoteHttpHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
@@ -185,11 +222,11 @@ namespace MediaBrowser.Api.Playback
 
         private async void DisposeLiveStream()
         {
-            if ((MediaSource.RequiresClosing) && string.IsNullOrWhiteSpace(Request.LiveStreamId))
+            if (MediaSource.RequiresClosing && string.IsNullOrWhiteSpace(Request.LiveStreamId) && !string.IsNullOrWhiteSpace(MediaSource.LiveStreamId))
             {
                 try
                 {
-                    await _mediaSourceManager.CloseLiveStream(MediaSource.LiveStreamId, CancellationToken.None).ConfigureAwait(false);
+                    await _mediaSourceManager.CloseLiveStream(MediaSource.LiveStreamId).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -481,13 +518,13 @@ namespace MediaBrowser.Api.Playback
             }
         }
 
-        public bool? IsTargetCabac
+        public bool? IsTargetAVC
         {
             get
             {
                 if (Request.Static)
                 {
-                    return VideoStream == null ? null : VideoStream.IsCabac;
+                    return VideoStream == null ? null : VideoStream.IsAVC;
                 }
 
                 return true;

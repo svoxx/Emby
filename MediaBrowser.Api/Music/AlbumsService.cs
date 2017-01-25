@@ -4,11 +4,11 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Persistence;
-using MediaBrowser.Model.Querying;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api.Music
 {
@@ -40,23 +40,30 @@ namespace MediaBrowser.Api.Music
         private readonly ILibraryManager _libraryManager;
         private readonly IItemRepository _itemRepo;
         private readonly IDtoService _dtoService;
+        private readonly IAuthorizationContext _authContext;
 
-        public AlbumsService(IUserManager userManager, IUserDataManager userDataRepository, ILibraryManager libraryManager, IItemRepository itemRepo, IDtoService dtoService)
+        public AlbumsService(IUserManager userManager, IUserDataManager userDataRepository, ILibraryManager libraryManager, IItemRepository itemRepo, IDtoService dtoService, IAuthorizationContext authContext)
         {
             _userManager = userManager;
             _userDataRepository = userDataRepository;
             _libraryManager = libraryManager;
             _itemRepo = itemRepo;
             _dtoService = dtoService;
+            _authContext = authContext;
         }
 
-        public object Get(GetSimilarArtists request)
+        public async Task<object> Get(GetSimilarArtists request)
         {
-            var result = GetSimilarItemsResult(
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-                request, 
-
-                SimilarItemsHelper.GetSimiliarityScore);
+            var result = await SimilarItemsHelper.GetSimilarItemsResult(dtoOptions, _userManager,
+                _itemRepo,
+                _libraryManager,
+                _userDataRepository,
+                _dtoService,
+                Logger,
+                request, new[] { typeof(MusicArtist) },
+                SimilarItemsHelper.GetSimiliarityScore).ConfigureAwait(false);
 
             return ToOptimizedSerializedResultUsingCache(result);
         }
@@ -66,53 +73,20 @@ namespace MediaBrowser.Api.Music
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetSimilarAlbums request)
+        public async Task<object> Get(GetSimilarAlbums request)
         {
-            var dtoOptions = GetDtoOptions(request);
+            var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var result = SimilarItemsHelper.GetSimilarItemsResult(dtoOptions, _userManager,
+            var result = await SimilarItemsHelper.GetSimilarItemsResult(dtoOptions, _userManager,
                 _itemRepo,
                 _libraryManager,
                 _userDataRepository,
                 _dtoService,
                 Logger,
-                request, item => item is MusicAlbum,
-                GetAlbumSimilarityScore);
+                request, new[] { typeof(MusicAlbum) },
+                GetAlbumSimilarityScore).ConfigureAwait(false);
 
             return ToOptimizedSerializedResultUsingCache(result);
-        }
-
-        private ItemsResult GetSimilarItemsResult(BaseGetSimilarItemsFromItem request, Func<BaseItem, List<PersonInfo>, List<PersonInfo>, BaseItem, int> getSimilarityScore)
-        {
-            var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
-
-            var item = string.IsNullOrEmpty(request.Id) ?
-                (!string.IsNullOrWhiteSpace(request.UserId) ? user.RootFolder :
-                _libraryManager.RootFolder) : _libraryManager.GetItemById(request.Id);
-
-            var inputItems = _libraryManager.GetArtists(user.RootFolder.GetRecursiveChildren(user, i => i is IHasArtist).OfType<IHasArtist>());
-
-            var list = inputItems.ToList();
-
-            var items = SimilarItemsHelper.GetSimilaritems(item, _libraryManager, list, getSimilarityScore).ToList();
-
-            IEnumerable<BaseItem> returnItems = items;
-
-            if (request.Limit.HasValue)
-            {
-                returnItems = returnItems.Take(request.Limit.Value);
-            }
-
-            var dtoOptions = GetDtoOptions(request);
-
-            var result = new ItemsResult
-            {
-                Items = _dtoService.GetBaseItemDtos(returnItems, dtoOptions, user).ToArray(),
-
-                TotalRecordCount = items.Count
-            };
-
-            return result;
         }
         
         /// <summary>

@@ -13,7 +13,14 @@ namespace MediaBrowser.Model.LiveTv
         public bool? EnableImages { get; set; }
         public int? ImageTypeLimit { get; set; }
         public ImageType[] EnableImageTypes { get; set; }
-        
+
+        public bool EnableTotalRecordCount { get; set; }
+
+        public RecommendedProgramQuery()
+        {
+            EnableTotalRecordCount = true;
+        }
+
         /// <summary>
         /// Gets or sets the user identifier.
         /// </summary>
@@ -42,7 +49,13 @@ namespace MediaBrowser.Model.LiveTv
         /// Gets or sets a value indicating whether this instance is movie.
         /// </summary>
         /// <value><c>null</c> if [is movie] contains no value, <c>true</c> if [is movie]; otherwise, <c>false</c>.</value>
+        public bool? IsNews { get; set; }
+        /// <summary>
+        /// Gets or sets a value indicating whether this instance is movie.
+        /// </summary>
+        /// <value><c>null</c> if [is movie] contains no value, <c>true</c> if [is movie]; otherwise, <c>false</c>.</value>
         public bool? IsMovie { get; set; }
+        public bool? IsSeries { get; set; }
         /// <summary>
         /// Gets or sets a value indicating whether this instance is kids.
         /// </summary>

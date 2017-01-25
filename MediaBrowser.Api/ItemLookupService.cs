@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -9,15 +8,15 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Providers;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Serialization;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -36,6 +35,12 @@ namespace MediaBrowser.Api
     [Route("/Items/RemoteSearch/Movie", "POST")]
     [Authenticated]
     public class GetMovieRemoteSearchResults : RemoteSearchQuery<MovieInfo>, IReturn<List<RemoteSearchResult>>
+    {
+    }
+
+    [Route("/Items/RemoteSearch/Trailer", "POST")]
+    [Authenticated]
+    public class GetTrailerRemoteSearchResults : RemoteSearchQuery<TrailerInfo>, IReturn<List<RemoteSearchResult>>
     {
     }
 
@@ -78,6 +83,12 @@ namespace MediaBrowser.Api
     [Route("/Items/RemoteSearch/Person", "POST")]
     [Authenticated(Roles = "Admin")]
     public class GetPersonRemoteSearchResults : RemoteSearchQuery<PersonLookupInfo>, IReturn<List<RemoteSearchResult>>
+    {
+    }
+
+    [Route("/Items/RemoteSearch/Book", "POST")]
+    [Authenticated]
+    public class GetBookRemoteSearchResults : RemoteSearchQuery<BookInfo>, IReturn<List<RemoteSearchResult>>
     {
     }
 
@@ -133,60 +144,72 @@ namespace MediaBrowser.Api
             return ToOptimizedResult(infos);
         }
 
-        public object Post(GetMovieRemoteSearchResults request)
+        public async Task<object> Post(GetTrailerRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<Movie, MovieInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Trailer, TrailerInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetSeriesRemoteSearchResults request)
+        public async Task<object> Post(GetBookRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Book, BookInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetGameRemoteSearchResults request)
+        public async Task<object> Post(GetMovieRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<Game, GameInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Movie, MovieInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetBoxSetRemoteSearchResults request)
+        public async Task<object> Post(GetSeriesRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<BoxSet, BoxSetInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetPersonRemoteSearchResults request)
+        public async Task<object> Post(GetGameRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<Person, PersonLookupInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Game, GameInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetMusicAlbumRemoteSearchResults request)
+        public async Task<object> Post(GetBoxSetRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<MusicAlbum, AlbumInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<BoxSet, BoxSetInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Post(GetMusicArtistRemoteSearchResults request)
+        public async Task<object> Post(GetPersonRemoteSearchResults request)
         {
-            var result = _providerManager.GetRemoteSearchResults<MusicArtist, ArtistInfo>(request, CancellationToken.None).Result;
+            var result = await _providerManager.GetRemoteSearchResults<Person, PersonLookupInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
 
-        public object Get(GetRemoteSearchImage request)
+        public async Task<object> Post(GetMusicAlbumRemoteSearchResults request)
         {
-            var result = GetRemoteImage(request).Result;
+            var result = await _providerManager.GetRemoteSearchResults<MusicAlbum, AlbumInfo>(request, CancellationToken.None).ConfigureAwait(false);
 
-            return result;
+            return ToOptimizedResult(result);
+        }
+
+        public async Task<object> Post(GetMusicArtistRemoteSearchResults request)
+        {
+            var result = await _providerManager.GetRemoteSearchResults<MusicArtist, ArtistInfo>(request, CancellationToken.None).ConfigureAwait(false);
+
+            return ToOptimizedResult(result);
+        }
+
+        public Task<object> Get(GetRemoteSearchImage request)
+        {
+            return GetRemoteImage(request);
         }
 
         public void Post(ApplySearchCriteria request)
@@ -203,14 +226,20 @@ namespace MediaBrowser.Api
             //    }
             //}
             Logger.Info("Setting provider id's to item {0}-{1}: {2}", item.Id, item.Name, _json.SerializeToString(request.ProviderIds));
-            item.ProviderIds = request.ProviderIds;
 
-			var task = _providerManager.RefreshFullItem(item, new MetadataRefreshOptions(_fileSystem)
+            // Since the refresh process won't erase provider Ids, we need to set this explicitly now.
+            item.ProviderIds = request.ProviderIds;
+            //item.ProductionYear = request.ProductionYear;
+            //item.Name = request.Name;
+
+            var task = _providerManager.RefreshFullItem(item, new MetadataRefreshOptions(_fileSystem)
             {
                 MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
                 ImageRefreshMode = ImageRefreshMode.FullRefresh,
                 ReplaceAllMetadata = true,
-                ReplaceAllImages = request.ReplaceAllImages
+                ReplaceAllImages = request.ReplaceAllImages,
+                SearchResult = request,
+                ForceEnableInternetMetadata = true
 
             }, CancellationToken.None);
             Task.WaitAll(task);
@@ -230,21 +259,18 @@ namespace MediaBrowser.Api
 
             try
             {
-                using (var reader = new StreamReader(pointerCachePath))
-                {
-                    contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
-                }
+                contentPath = _fileSystem.ReadAllText(pointerCachePath);
 
-				if (_fileSystem.FileExists(contentPath))
+                if (_fileSystem.FileExists(contentPath))
                 {
-                    return ToStaticFileResult(contentPath);
+                    return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
                 }
             }
-            catch (DirectoryNotFoundException)
+            catch (FileNotFoundException)
             {
                 // Means the file isn't cached yet
             }
-            catch (FileNotFoundException)
+            catch (IOException)
             {
                 // Means the file isn't cached yet
             }
@@ -252,12 +278,9 @@ namespace MediaBrowser.Api
             await DownloadImage(request.ProviderName, request.ImageUrl, urlHash, pointerCachePath).ConfigureAwait(false);
 
             // Read the pointer file again
-            using (var reader = new StreamReader(pointerCachePath))
-            {
-                contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
-            }
+            contentPath = _fileSystem.ReadAllText(pointerCachePath);
 
-            return ToStaticFileResult(contentPath);
+            return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -276,20 +299,17 @@ namespace MediaBrowser.Api
 
             var fullCachePath = GetFullCachePath(urlHash + "." + ext);
 
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(fullCachePath));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(fullCachePath));
             using (var stream = result.Content)
             {
-                using (var filestream = _fileSystem.GetFileStream(fullCachePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                using (var filestream = _fileSystem.GetFileStream(fullCachePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                 {
                     await stream.CopyToAsync(filestream).ConfigureAwait(false);
                 }
             }
 
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(pointerCachePath));
-            using (var writer = new StreamWriter(pointerCachePath))
-            {
-                await writer.WriteAsync(fullCachePath).ConfigureAwait(false);
-            }
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(pointerCachePath));
+            _fileSystem.WriteAllText(pointerCachePath, fullCachePath);
         }
 
         /// <summary>

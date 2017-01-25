@@ -1,17 +1,18 @@
-﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Serialization;
-using ServiceStack;
-using ServiceStack.Web;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CommonIO;
+using System.Threading.Tasks;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -73,6 +74,16 @@ namespace MediaBrowser.Api
 
     }
 
+    [Route("/System/MediaEncoder/Path", "POST", Summary = "Updates the path to the media encoder")]
+    [Authenticated(Roles = "Admin", AllowBeforeStartupWizard = true)]
+    public class UpdateMediaEncoderPath : IReturnVoid
+    {
+        [ApiMember(Name = "Path", Description = "Path", IsRequired = true, DataType = "string", ParameterType = "path", Verb = "GET")]
+        public string Path { get; set; }
+        [ApiMember(Name = "PathType", Description = "PathType", IsRequired = true, DataType = "string", ParameterType = "path", Verb = "GET")]
+        public string PathType { get; set; }
+    }
+
     public class ConfigurationService : BaseApiService
     {
         /// <summary>
@@ -88,14 +99,22 @@ namespace MediaBrowser.Api
         private readonly IFileSystem _fileSystem;
         private readonly IProviderManager _providerManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly IMediaEncoder _mediaEncoder;
 
-        public ConfigurationService(IJsonSerializer jsonSerializer, IServerConfigurationManager configurationManager, IFileSystem fileSystem, IProviderManager providerManager, ILibraryManager libraryManager)
+        public ConfigurationService(IJsonSerializer jsonSerializer, IServerConfigurationManager configurationManager, IFileSystem fileSystem, IProviderManager providerManager, ILibraryManager libraryManager, IMediaEncoder mediaEncoder)
         {
             _jsonSerializer = jsonSerializer;
             _configurationManager = configurationManager;
             _fileSystem = fileSystem;
             _providerManager = providerManager;
             _libraryManager = libraryManager;
+            _mediaEncoder = mediaEncoder;
+        }
+
+        public void Post(UpdateMediaEncoderPath request)
+        {
+            var task = _mediaEncoder.UpdateEncoderPath(request.Path, request.PathType);
+            Task.WaitAll(task);
         }
 
         /// <summary>

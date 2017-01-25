@@ -1,15 +1,12 @@
 ﻿using DvdLib.Ifo;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Dlna;
-using MediaBrowser.Model.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Localization;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Controller.Providers;
@@ -28,7 +25,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Globalization;
 
 namespace MediaBrowser.Providers.MediaInfo
 {
@@ -74,13 +74,6 @@ namespace MediaBrowser.Providers.MediaInfo
             CancellationToken cancellationToken)
             where T : Video
         {
-            if (item.IsArchive)
-            {
-                var ext = Path.GetExtension(item.Path) ?? string.Empty;
-                item.Container = ext.TrimStart('.');
-                return ItemUpdateType.MetadataImport;
-            }
-
             var isoMount = await MountIsoIfNeeded(item, cancellationToken).ConfigureAwait(false);
 
             BlurayDiscInfo blurayDiscInfo = null;
@@ -140,23 +133,6 @@ namespace MediaBrowser.Providers.MediaInfo
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            //var idString = item.Id.ToString("N");
-            //var cachePath = Path.Combine(_appPaths.CachePath,
-            //    "ffprobe-video",
-            //    idString.Substring(0, 2), idString, "v" + SchemaVersion + _mediaEncoder.Version + item.DateModified.Ticks.ToString(_usCulture) + ".json");
-
-            try
-            {
-                //return _json.DeserializeFromFile<Model.MediaInfo.MediaInfo>(cachePath);
-            }
-            catch (FileNotFoundException)
-            {
-
-            }
-            catch (DirectoryNotFoundException)
-            {
-            }
 
             var protocol = item.LocationType == LocationType.Remote
                 ? MediaProtocol.Http
@@ -227,33 +203,18 @@ namespace MediaBrowser.Providers.MediaInfo
 
             var videoStream = mediaStreams.FirstOrDefault(i => i.Type == MediaStreamType.Video);
 
-            video.VideoBitRate = videoStream == null ? null : videoStream.BitRate;
             video.DefaultVideoStreamIndex = videoStream == null ? (int?)null : videoStream.Index;
 
             video.HasSubtitles = mediaStreams.Any(i => i.Type == MediaStreamType.Subtitle);
             video.Timestamp = mediaInfo.Timestamp;
+
+            video.Video3DFormat = video.Video3DFormat ?? mediaInfo.Video3DFormat;
 
             await _itemRepo.SaveMediaStreams(video.Id, mediaStreams, cancellationToken).ConfigureAwait(false);
 
             if (options.MetadataRefreshMode == MetadataRefreshMode.FullRefresh ||
                 options.MetadataRefreshMode == MetadataRefreshMode.Default)
             {
-                var chapterOptions = _chapterManager.GetConfiguration();
-
-                try
-                {
-                    var remoteChapters = await DownloadChapters(video, chapters, chapterOptions, cancellationToken).ConfigureAwait(false);
-
-                    if (remoteChapters.Count > 0)
-                    {
-                        chapters = remoteChapters;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.ErrorException("Error downloading chapters", ex);
-                }
-
                 if (chapters.Count == 0 && mediaStreams.Any(i => i.Type == MediaStreamType.Video))
                 {
                     AddDummyChapters(video, chapters);
@@ -261,11 +222,18 @@ namespace MediaBrowser.Providers.MediaInfo
 
                 NormalizeChapterNames(chapters);
 
+                var libraryOptions = _libraryManager.GetLibraryOptions(video);
+                var extractDuringScan = false;
+                if (libraryOptions != null)
+                {
+                    extractDuringScan = libraryOptions.ExtractChapterImagesDuringLibraryScan;
+                }
+
                 await _encodingManager.RefreshChapterImages(new ChapterImageRefreshOptions
                 {
                     Chapters = chapters,
                     Video = video,
-                    ExtractImages = chapterOptions.ExtractDuringLibraryScan,
+                    ExtractImages = extractDuringScan,
                     SaveChapters = false
 
                 }, cancellationToken).ConfigureAwait(false);
@@ -360,6 +328,11 @@ namespace MediaBrowser.Providers.MediaInfo
         /// <returns>VideoStream.</returns>
         private BlurayDiscInfo GetBDInfo(string path)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentNullException("path");
+            }
+
             try
             {
                 return _blurayExaminer.GetDiscInfo(path);
@@ -446,7 +419,11 @@ namespace MediaBrowser.Providers.MediaInfo
             {
                 if (string.IsNullOrWhiteSpace(video.Name) || string.Equals(video.Name, Path.GetFileNameWithoutExtension(video.Path), StringComparison.OrdinalIgnoreCase))
                 {
-                    video.Name = data.Name;
+                    // Don't use the embedded name for extras because it will often be the same name as the movie
+                    if (!video.ExtraType.HasValue && !video.IsOwnedItem)
+                    {
+                        video.Name = data.Name;
+                    }
                 }
             }
 
@@ -532,8 +509,9 @@ namespace MediaBrowser.Providers.MediaInfo
                     _subtitleManager)
                     .DownloadSubtitles(video,
                     currentStreams.Concat(externalSubtitleStreams).ToList(),
-                    subtitleOptions.SkipIfGraphicalSubtitlesPresent,
+                    subtitleOptions.SkipIfEmbeddedSubtitlesPresent,
                     subtitleOptions.SkipIfAudioTrackMatches,
+                    subtitleOptions.RequirePerfectMatch,
                     subtitleOptions.DownloadLanguages,
                     cancellationToken).ConfigureAwait(false);
 
@@ -547,52 +525,6 @@ namespace MediaBrowser.Providers.MediaInfo
             video.SubtitleFiles = externalSubtitleStreams.Select(i => i.Path).OrderBy(i => i).ToList();
 
             currentStreams.AddRange(externalSubtitleStreams);
-        }
-
-        private async Task<List<ChapterInfo>> DownloadChapters(Video video, List<ChapterInfo> currentChapters, ChapterOptions options, CancellationToken cancellationToken)
-        {
-            if ((options.DownloadEpisodeChapters &&
-                 video is Episode) ||
-                (options.DownloadMovieChapters &&
-                 video is Movie))
-            {
-                var results = await _chapterManager.Search(video, cancellationToken).ConfigureAwait(false);
-
-                var result = results.FirstOrDefault();
-
-                if (result != null)
-                {
-                    var chapters = await _chapterManager.GetChapters(result.Id, cancellationToken).ConfigureAwait(false);
-
-                    var chapterInfos = chapters.Chapters.Select(i => new ChapterInfo
-                    {
-                        Name = i.Name,
-                        StartPositionTicks = i.StartPositionTicks
-
-                    }).ToList();
-
-                    if (chapterInfos.All(i => i.StartPositionTicks == 0))
-                    {
-                        if (currentChapters.Count >= chapterInfos.Count)
-                        {
-                            var index = 0;
-                            foreach (var info in chapterInfos)
-                            {
-                                info.StartPositionTicks = currentChapters[index].StartPositionTicks;
-                                index++;
-                            }
-                        }
-                        else
-                        {
-                            chapterInfos.Clear();
-                        }
-                    }
-
-                    return chapterInfos;
-                }
-            }
-
-            return new List<ChapterInfo>();
         }
 
         /// <summary>
@@ -662,7 +594,7 @@ namespace MediaBrowser.Providers.MediaInfo
         private void FetchFromDvdLib(Video item, IIsoMount mount)
         {
             var path = mount == null ? item.Path : mount.MountedPath;
-            var dvd = new Dvd(path);
+            var dvd = new Dvd(path, _fileSystem);
 
             var primaryTitle = dvd.Titles.OrderByDescending(GetRuntime).FirstOrDefault();
 
@@ -710,7 +642,7 @@ namespace MediaBrowser.Providers.MediaInfo
         /// <returns>System.Nullable{IsoType}.</returns>
         private IsoType? DetermineIsoType(IIsoMount isoMount)
         {
-            var fileSystemEntries = Directory.EnumerateFileSystemEntries(isoMount.MountedPath).Select(Path.GetFileName).ToList();
+            var fileSystemEntries = _fileSystem.GetFileSystemEntryPaths(isoMount.MountedPath).Select(Path.GetFileName).ToList();
 
             if (fileSystemEntries.Contains("video_ts", StringComparer.OrdinalIgnoreCase) ||
                 fileSystemEntries.Contains("VIDEO_TS.IFO", StringComparer.OrdinalIgnoreCase))

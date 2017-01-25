@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
-using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
@@ -12,6 +11,7 @@ using MediaBrowser.Model.Net;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -65,6 +65,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         public long? InputFileSize { get; set; }
         public string OutputAudioSync = "1";
         public string OutputVideoSync = "vfr";
+        public string AlbumCoverPath { get; set; }
 
         public string GetMimeType(string outputPath)
         {
@@ -140,7 +141,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             {
                 try
                 {
-                    await _mediaSourceManager.CloseLiveStream(MediaSource.LiveStreamId, CancellationToken.None).ConfigureAwait(false);
+                    await _mediaSourceManager.CloseLiveStream(MediaSource.LiveStreamId).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -392,16 +393,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
         }
 
-        public bool? IsTargetCabac
+        public bool? IsTargetAVC
         {
             get
             {
                 if (Options.Static)
                 {
-                    return VideoStream == null ? null : VideoStream.IsCabac;
+                    return VideoStream == null ? null : VideoStream.IsAVC;
                 }
 
-                return true;
+                return false;
             }
         }
 

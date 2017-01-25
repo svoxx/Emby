@@ -2,13 +2,11 @@
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Net;
-using ServiceStack;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using CommonIO;
+using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
 {
@@ -90,6 +88,17 @@ namespace MediaBrowser.Api
         public string Path { get; set; }
     }
 
+    public class DefaultDirectoryBrowserInfo
+    {
+        public string Path { get; set; }
+    }
+
+    [Route("/Environment/DefaultDirectoryBrowser", "GET", Summary = "Gets the parent path of a given path")]
+    public class GetDefaultDirectoryBrowser : IReturn<DefaultDirectoryBrowserInfo>
+    {
+        
+    }
+
     /// <summary>
     /// Class EnvironmentService
     /// </summary>
@@ -97,6 +106,7 @@ namespace MediaBrowser.Api
     public class EnvironmentService : BaseApiService
     {
         const char UncSeparator = '\\';
+        const string UncSeparatorString = "\\";
 
         /// <summary>
         /// The _network manager
@@ -108,7 +118,6 @@ namespace MediaBrowser.Api
         /// Initializes a new instance of the <see cref="EnvironmentService" /> class.
         /// </summary>
         /// <param name="networkManager">The network manager.</param>
-        /// <exception cref="System.ArgumentNullException">networkManager</exception>
         public EnvironmentService(INetworkManager networkManager, IFileSystem fileSystem)
         {
             if (networkManager == null)
@@ -118,6 +127,26 @@ namespace MediaBrowser.Api
 
             _networkManager = networkManager;
             _fileSystem = fileSystem;
+        }
+
+        public object Get(GetDefaultDirectoryBrowser request)
+        {
+            var result = new DefaultDirectoryBrowserInfo();
+
+            try
+            {
+                var qnap = "/share/CACHEDEV1_DATA";
+                if (_fileSystem.DirectoryExists(qnap))
+                {
+                    result.Path = qnap;
+                }
+            }
+            catch
+            {
+
+            }
+
+            return ToOptimizedResult(result);
         }
 
         /// <summary>
@@ -134,7 +163,7 @@ namespace MediaBrowser.Api
                 throw new ArgumentNullException("Path");
             }
 
-            var networkPrefix = UncSeparator.ToString(CultureInfo.InvariantCulture) + UncSeparator.ToString(CultureInfo.InvariantCulture);
+            var networkPrefix = UncSeparatorString + UncSeparatorString;
 
             if (path.StartsWith(networkPrefix, StringComparison.OrdinalIgnoreCase) && path.LastIndexOf(UncSeparator) == 1)
             {
@@ -171,13 +200,11 @@ namespace MediaBrowser.Api
         /// <returns>IEnumerable{FileSystemEntryInfo}.</returns>
         private IEnumerable<FileSystemEntryInfo> GetDrives()
         {
-            // Only include drives in the ready state or this method could end up being very slow, waiting for drives to timeout
-            return DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => new FileSystemEntryInfo
+            return _fileSystem.GetDrives().Select(d => new FileSystemEntryInfo
             {
-                Name = GetName(d),
-                Path = d.RootDirectory.FullName,
+                Name = d.Name,
+                Path = d.FullName,
                 Type = FileSystemEntryType.Directory
-
             });
         }
 
@@ -193,16 +220,6 @@ namespace MediaBrowser.Api
                 .ToList();
 
             return ToOptimizedSerializedResultUsingCache(result);
-        }
-
-        /// <summary>
-        /// Gets the name.
-        /// </summary>
-        /// <param name="drive">The drive.</param>
-        /// <returns>System.String.</returns>
-        private string GetName(DriveInfo drive)
-        {
-            return drive.Name;
         }
 
         /// <summary>
@@ -230,7 +247,7 @@ namespace MediaBrowser.Api
             // using EnumerateFileSystemInfos doesn't handle reparse points (symlinks)
             var entries = _fileSystem.GetFileSystemEntries(request.Path).Where(i =>
             {
-                if (!request.IncludeHidden && i.Attributes.HasFlag(FileAttributes.Hidden))
+                if (!request.IncludeHidden && i.IsHidden)
                 {
                     return false;
                 }

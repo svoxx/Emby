@@ -6,102 +6,222 @@ using MediaBrowser.Model.Providers;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using MediaBrowser.Controller.Extensions;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.Providers.Music
 {
     public class MusicBrainzArtistProvider : IRemoteMetadataProvider<MusicArtist, ArtistInfo>
     {
+        private readonly IXmlReaderSettingsFactory _xmlSettings;
+
+        public MusicBrainzArtistProvider(IXmlReaderSettingsFactory xmlSettings)
+        {
+            _xmlSettings = xmlSettings;
+        }
+
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(ArtistInfo searchInfo, CancellationToken cancellationToken)
         {
             var musicBrainzId = searchInfo.GetMusicBrainzArtistId();
 
             if (!string.IsNullOrWhiteSpace(musicBrainzId))
             {
-                var url = string.Format("http://www.musicbrainz.org/ws/2/artist/?query=arid:{0}", musicBrainzId);
+                var url = string.Format("/ws/2/artist/?query=arid:{0}", musicBrainzId);
 
-                var doc = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, false, cancellationToken)
-                            .ConfigureAwait(false);
-
-                return GetResultsFromResponse(doc);
+                using (var stream = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, false, cancellationToken)
+                            .ConfigureAwait(false))
+                {
+                    return GetResultsFromResponse(stream);
+                }
             }
             else
             {
                 // They seem to throw bad request failures on any term with a slash
                 var nameToSearch = searchInfo.Name.Replace('/', ' ');
 
-                var url = String.Format("http://www.musicbrainz.org/ws/2/artist/?query=artist:\"{0}\"", UrlEncode(nameToSearch));
+                var url = String.Format("/ws/2/artist/?query=artist:\"{0}\"", UrlEncode(nameToSearch));
 
-                var doc = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
-
-                var results = GetResultsFromResponse(doc).ToList();
-
-                if (results.Count > 0)
+                using (var stream = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false))
                 {
-                    return results;
+                    var results = GetResultsFromResponse(stream).ToList();
+
+                    if (results.Count > 0)
+                    {
+                        return results;
+                    }
                 }
 
                 if (HasDiacritics(searchInfo.Name))
                 {
                     // Try again using the search with accent characters url
-                    url = String.Format("http://www.musicbrainz.org/ws/2/artist/?query=artistaccent:\"{0}\"", UrlEncode(nameToSearch));
+                    url = String.Format("/ws/2/artist/?query=artistaccent:\"{0}\"", UrlEncode(nameToSearch));
 
-                    doc = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
-
-                    return GetResultsFromResponse(doc);
+                    using (var stream = await MusicBrainzAlbumProvider.Current.GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false))
+                    {
+                        return GetResultsFromResponse(stream);
+                    }
                 }
             }
 
             return new List<RemoteSearchResult>();
         }
 
-        private IEnumerable<RemoteSearchResult> GetResultsFromResponse(XmlDocument doc)
+        private IEnumerable<RemoteSearchResult> GetResultsFromResponse(Stream stream)
         {
-            var ns = new XmlNamespaceManager(doc.NameTable);
-            ns.AddNamespace("mb", "http://musicbrainz.org/ns/mmd-2.0#");
-
-            var list = new List<RemoteSearchResult>();
-
-            var nodes = doc.SelectNodes("//mb:artist-list/mb:artist", ns);
-
-            if (nodes != null)
+            using (var oReader = new StreamReader(stream, Encoding.UTF8))
             {
-                foreach (var node in nodes.Cast<XmlNode>())
+                var settings = _xmlSettings.Create(false);
+
+                settings.CheckCharacters = false;
+                settings.IgnoreProcessingInstructions = true;
+                settings.IgnoreComments = true;
+
+                using (var reader = XmlReader.Create(oReader, settings))
                 {
-                    if (node.Attributes != null)
+                    reader.MoveToContent();
+                    reader.Read();
+
+                    // Loop through each element
+                    while (!reader.EOF && reader.ReadState == ReadState.Interactive)
                     {
-                        string name = null;
-
-                        string mbzId = node.Attributes["id"].Value;
-
-                        var nameNode = node.SelectSingleNode("//mb:name", ns);
-
-                        if (nameNode != null)
+                        if (reader.NodeType == XmlNodeType.Element)
                         {
-                            name = nameNode.InnerText;
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(mbzId) && !string.IsNullOrWhiteSpace(name))
-                        {
-                            var result = new RemoteSearchResult
+                            switch (reader.Name)
                             {
-                                Name = name
-                            };
-
-                            result.SetProviderId(MetadataProviders.MusicBrainzArtist, mbzId);
-
-                            list.Add(result);
+                                case "artist-list":
+                                    {
+                                        if (reader.IsEmptyElement)
+                                        {
+                                            reader.Read();
+                                            continue;
+                                        }
+                                        using (var subReader = reader.ReadSubtree())
+                                        {
+                                            return ParseArtistList(subReader);
+                                        }
+                                    }
+                                default:
+                                    {
+                                        reader.Skip();
+                                        break;
+                                    }
+                            }
+                        }
+                        else
+                        {
+                            reader.Read();
                         }
                     }
+
+                    return new List<RemoteSearchResult>();
+                }
+            }
+        }
+
+        private IEnumerable<RemoteSearchResult> ParseArtistList(XmlReader reader)
+        {
+            var list = new List<RemoteSearchResult>();
+
+            reader.MoveToContent();
+            reader.Read();
+
+            // Loop through each element
+            while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+            {
+                if (reader.NodeType == XmlNodeType.Element)
+                {
+                    switch (reader.Name)
+                    {
+                        case "artist":
+                            {
+                                if (reader.IsEmptyElement)
+                                {
+                                    reader.Read();
+                                    continue;
+                                }
+                                var mbzId = reader.GetAttribute("id");
+
+                                using (var subReader = reader.ReadSubtree())
+                                {
+                                    var artist = ParseArtist(subReader, mbzId);
+                                    if (artist != null)
+                                    {
+                                        list.Add(artist);
+                                    }
+                                }
+                                break;
+                            }
+                        default:
+                            {
+                                reader.Skip();
+                                break;
+                            }
+                    }
+                }
+                else
+                {
+                    reader.Read();
                 }
             }
 
             return list;
+        }
+
+        private RemoteSearchResult ParseArtist(XmlReader reader, string artistId)
+        {
+            var result = new RemoteSearchResult();
+
+            reader.MoveToContent();
+            reader.Read();
+
+            // http://stackoverflow.com/questions/2299632/why-does-xmlreader-skip-every-other-element-if-there-is-no-whitespace-separator
+
+            // Loop through each element
+            while (!reader.EOF && reader.ReadState == ReadState.Interactive)
+            {
+                if (reader.NodeType == XmlNodeType.Element)
+                {
+                    switch (reader.Name)
+                    {
+                        case "name":
+                            {
+                                result.Name = reader.ReadElementContentAsString();
+                                break;
+                            }
+                        case "annotation":
+                            {
+                                result.Overview = reader.ReadElementContentAsString();
+                                break;
+                            }
+                        default:
+                            {
+                                // there is sort-name if ever needed
+                                reader.Skip();
+                                break;
+                            }
+                    }
+                }
+                else
+                {
+                    reader.Read();
+                }
+            }
+
+            result.SetProviderId(MetadataProviders.MusicBrainzArtist, artistId);
+
+            if (string.IsNullOrWhiteSpace(artistId) || string.IsNullOrWhiteSpace(result.Name))
+            {
+                return null;
+            }
+
+            return result;
         }
 
         public async Task<MetadataResult<MusicArtist>> GetMetadata(ArtistInfo id, CancellationToken cancellationToken)
@@ -123,6 +243,7 @@ namespace MediaBrowser.Providers.Music
                 {
                     musicBrainzId = singleResult.GetProviderId(MetadataProviders.MusicBrainzArtist);
                     //result.Item.Name = singleResult.Name;
+                    result.Item.Overview = singleResult.Overview;
                 }
             }
 
@@ -142,21 +263,7 @@ namespace MediaBrowser.Providers.Music
         /// <returns><c>true</c> if the specified text has diacritics; otherwise, <c>false</c>.</returns>
         private bool HasDiacritics(string text)
         {
-            return !String.Equals(text, RemoveDiacritics(text), StringComparison.Ordinal);
-        }
-
-        /// <summary>
-        /// Removes the diacritics.
-        /// </summary>
-        /// <param name="text">The text.</param>
-        /// <returns>System.String.</returns>
-        private string RemoveDiacritics(string text)
-        {
-            return String.Concat(
-                text.Normalize(NormalizationForm.FormD)
-                .Where(ch => CharUnicodeInfo.GetUnicodeCategory(ch) !=
-                                              UnicodeCategory.NonSpacingMark)
-              ).Normalize(NormalizationForm.FormC);
+            return !String.Equals(text, text.RemoveDiacritics(), StringComparison.Ordinal);
         }
 
         /// <summary>

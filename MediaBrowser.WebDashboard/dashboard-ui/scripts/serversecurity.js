@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define(['datetime', 'jQuery'], function (datetime, $) {
+    'use strict';
 
     function revoke(page, key) {
 
@@ -59,9 +60,9 @@
 
             html += '<td style="vertical-align:middle;">';
 
-            var date = parseISO8601Date(item.DateCreated, { toLocal: true });
+            var date = datetime.parseISO8601Date(item.DateCreated, true);
 
-            html += date.toLocaleDateString() + ' ' + LibraryBrowser.getDisplayTime(date);
+            html += datetime.toLocaleDateString(date) + ' ' + datetime.getDisplayTime(date);
 
             html += '</td>';
 
@@ -123,6 +124,18 @@
         });
     }
 
+    function getTabs() {
+        return [
+        {
+            href: 'dashboardhosting.html',
+            name: Globalize.translate('TabHosting')
+        },
+         {
+             href: 'serversecurity.html',
+             name: Globalize.translate('TabSecurity')
+         }];
+    }
+
     pageIdOn('pageinit', "serverSecurityPage", function () {
 
         var page = this;
@@ -136,9 +149,10 @@
     });
     pageIdOn('pagebeforeshow', "serverSecurityPage", function () {
 
+        LibraryMenu.setTabs('adminadvanced', 1, getTabs);
         var page = this;
 
         loadData(page);
     });
 
-})(jQuery, document);
+});

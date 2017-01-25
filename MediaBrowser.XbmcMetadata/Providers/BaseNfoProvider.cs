@@ -1,16 +1,16 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.XbmcMetadata.Savers;
-using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.XbmcMetadata.Providers
 {
-    public abstract class BaseNfoProvider<T> : ILocalMetadataProvider<T>, IHasChangeMonitor
+    public abstract class BaseNfoProvider<T> : ILocalMetadataProvider<T>, IHasItemChangeMonitor
         where T : IHasMetadata, new()
     {
         protected IFileSystem FileSystem;
@@ -41,7 +41,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
             {
                 result.HasMetadata = false;
             }
-            catch (DirectoryNotFoundException)
+            catch (IOException)
             {
                 result.HasMetadata = false;
             }
@@ -58,7 +58,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
 
         protected abstract FileSystemMetadata GetXmlFile(ItemInfo info, IDirectoryService directoryService);
 
-        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService, DateTime date)
+        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService)
         {
             var file = GetXmlFile(new ItemInfo(item), directoryService);
 
@@ -67,7 +67,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
                 return false;
             }
 
-            return file.Exists && FileSystem.GetLastWriteTimeUtc(file) > date;
+            return file.Exists && FileSystem.GetLastWriteTimeUtc(file) > item.DateLastSaved;
         }
 
         public string Name

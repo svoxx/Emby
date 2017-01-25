@@ -1,4 +1,5 @@
-﻿(function () {
+﻿define(['events'], function (events) {
+    'use strict';
 
     function transferPlayback(oldPlayer) {
 
@@ -25,7 +26,7 @@
         });
     }
 
-    Events.on(MediaController, 'playerchange', function (e, newPlayer, newTarget, oldPlayer) {
+    events.on(MediaController, 'playerchange', function (e, newPlayer, newTarget, oldPlayer) {
 
         if (!oldPlayer) {
             console.log('Skipping remote control autoplay because oldPlayer is null');
@@ -48,4 +49,4 @@
         }
     });
 
-})();
+});

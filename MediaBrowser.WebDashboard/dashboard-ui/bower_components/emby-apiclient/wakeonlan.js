@@ -1,11 +1,9 @@
 ﻿define([], function () {
+    'use strict';
 
     function send(info) {
 
-        return new Promise(function (resolve, reject) {
-
-            resolve();
-        });
+        return Promise.resolve();
     }
 
     return {

@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -9,16 +8,15 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Xml;
-using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Xml;
 
 namespace MediaBrowser.XbmcMetadata.Savers
 {
     public class EpisodeNfoSaver : BaseNfoSaver
     {
-        public EpisodeNfoSaver(IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, IUserManager userManager, IUserDataManager userDataManager, ILogger logger) : base(fileSystem, configurationManager, libraryManager, userManager, userDataManager, logger)
-        {
-        }
-
         protected override string GetLocalSavePath(IHasMetadata item)
         {
             return Path.ChangeExtension(item.Path, ".nfo");
@@ -65,17 +63,31 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writer.WriteElementString("aired", episode.PremiereDate.Value.ToLocalTime().ToString(formatString));
             }
 
-            if (episode.AirsAfterSeasonNumber.HasValue)
+            if (!episode.ParentIndexNumber.HasValue || episode.ParentIndexNumber.Value == 0)
             {
-                writer.WriteElementString("airsafter_season", episode.AirsAfterSeasonNumber.Value.ToString(UsCulture));
-            }
-            if (episode.AirsBeforeEpisodeNumber.HasValue)
-            {
-                writer.WriteElementString("airsbefore_episode", episode.AirsBeforeEpisodeNumber.Value.ToString(UsCulture));
-            }
-            if (episode.AirsBeforeSeasonNumber.HasValue)
-            {
-                writer.WriteElementString("airsbefore_season", episode.AirsBeforeSeasonNumber.Value.ToString(UsCulture));
+                if (episode.AirsAfterSeasonNumber.HasValue && episode.AirsAfterSeasonNumber.Value != -1)
+                {
+                    writer.WriteElementString("airsafter_season", episode.AirsAfterSeasonNumber.Value.ToString(UsCulture));
+                }
+                if (episode.AirsBeforeEpisodeNumber.HasValue && episode.AirsBeforeEpisodeNumber.Value != -1)
+                {
+                    writer.WriteElementString("airsbefore_episode", episode.AirsBeforeEpisodeNumber.Value.ToString(UsCulture));
+                }
+                if (episode.AirsBeforeSeasonNumber.HasValue && episode.AirsBeforeSeasonNumber.Value != -1)
+                {
+                    writer.WriteElementString("airsbefore_season", episode.AirsBeforeSeasonNumber.Value.ToString(UsCulture));
+                }
+
+                if (episode.AirsBeforeEpisodeNumber.HasValue && episode.AirsBeforeEpisodeNumber.Value != -1)
+                {
+                    writer.WriteElementString("displayepisode", episode.AirsBeforeEpisodeNumber.Value.ToString(UsCulture));
+                }
+
+                var specialSeason = episode.AiredSeasonNumber;
+                if (specialSeason.HasValue && specialSeason.Value != -1)
+                {
+                    writer.WriteElementString("displayseason", specialSeason.Value.ToString(UsCulture));
+                }
             }
 
             if (episode.DvdEpisodeNumber.HasValue)
@@ -109,10 +121,16 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     "airsbefore_season",
                     "DVD_episodenumber",
                     "DVD_season",
-                    "absolute_number"
+                    "absolute_number",
+                    "displayseason",
+                    "displayepisode"
             };
 
             return list;
+        }
+
+        public EpisodeNfoSaver(IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, IUserManager userManager, IUserDataManager userDataManager, ILogger logger, IXmlReaderSettingsFactory xmlReaderSettingsFactory) : base(fileSystem, configurationManager, libraryManager, userManager, userDataManager, logger, xmlReaderSettingsFactory)
+        {
         }
     }
 }

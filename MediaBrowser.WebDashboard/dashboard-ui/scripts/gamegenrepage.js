@@ -1,4 +1,5 @@
-(function ($, document) {
+define(['jQuery', 'imageLoader'], function ($, imageLoader) {
+    'use strict';
 
     // The base query options
     var query = {
@@ -45,7 +46,7 @@
 
             var elem = page.querySelector('#items');
             elem.innerHTML = html;
-            ImageLoader.lazyChildren(elem);
+            imageLoader.lazyChildren(elem);
 
             $('.btnNextPage', page).on('click', function () {
                 query.StartIndex += query.Limit;
@@ -80,4 +81,4 @@
         reloadItems(this);
     });
 
-})(jQuery, document);
+});

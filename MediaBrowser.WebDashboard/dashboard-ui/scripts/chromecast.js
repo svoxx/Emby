@@ -1,4 +1,5 @@
 ﻿define(['appSettings'], function (appSettings) {
+    'use strict';
 
     // Based on https://github.com/googlecast/CastVideos-chrome/blob/master/CastVideos.js
     var currentResolve;
@@ -54,6 +55,7 @@
     var applicationID = "2D4B1DA3";
 
     // This is the beta version used for testing new changes
+
     //applicationID = '27C4EB5B';
 
     var messageNamespace = 'urn:x-cast:com.connectsdk';
@@ -106,7 +108,8 @@
         var sessionRequest = new chrome.cast.SessionRequest(applicationID);
         var apiConfig = new chrome.cast.ApiConfig(sessionRequest,
           this.sessionListener.bind(this),
-          this.receiverListener.bind(this));
+          this.receiverListener.bind(this),
+            "origin_scoped");
 
         console.log('chromecast.initialize');
 
@@ -153,7 +156,9 @@
 
     CastPlayer.prototype.messageListener = function (namespace, message) {
 
-        message = JSON.parse(message);
+        if (typeof (message) === 'string') {
+            message = JSON.parse(message);
+        }
 
         if (message.type == 'playbackerror') {
 
@@ -177,9 +182,8 @@
             }, 300);
 
         }
-        else if (message.type && message.type.indexOf('playback') == 0) {
+        else if (message.type) {
             Events.trigger(this, message.type, [message.data]);
-
         }
     };
 
@@ -311,7 +315,7 @@
 
         if (!this.session) {
             console.log("no session");
-            return;
+            return Promise.reject();
         }
 
         // Convert the items to smaller stubs to send the minimal amount of information
@@ -326,7 +330,7 @@
             };
         });
 
-        this.sendMessage({
+        return this.sendMessage({
             options: options,
             command: command
         });
@@ -342,7 +346,7 @@
             receiverName = castPlayer.session.receiver.friendlyName;
         }
 
-        message = $.extend(message, {
+        message = Object.assign(message, {
             userId: Dashboard.getCurrentUserId(),
             deviceId: ApiClient.deviceId(),
             accessToken: ApiClient.accessToken(),
@@ -355,11 +359,15 @@
             message.maxBitrate = bitrateSetting;
         }
 
-        require(['chromecasthelpers'], function (chromecasthelpers) {
+        return new Promise(function (resolve, reject) {
 
-            chromecasthelpers.getServerAddress(ApiClient).then(function (serverAddress) {
-                message.serverAddress = serverAddress;
-                player.sendMessageInternal(message);
+            require(['chromecasthelpers'], function (chromecasthelpers) {
+
+                chromecasthelpers.getServerAddress(ApiClient).then(function (serverAddress) {
+                    message.serverAddress = serverAddress;
+                    player.sendMessageInternal(message).then(resolve, reject);
+
+                }, reject);
             });
         });
     };
@@ -370,6 +378,7 @@
         //console.log(message);
 
         this.session.sendMessage(messageNamespace, message, this.onPlayCommandSuccess.bind(this), this.errorHandler);
+        return Promise.resolve();
     };
 
     CastPlayer.prototype.onPlayCommandSuccess = function () {
@@ -461,14 +470,11 @@
             var userId = Dashboard.getCurrentUserId();
 
             if (query.Ids && query.Ids.split(',').length == 1) {
-                return new Promise(function (resolve, reject) {
-
-                    ApiClient.getItem(userId, query.Ids.split(',')).then(function (item) {
-                        resolve({
-                            Items: [item],
-                            TotalRecordCount: 1
-                        });
-                    });
+                return ApiClient.getItem(userId, query.Ids.split(',')).then(function (item) {
+                    return {
+                        Items: [item],
+                        TotalRecordCount: 1
+                    };
                 });
             }
             else {
@@ -522,24 +528,40 @@
             Events.trigger(self, "positionchange", [state]);
         });
 
+        Events.on(castPlayer, "volumechange", function (e, data) {
+
+            console.log('cc: volumechange');
+            var state = self.getPlayerStateInternal(data);
+
+            Events.trigger(self, "volumechange", [state]);
+        });
+
+        Events.on(castPlayer, "playstatechange", function (e, data) {
+
+            console.log('cc: playstatechange');
+            var state = self.getPlayerStateInternal(data);
+
+            Events.trigger(self, "playstatechange", [state]);
+        });
+
         self.play = function (options) {
 
-            Dashboard.getCurrentUser().then(function (user) {
+            return Dashboard.getCurrentUser().then(function (user) {
 
                 if (options.items) {
 
-                    self.playWithCommand(options, 'PlayNow');
+                    return self.playWithCommand(options, 'PlayNow');
 
                 } else {
 
-                    self.getItemsForPlayback({
+                    return self.getItemsForPlayback({
 
                         Ids: options.ids.join(',')
 
                     }).then(function (result) {
 
                         options.items = result.Items;
-                        self.playWithCommand(options, 'PlayNow');
+                        return self.playWithCommand(options, 'PlayNow');
 
                     });
                 }
@@ -551,16 +573,14 @@
         self.playWithCommand = function (options, command) {
 
             if (!options.items) {
-                ApiClient.getItem(Dashboard.getCurrentUserId(), options.ids[0]).then(function (item) {
+                return ApiClient.getItem(Dashboard.getCurrentUserId(), options.ids[0]).then(function (item) {
 
                     options.items = [item];
-                    self.playWithCommand(options, command);
+                    return self.playWithCommand(options, command);
                 });
-
-                return;
             }
 
-            castPlayer.loadMedia(options, command);
+            return castPlayer.loadMedia(options, command);
         };
 
         self.unpause = function () {
@@ -671,16 +691,13 @@
 
         self.getTargets = function () {
 
-            return new Promise(function (resolve, reject) {
+            var targets = [];
 
-                var targets = [];
+            if (castPlayer.hasReceivers) {
+                targets.push(self.getCurrentTargetInfo());
+            }
 
-                if (castPlayer.hasReceivers) {
-                    targets.push(self.getCurrentTargetInfo());
-                }
-
-                resolve(targets);
-            });
+            return Promise.resolve(targets);
         };
 
         self.getCurrentTargetInfo = function () {
@@ -814,11 +831,8 @@
 
         self.getPlayerState = function () {
 
-            return new Promise(function (resolve, reject) {
-
-                var result = self.getPlayerStateInternal();
-                resolve(result);
-            });
+            var result = self.getPlayerStateInternal();
+            return Promise.resolve(result);
         };
 
         self.lastPlayerData = {};
@@ -834,21 +848,21 @@
 
         self.tryPair = function (target) {
 
-            return new Promise(function (resolve, reject) {
-                if (castPlayer.deviceState != DEVICE_STATE.ACTIVE && castPlayer.isInitialized) {
+            if (castPlayer.deviceState != DEVICE_STATE.ACTIVE && castPlayer.isInitialized) {
 
+                return new Promise(function (resolve, reject) {
                     currentResolve = resolve;
                     currentReject = reject;
 
                     castPlayer.launchApp();
-                } else {
+                });
+            } else {
 
-                    currentResolve = null;
-                    currentReject = null;
+                currentResolve = null;
+                currentReject = null;
 
-                    reject();
-                }
-            });
+                return Promise.reject();
+            }
         };
     }
 
@@ -857,6 +871,7 @@
         castPlayer = new CastPlayer();
 
         var registeredPlayer = new chromecastPlayer();
+        window.CCastPlayer = registeredPlayer;
         MediaController.registerPlayer(registeredPlayer);
 
         // To allow the native android app to override

@@ -1,4 +1,5 @@
-﻿(function ($, document, Notifications) {
+﻿define(['jQuery'], function ($) {
+    'use strict';
 
     $(document).on("pageshow", "#notificationsPage", function () {
 
@@ -21,8 +22,7 @@
 
             Notifications.showNotificationsList(startIndex, limit, elem);
 
-        })
-            .on("click", ".btnNextPage", function (e) {
+        }).on("click", ".btnNextPage", function (e) {
 
                 e.preventDefault();
 
@@ -36,4 +36,4 @@
 
     });
 
-})(jQuery, document, Notifications);
+});

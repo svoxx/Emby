@@ -1,4 +1,10 @@
-﻿(function ($, document, window) {
+﻿define(['events'], function (events) {
+    'use strict';
+
+    function onListingsSubmitted() {
+
+        Dashboard.navigate('livetvstatus.html');
+    }
 
     function init(page, type, providerId) {
 
@@ -8,6 +14,8 @@
 
             var instance = new factory(page, providerId, {
             });
+
+            events.on(instance, 'submitted', onListingsSubmitted);
 
             instance.init();
         });
@@ -23,7 +31,6 @@
             var html = this.response;
             var elem = page.querySelector('.providerTemplate');
             elem.innerHTML = Globalize.translateDocument(html);
-            $(elem).trigger('create');
 
             init(page, type, providerId);
         }
@@ -31,7 +38,7 @@
         xhr.send();
     }
 
-    $(document).on('pageshow', "#liveTvGuideProviderPage", function () {
+    pageIdOn('pageshow', "liveTvGuideProviderPage", function () {
 
         Dashboard.showLoadingMsg();
 
@@ -41,4 +48,4 @@
         loadTemplate(page, type, providerId);
     });
 
-})(jQuery, document, window);
+});

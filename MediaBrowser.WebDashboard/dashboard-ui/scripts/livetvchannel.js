@@ -1,102 +1,49 @@
-﻿(function ($, document) {
+﻿define(['datetime', 'listView'], function (datetime, listView) {
+    'use strict';
+
+    function isSameDay(date1, date2) {
+
+        return date1.toDateString() === date2.toDateString();
+    }
 
     function renderPrograms(page, result) {
 
         var html = '';
-
-        var currentIndexValue;
-
-        var now = new Date();
+        var currentItems = [];
+        var currentStartDate = null;
 
         for (var i = 0, length = result.Items.length; i < length; i++) {
 
-            var program = result.Items[i];
+            var item = result.Items[i];
 
-            var startDate = parseISO8601Date(program.StartDate, { toLocal: true });
-            var startDateText = LibraryBrowser.getFutureDateText(startDate);
+            var itemStartDate = datetime.parseISO8601Date(item.StartDate);
 
-            var endDate = parseISO8601Date(program.EndDate, { toLocal: true });
+            if (!currentStartDate || !isSameDay(currentStartDate, itemStartDate)) {
 
-            if (startDateText != currentIndexValue) {
+                if (currentItems.length) {
 
-                html += '<h1 tvProgramSectionHeader" style="margin-bottom:1em;margin-top:2em;">' + startDateText + '</h1>';
-                currentIndexValue = startDateText;
+                    html += '<h1>' + datetime.toLocaleDateString(currentStartDate, { weekday: 'long', month: 'long', day: 'numeric' }) + '</h1>';
+
+                    html += '<div is="emby-itemscontainer" class="vertical-list">' + listView.getListViewHtml({
+                        items: currentItems,
+                        enableUserDataButtons: false,
+                        showParentTitle: true,
+                        image: false,
+                        showProgramTime: true,
+                        mediaInfo: false,
+                        parentTitleWithTitle: true
+
+                    }) + '</div>';
+                }
+
+                currentStartDate = itemStartDate;
+                currentItems = [];
             }
 
-            html += '<a href="itemdetails.html?id=' + program.Id + '" class="tvProgram">';
-
-            var cssClass = "tvProgramTimeSlot";
-
-            if (now >= startDate && now < endDate) {
-                cssClass += " tvProgramCurrentTimeSlot";
-            }
-
-            html += '<div class="' + cssClass + '">';
-            html += '<div class="tvProgramTimeSlotInner">' + LibraryBrowser.getDisplayTime(startDate) + '</div>';
-            html += '</div>';
-
-            cssClass = "tvProgramInfo";
-
-            if (program.IsKids) {
-                cssClass += " childProgramInfo";
-            }
-            else if (program.IsSports) {
-                cssClass += " sportsProgramInfo";
-            }
-            else if (program.IsNews) {
-                cssClass += " newsProgramInfo";
-            }
-            else if (program.IsMovie) {
-                cssClass += " movieProgramInfo";
-            }
-
-            html += '<div data-programid="' + program.Id + '" class="' + cssClass + '">';
-
-            var name = program.Name;
-
-            html += '<div class="tvProgramName">' + name + '</div>';
-
-            html += '<div class="tvProgramTime">';
-
-            if (program.IsLive) {
-                html += '<span class="liveTvProgram">' + Globalize.translate('LabelLiveProgram') + '&nbsp;&nbsp;</span>';
-            }
-            else if (program.IsPremiere) {
-                html += '<span class="premiereTvProgram">' + Globalize.translate('LabelPremiereProgram') + '&nbsp;&nbsp;</span>';
-            }
-            else if (program.IsSeries && !program.IsRepeat) {
-                html += '<span class="newTvProgram">' + Globalize.translate('LabelNewProgram') + '&nbsp;&nbsp;</span>';
-            }
-
-            var minutes = program.RunTimeTicks / 600000000;
-
-            minutes = Math.round(minutes || 1) + ' min';
-
-            if (program.EpisodeTitle) {
-
-                html += program.EpisodeTitle + '&nbsp;&nbsp;(' + minutes + ')';
-            } else {
-                html += minutes;
-            }
-
-            if (program.SeriesTimerId) {
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-            }
-            else if (program.TimerId) {
-
-                html += '<div class="timerCircle"></div>';
-            }
-
-            html += '</div>';
-            html += '<div class="programAccent"></div>';
-            html += '</div>';
-
-            html += '</a>';
+            currentItems.push(item);
         }
 
-        $('#childrenContent', page).html(html).createGuideHoverMenu('.tvProgramInfo');
+        page.querySelector('#childrenContent').innerHTML = html;
     }
 
     function loadPrograms(page, channelId) {
@@ -106,18 +53,21 @@
             ChannelIds: channelId,
             UserId: Dashboard.getCurrentUserId(),
             HasAired: false,
-            SortBy: "StartDate"
+            SortBy: "StartDate",
+            EnableTotalRecordCount: false,
+            EnableImages: false,
+            ImageTypeLimit: 0,
+            EnableUserData: false
 
         }).then(function (result) {
 
             renderPrograms(page, result);
-
             Dashboard.hideLoadingMsg();
         });
     }
 
-    window.LiveTvChannelPage = {
+    return {
         renderPrograms: loadPrograms
     };
 
-})(jQuery, document);
+});
