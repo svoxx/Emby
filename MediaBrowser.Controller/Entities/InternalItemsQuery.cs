@@ -130,7 +130,6 @@ namespace MediaBrowser.Controller.Entities
         public string[] TopParentIds { get; set; }
 
         public LocationType[] LocationTypes { get; set; }
-        public LocationType[] ExcludeLocationTypes { get; set; }
         public string[] PresetViews { get; set; }
         public SourceType[] SourceTypes { get; set; }
         public SourceType[] ExcludeSourceTypes { get; set; }
@@ -142,7 +141,7 @@ namespace MediaBrowser.Controller.Entities
         public string ExternalSeriesId { get; set; }
         public string ExternalId { get; set; }
 
-        public string[] AlbumNames { get; set; }
+        public string[] AlbumIds { get; set; }
         public string[] ArtistIds { get; set; }
         public string[] ExcludeArtistIds { get; set; }
         public string AncestorWithPresentationUniqueKey { get; set; }
@@ -160,6 +159,7 @@ namespace MediaBrowser.Controller.Entities
         public DateTime? MinDateLastSaved { get; set; }
 
         public DtoOptions DtoOptions { get; set; }
+        public int MinSimilarityScore { get; set; }
 
         public bool HasField(ItemFields name)
         {
@@ -172,7 +172,6 @@ namespace MediaBrowser.Controller.Entities
                 case ItemFields.ProductionLocations:
                 case ItemFields.Keywords:
                 case ItemFields.Taglines:
-                case ItemFields.ShortOverview:
                 case ItemFields.CustomRating:
                 case ItemFields.DateCreated:
                 case ItemFields.SortName:
@@ -197,11 +196,13 @@ namespace MediaBrowser.Controller.Entities
 
         public InternalItemsQuery()
         {
+            MinSimilarityScore = 20;
+
             GroupByPresentationUniqueKey = true;
             EnableTotalRecordCount = true;
 
             DtoOptions = new DtoOptions();
-            AlbumNames = new string[] { };
+            AlbumIds = new string[] { };
             ArtistIds = new string[] { };
             ExcludeArtistIds = new string[] { };
             ExcludeProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -230,7 +231,6 @@ namespace MediaBrowser.Controller.Entities
             ExcludeTags = new string[] { };
             ExcludeInheritedTags = new string[] { };
             LocationTypes = new LocationType[] { };
-            ExcludeLocationTypes = new LocationType[] { };
             PresetViews = new string[] { };
             SourceTypes = new SourceType[] { };
             ExcludeSourceTypes = new SourceType[] { };

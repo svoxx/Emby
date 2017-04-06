@@ -55,8 +55,6 @@ namespace Emby.Server.Implementations.Library
                 }).ToList();
             }
 
-            var plainFolderIds = user.Configuration.PlainFolderViews.Select(i => new Guid(i)).ToList();
-
             var groupedFolders = new List<ICollectionFolder>();
 
             var list = new List<Folder>();
@@ -69,12 +67,6 @@ namespace Emby.Server.Implementations.Library
                 if (UserView.IsUserSpecific(folder))
                 {
                     list.Add(await _libraryManager.GetNamedView(user, folder.Name, folder.Id.ToString("N"), folderViewType, null, cancellationToken).ConfigureAwait(false));
-                    continue;
-                }
-
-                if (plainFolderIds.Contains(folder.Id) && UserView.IsEligibleForEnhancedView(folderViewType))
-                {
-                    list.Add(folder);
                     continue;
                 }
 
@@ -256,6 +248,13 @@ namespace Emby.Server.Implementations.Library
                 }
             }
 
+            var isPlayed = request.IsPlayed;
+
+            if (parents.OfType<ICollectionFolder>().Any(i => string.Equals(i.CollectionType, CollectionType.Music, StringComparison.OrdinalIgnoreCase)))
+            {
+                isPlayed = null;
+            }
+
             if (parents.Count == 0)
             {
                 parents = user.RootFolder.GetChildren(user, true)
@@ -287,10 +286,10 @@ namespace Emby.Server.Implementations.Library
                 SortBy = new[] { ItemSortBy.DateCreated },
                 IsFolder = includeItemTypes.Length == 0 ? false : (bool?)null,
                 ExcludeItemTypes = excludeItemTypes,
-                ExcludeLocationTypes = new[] { LocationType.Virtual },
+                IsVirtualItem = false,
                 Limit = limit * 5,
                 SourceTypes = parents.Count == 0 ? new[] { SourceType.Library } : new SourceType[] { },
-                IsPlayed = request.IsPlayed
+                IsPlayed = isPlayed
 
             }, parents);
         }

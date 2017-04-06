@@ -1,5 +1,5 @@
 {
-  "version": "3.1.0-*",
+  "version": "3.1.0.1",
   "buildOptions": {
     "emitEntryPoint": true
   },
@@ -111,9 +111,6 @@
           "target": "project"
         },
         "RSSDP": {
-          "target": "project"
-        },
-        "ServiceStack": {
           "target": "project"
         },
         "SocketHttpListener.Portable": {

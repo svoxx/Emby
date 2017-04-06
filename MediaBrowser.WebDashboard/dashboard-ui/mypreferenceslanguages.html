@@ -62,10 +62,10 @@
                     ${HeaderAdvanced}
                 </h1>
                 <br />
-                <div class="selectContainer">
+                <div class="selectContainer fldMaxBitrate hide">
                     <select is="emby-select" id="selectMaxBitrate" label="${LabelMaxStreamingBitrate}"></select>
                 </div>
-                <div class="selectContainer">
+                <div class="selectContainer fldChromecastBitrate hide">
                     <select is="emby-select" id="selectMaxChromecastBitrate" label="${LabelMaxChromecastBitrate}"></select>
                 </div>
                 <label class="checkboxContainer">
@@ -73,14 +73,13 @@
                     <span>${OptionPlayNextEpisodeAutomatically}</span>
                 </label>
 
-                <div class="checkboxContainer fldExternalPlayer checkboxContainer-withDescription">
+                <div class="checkboxContainer fldExternalPlayer checkboxContainer-withDescription hide">
                     <label>
                         <input type="checkbox" is="emby-checkbox" class="chkExternalVideoPlayer" />
                         <span>${OptionEnableExternalVideoPlayers}</span>
                     </label>
                     <div class="fieldDescription checkboxFieldDescription">
-                        <div class="labelGenericExternalPlayers hide">${LabelExternalPlayersHelp}</div>
-                        <div class="labelNativeExternalPlayers hide">${LabelNativeExternalPlayersHelp}</div>
+                        <div class="labelNativeExternalPlayers">${LabelNativeExternalPlayersHelp}</div>
                     </div>
                 </div>
             </div>

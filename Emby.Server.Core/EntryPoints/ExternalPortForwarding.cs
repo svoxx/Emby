@@ -11,6 +11,7 @@ using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Threading;
 using Mono.Nat;
+using System.Threading.Tasks;
 
 namespace Emby.Server.Core.EntryPoints
 {
@@ -106,6 +107,11 @@ namespace Emby.Server.Core.EntryPoints
 
         private async void _deviceDiscovery_DeviceDiscovered(object sender, GenericEventArgs<UpnpDeviceInfo> e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             var info = e.Argument;
 
             string usn;
@@ -169,6 +175,11 @@ namespace Emby.Server.Core.EntryPoints
                     return;
                 }
 
+                if (_disposed)
+                {
+                    return;
+                }
+
                 _logger.Debug("Calling Nat.Handle on " + identifier);
                 NatUtility.Handle(localAddress, info, endpoint, NatProtocol.Upnp);
             }
@@ -176,7 +187,10 @@ namespace Emby.Server.Core.EntryPoints
 
         private void ClearCreatedRules(object state)
         {
-            _createdRules = new List<string>();
+            lock (_createdRules)
+            {
+                _createdRules.Clear();
+            }
             lock (_usnsHandled)
             {
                 _usnsHandled.Clear();
@@ -185,6 +199,11 @@ namespace Emby.Server.Core.EntryPoints
 
         void NatUtility_DeviceFound(object sender, DeviceEventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             try
             {
                 var device = e.Device;
@@ -208,23 +227,39 @@ namespace Emby.Server.Core.EntryPoints
 
         private List<string> _createdRules = new List<string>();
         private List<string> _usnsHandled = new List<string>();
-        private void CreateRules(INatDevice device)
+        private async void CreateRules(INatDevice device)
         {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException("PortMapper");
+            }
+
             // On some systems the device discovered event seems to fire repeatedly
             // This check will help ensure we're not trying to port map the same device over and over
 
             var address = device.LocalAddress.ToString();
 
-            if (!_createdRules.Contains(address))
+            lock (_createdRules)
             {
-                _createdRules.Add(address);
+                if (!_createdRules.Contains(address))
+                {
+                    _createdRules.Add(address);
+                }
+                else
+                {
+                    return;
+                }
+            }
 
-                CreatePortMap(device, _appHost.HttpPort, _config.Configuration.PublicPort);
-                CreatePortMap(device, _appHost.HttpsPort, _config.Configuration.PublicHttpsPort);
+            var success = await CreatePortMap(device, _appHost.HttpPort, _config.Configuration.PublicPort).ConfigureAwait(false);
+
+            if (success)
+            {
+                await CreatePortMap(device, _appHost.HttpsPort, _config.Configuration.PublicHttpsPort).ConfigureAwait(false);
             }
         }
 
-        private async void CreatePortMap(INatDevice device, int privatePort, int publicPort)
+        private async Task<bool> CreatePortMap(INatDevice device, int privatePort, int publicPort)
         {
             _logger.Debug("Creating port map on port {0}", privatePort);
 
@@ -235,10 +270,14 @@ namespace Emby.Server.Core.EntryPoints
                     Description = _appHost.Name
 
                 }).ConfigureAwait(false);
+
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.Error("Error creating port map: " + ex.Message);
+
+                return false;
             }
         }
 
@@ -249,8 +288,10 @@ namespace Emby.Server.Core.EntryPoints
             _logger.Debug("NAT device lost: {0}", device.LocalAddress.ToString());
         }
 
+        private bool _disposed = false;
         public void Dispose()
         {
+            _disposed = true;
             DisposeNat();
         }
 

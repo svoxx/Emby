@@ -23,7 +23,7 @@ namespace Emby.Dlna.Profiles
                     {
                          Match = HeaderMatchType.Substring,
                          Name = "User-Agent",
-                         Value ="XiP"
+                         Value ="Zip_"
                     }
                 }
             };
@@ -63,22 +63,7 @@ namespace Emby.Dlna.Profiles
 
                 new DirectPlayProfile
                 {
-                    Container = "mp3",
-                    AudioCodec = "mp3",
-                    Type = DlnaProfileType.Audio
-                },
-
-                new DirectPlayProfile
-                {
-                    Container = "alac",
-                    AudioCodec = "alac",
-                    Type = DlnaProfileType.Audio
-                },
-
-                new DirectPlayProfile
-                {
-                    Container = "flac",
-                    AudioCodec = "flac",
+                    Container = "mp3,alac,flac",
                     Type = DlnaProfileType.Audio
                 },
 
@@ -229,6 +214,14 @@ namespace Emby.Dlna.Profiles
                 }
             };
 
+            SubtitleProfiles = new[]
+            {
+                new SubtitleProfile
+                {
+                    Format = "srt",
+                    Method = SubtitleDeliveryMethod.Embed
+                }
+            };
         }
     }
 }

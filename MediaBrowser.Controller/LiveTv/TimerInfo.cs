@@ -88,12 +88,15 @@ namespace MediaBrowser.Controller.LiveTv
         /// <value><c>true</c> if this instance is post padding required; otherwise, <c>false</c>.</value>
         public bool IsPostPaddingRequired { get; set; }
 
+        public bool IsManual { get; set; }
+
         /// <summary>
         /// Gets or sets the priority.
         /// </summary>
         /// <value>The priority.</value>
         public int Priority { get; set; }
 
+        public int RetryCount { get; set; }
 
         // Program properties
         public int? SeasonNumber { get; set; }
@@ -113,7 +116,6 @@ namespace MediaBrowser.Controller.LiveTv
         public bool IsRepeat { get; set; }
         public string HomePageUrl { get; set; }
         public float? CommunityRating { get; set; }
-        public string ShortOverview { get; set; }
         public string OfficialRating { get; set; }
         public List<string> Genres { get; set; }
         public string RecordingPath { get; set; }

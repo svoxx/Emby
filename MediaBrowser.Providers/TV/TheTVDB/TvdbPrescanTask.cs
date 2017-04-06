@@ -143,7 +143,8 @@ namespace MediaBrowser.Providers.TV
                     Url = ServerTimeUrl,
                     CancellationToken = cancellationToken,
                     EnableHttpCompression = true,
-                    ResourcePool = TvdbSeriesProvider.Current.TvDbResourcePool
+                    ResourcePool = TvdbSeriesProvider.Current.TvDbResourcePool,
+                    BufferContent = false
 
                 }).ConfigureAwait(false))
                 {
@@ -239,7 +240,8 @@ namespace MediaBrowser.Providers.TV
                 Url = string.Format(UpdatesUrl, lastUpdateTime),
                 CancellationToken = cancellationToken,
                 EnableHttpCompression = true,
-                ResourcePool = TvdbSeriesProvider.Current.TvDbResourcePool
+                ResourcePool = TvdbSeriesProvider.Current.TvDbResourcePool,
+                BufferContent = false
 
             }).ConfigureAwait(false))
             {
@@ -387,7 +389,7 @@ namespace MediaBrowser.Providers.TV
 
             _fileSystem.CreateDirectory(seriesDataPath);
 
-            return TvdbSeriesProvider.Current.DownloadSeriesZip(id, MetadataProviders.Tvdb.ToString(), seriesDataPath, lastTvDbUpdateTime, preferredMetadataLanguage, cancellationToken);
+            return TvdbSeriesProvider.Current.DownloadSeriesZip(id, MetadataProviders.Tvdb.ToString(), null, null, seriesDataPath, lastTvDbUpdateTime, preferredMetadataLanguage, cancellationToken);
         }
     }
 }

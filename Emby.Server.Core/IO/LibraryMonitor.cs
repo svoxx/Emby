@@ -87,7 +87,7 @@ namespace Emby.Server.Core.IO
         public bool IsPathLocked(string path)
         {
             var lockedPaths = _tempIgnoredPaths.Keys.ToList();
-            return lockedPaths.Any(i => string.Equals(i, path, StringComparison.OrdinalIgnoreCase) || _fileSystem.ContainsSubPath(i, path));
+            return lockedPaths.Any(i => _fileSystem.AreEqual(i, path) || _fileSystem.ContainsSubPath(i, path));
         }
 
         public async void ReportFileSystemChangeComplete(string path, bool refreshPath)
@@ -283,6 +283,19 @@ namespace Emby.Server.Core.IO
         /// <param name="path">The path.</param>
         private void StartWatchingPath(string path)
         {
+            if (!_fileSystem.DirectoryExists(path))
+            {
+                // Seeing a crash in the mono runtime due to an exception being thrown on a different thread
+                Logger.Info("Skipping realtime monitor for {0} because the path does not exist", path);
+                return;
+            }
+
+            // Already being watched
+            if (_fileSystemWatchers.ContainsKey(path))
+            {
+                return;
+            }
+
             // Creating a FileSystemWatcher over the LAN can take hundreds of milliseconds, so wrap it in a Task to do them all in parallel
             Task.Run(() =>
             {
@@ -319,7 +332,6 @@ namespace Emby.Server.Core.IO
                     }
                     else
                     {
-                        Logger.Info("Unable to add directory watcher for {0}. It already exists in the dictionary.", path);
                         newWatcher.Dispose();
                     }
 
@@ -405,20 +417,9 @@ namespace Emby.Server.Core.IO
         {
             try
             {
-                Logger.Debug("Changed detected of type " + e.ChangeType + " to " + e.FullPath);
+                //Logger.Debug("Changed detected of type " + e.ChangeType + " to " + e.FullPath);
 
                 var path = e.FullPath;
-
-                // For deletes, use the parent path
-                if (e.ChangeType == WatcherChangeTypes.Deleted)
-                {
-                    var parentPath = Path.GetDirectoryName(path);
-
-                    if (!string.IsNullOrWhiteSpace(parentPath))
-                    {
-                        path = parentPath;
-                    }
-                }
 
                 ReportFileSystemChanged(path);
             }

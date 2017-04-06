@@ -409,24 +409,46 @@ namespace Emby.Server.Implementations.Library
 
             if (options.DeleteFileLocation && locationType != LocationType.Remote && locationType != LocationType.Virtual)
             {
-                foreach (var path in item.GetDeletePaths().ToList())
+                // Assume only the first is required
+                // Add this flag to GetDeletePaths if required in the future
+                var isRequiredForDelete = true;
+
+                foreach (var fileSystemInfo in item.GetDeletePaths().ToList())
                 {
-                    if (_fileSystem.DirectoryExists(path))
+                    try
                     {
-                        _logger.Debug("Deleting path {0}", path);
-                        _fileSystem.DeleteDirectory(path, true);
+                        if (fileSystemInfo.IsDirectory)
+                        {
+                            _logger.Debug("Deleting path {0}", fileSystemInfo.FullName);
+                            _fileSystem.DeleteDirectory(fileSystemInfo.FullName, true);
+                        }
+                        else
+                        {
+                            _logger.Debug("Deleting path {0}", fileSystemInfo.FullName);
+                            _fileSystem.DeleteFile(fileSystemInfo.FullName);
+                        }
                     }
-                    else if (_fileSystem.FileExists(path))
+                    catch (IOException)
                     {
-                        _logger.Debug("Deleting path {0}", path);
-                        _fileSystem.DeleteFile(path);
+                        if (isRequiredForDelete)
+                        {
+                            throw;
+                        }
                     }
+                    catch (UnauthorizedAccessException)
+                    {
+                        if (isRequiredForDelete)
+                        {
+                            throw;
+                        }
+                    }
+
+                    isRequiredForDelete = false;
                 }
 
                 if (parent != null)
                 {
-                    await parent.ValidateChildren(new Progress<double>(), CancellationToken.None)
-                              .ConfigureAwait(false);
+                    await parent.ValidateChildren(new Progress<double>(), CancellationToken.None, new MetadataRefreshOptions(_fileSystem), false) .ConfigureAwait(false);
                 }
             }
             else if (parent != null)
@@ -492,6 +514,11 @@ namespace Emby.Server.Implementations.Library
 
         public Guid GetNewItemId(string key, Type type)
         {
+            return GetNewItemIdInternal(key, type, false);
+        }
+
+        private Guid GetNewItemIdInternal(string key, Type type, bool forceCaseInsensitive)
+        {
             if (string.IsNullOrWhiteSpace(key))
             {
                 throw new ArgumentNullException("key");
@@ -509,7 +536,7 @@ namespace Emby.Server.Implementations.Library
                     .Replace("/", "\\");
             }
 
-            if (!ConfigurationManager.Configuration.EnableCaseSensitiveItemIds)
+            if (forceCaseInsensitive || !ConfigurationManager.Configuration.EnableCaseSensitiveItemIds)
             {
                 key = key.ToLower();
             }
@@ -818,30 +845,6 @@ namespace Emby.Server.Implementations.Library
             return _userRootFolder;
         }
 
-        public Guid? FindIdByPath(string path, bool? isFolder)
-        {
-            // If this returns multiple items it could be tricky figuring out which one is correct. 
-            // In most cases, the newest one will be and the others obsolete but not yet cleaned up
-
-            var query = new InternalItemsQuery
-            {
-                Path = path,
-                IsFolder = isFolder,
-                SortBy = new[] { ItemSortBy.DateCreated },
-                SortOrder = SortOrder.Descending,
-                Limit = 1
-            };
-
-            var id = GetItemIds(query);
-
-            if (id.Count == 0)
-            {
-                return null;
-            }
-
-            return id[0];
-        }
-
         public BaseItem FindByPath(string path, bool? isFolder)
         {
             // If this returns multiple items it could be tricky figuring out which one is correct. 
@@ -867,7 +870,7 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{Person}.</returns>
         public Person GetPerson(string name)
         {
-            return CreateItemByName<Person>(Person.GetPath(name), name);
+            return CreateItemByName<Person>(Person.GetPath, name);
         }
 
         /// <summary>
@@ -877,7 +880,7 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{Studio}.</returns>
         public Studio GetStudio(string name)
         {
-            return CreateItemByName<Studio>(Studio.GetPath(name), name);
+            return CreateItemByName<Studio>(Studio.GetPath, name);
         }
 
         /// <summary>
@@ -887,7 +890,7 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{Genre}.</returns>
         public Genre GetGenre(string name)
         {
-            return CreateItemByName<Genre>(Genre.GetPath(name), name);
+            return CreateItemByName<Genre>(Genre.GetPath, name);
         }
 
         /// <summary>
@@ -897,7 +900,7 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{MusicGenre}.</returns>
         public MusicGenre GetMusicGenre(string name)
         {
-            return CreateItemByName<MusicGenre>(MusicGenre.GetPath(name), name);
+            return CreateItemByName<MusicGenre>(MusicGenre.GetPath, name);
         }
 
         /// <summary>
@@ -907,7 +910,7 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{GameGenre}.</returns>
         public GameGenre GetGameGenre(string name)
         {
-            return CreateItemByName<GameGenre>(GameGenre.GetPath(name), name);
+            return CreateItemByName<GameGenre>(GameGenre.GetPath, name);
         }
 
         /// <summary>
@@ -925,7 +928,7 @@ namespace Emby.Server.Implementations.Library
 
             var name = value.ToString(CultureInfo.InvariantCulture);
 
-            return CreateItemByName<Year>(Year.GetPath(name), name);
+            return CreateItemByName<Year>(Year.GetPath, name);
         }
 
         /// <summary>
@@ -935,10 +938,10 @@ namespace Emby.Server.Implementations.Library
         /// <returns>Task{Genre}.</returns>
         public MusicArtist GetArtist(string name)
         {
-            return CreateItemByName<MusicArtist>(MusicArtist.GetPath(name), name);
+            return CreateItemByName<MusicArtist>(MusicArtist.GetPath, name);
         }
 
-        private T CreateItemByName<T>(string path, string name)
+        private T CreateItemByName<T>(Func<string,string> getPathFn, string name)
             where T : BaseItem, new()
         {
             if (typeof(T) == typeof(MusicArtist))
@@ -959,7 +962,9 @@ namespace Emby.Server.Implementations.Library
                 }
             }
 
-            var id = GetNewItemId(path, typeof(T));
+            var path = getPathFn(name);
+            var forceCaseInsensitiveId = ConfigurationManager.Configuration.EnableNormalizedItemByNameIds;
+            var id = GetNewItemIdInternal(path, typeof(T), forceCaseInsensitiveId);
 
             var item = GetItemById(id) as T;
 
@@ -1927,11 +1932,18 @@ namespace Emby.Server.Implementations.Library
             return ItemRepository.RetrieveItem(id);
         }
 
-        public IEnumerable<Folder> GetCollectionFolders(BaseItem item)
+        public List<Folder> GetCollectionFolders(BaseItem item)
         {
-            while (!(item.GetParent() is AggregateFolder) && item.GetParent() != null)
+            while (item != null)
             {
-                item = item.GetParent();
+                var parent = item.GetParent();
+
+                if (parent == null || parent is AggregateFolder)
+                {
+                    break;
+                }
+
+                item = parent;
             }
 
             if (item == null)
@@ -1941,7 +1953,8 @@ namespace Emby.Server.Implementations.Library
 
             return GetUserRootFolder().Children
                 .OfType<Folder>()
-                .Where(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase) || i.PhysicalLocations.Contains(item.Path, StringComparer.OrdinalIgnoreCase));
+                .Where(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase) || i.PhysicalLocations.Contains(item.Path, StringComparer.OrdinalIgnoreCase))
+                .ToList();
         }
 
         public LibraryOptions GetLibraryOptions(BaseItem item)
@@ -1955,30 +1968,6 @@ namespace Emby.Server.Implementations.Library
             }
 
             var options = collectionFolder == null ? new LibraryOptions() : collectionFolder.GetLibraryOptions();
-
-            if (options.SchemaVersion < 3)
-            {
-                options.SaveLocalMetadata = ConfigurationManager.Configuration.SaveLocalMeta;
-                options.EnableInternetProviders = ConfigurationManager.Configuration.EnableInternetProviders;
-            }
-
-            if (options.SchemaVersion < 2)
-            {
-                var chapterOptions = ConfigurationManager.GetConfiguration<ChapterOptions>("chapters");
-                options.ExtractChapterImagesDuringLibraryScan = chapterOptions.ExtractDuringLibraryScan;
-
-                if (collectionFolder != null)
-                {
-                    if (string.Equals(collectionFolder.CollectionType, "movies", StringComparison.OrdinalIgnoreCase))
-                    {
-                        options.EnableChapterImageExtraction = chapterOptions.EnableMovieChapterImageExtraction;
-                    }
-                    else if (string.Equals(collectionFolder.CollectionType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
-                    {
-                        options.EnableChapterImageExtraction = chapterOptions.EnableEpisodeChapterImageExtraction;
-                    }
-                }
-            }
 
             return options;
         }
@@ -2034,7 +2023,7 @@ namespace Emby.Server.Implementations.Library
 
         private string GetContentTypeOverride(string path, bool inherit)
         {
-            var nameValuePair = ConfigurationManager.Configuration.ContentTypes.FirstOrDefault(i => string.Equals(i.Name, path, StringComparison.OrdinalIgnoreCase) || (inherit && !string.IsNullOrWhiteSpace(i.Name) && _fileSystem.ContainsSubPath(i.Name, path)));
+            var nameValuePair = ConfigurationManager.Configuration.ContentTypes.FirstOrDefault(i => _fileSystem.AreEqual(i.Name, path) || (inherit && !string.IsNullOrWhiteSpace(i.Name) && _fileSystem.ContainsSubPath(i.Name, path)));
             if (nameValuePair != null)
             {
                 return nameValuePair.Value;
@@ -2505,6 +2494,8 @@ namespace Emby.Server.Implementations.Library
                 options.VideoFileExtensions.Remove(".zip");
             }
 
+            options.VideoFileExtensions.Add(".tp");
+
             return options;
         }
 
@@ -2615,7 +2606,7 @@ namespace Emby.Server.Implementations.Library
                 {
                     foreach (var pathInfo in libraryOptions.PathInfos)
                     {
-                        if (string.IsNullOrWhiteSpace(pathInfo.NetworkPath))
+                        if (string.IsNullOrWhiteSpace(pathInfo.Path) || string.IsNullOrWhiteSpace(pathInfo.NetworkPath))
                         {
                             continue;
                         }
@@ -2643,10 +2634,13 @@ namespace Emby.Server.Implementations.Library
 
             foreach (var map in ConfigurationManager.Configuration.PathSubstitutions)
             {
-                var substitutionResult = SubstitutePathInternal(path, map.From, map.To);
-                if (substitutionResult.Item2)
+                if (!string.IsNullOrWhiteSpace(map.From))
                 {
-                    return substitutionResult.Item1;
+                    var substitutionResult = SubstitutePathInternal(path, map.From, map.To);
+                    if (substitutionResult.Item2)
+                    {
+                        return substitutionResult.Item1;
+                    }
                 }
             }
 
@@ -2783,7 +2777,6 @@ namespace Emby.Server.Implementations.Library
             return ItemRepository.UpdatePeople(item.Id, people);
         }
 
-        private readonly SemaphoreSlim _dynamicImageResourcePool = new SemaphoreSlim(1, 1);
         public async Task<ItemImageInfo> ConvertImageToLocal(IHasImages item, ItemImageInfo image, int imageIndex)
         {
             foreach (var url in image.Path.Split('|'))
@@ -2792,7 +2785,7 @@ namespace Emby.Server.Implementations.Library
                 {
                     _logger.Debug("ConvertImageToLocal item {0} - image url: {1}", item.Id, url);
 
-                    await _providerManagerFactory().SaveImage(item, url, _dynamicImageResourcePool, image.Type, imageIndex, CancellationToken.None).ConfigureAwait(false);
+                    await _providerManagerFactory().SaveImage(item, url, image.Type, imageIndex, CancellationToken.None).ConfigureAwait(false);
 
                     var newImage = item.GetImageInfo(image.Type, imageIndex);
 
@@ -3088,7 +3081,7 @@ namespace Emby.Server.Implementations.Library
                 {
                     removeList.Add(contentType);
                 }
-                else if (string.Equals(path, contentType.Name, StringComparison.OrdinalIgnoreCase)
+                else if (_fileSystem.AreEqual(path, contentType.Name)
                     || _fileSystem.ContainsSubPath(path, contentType.Name))
                 {
                     removeList.Add(contentType);

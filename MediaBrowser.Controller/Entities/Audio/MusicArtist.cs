@@ -45,6 +45,15 @@ namespace MediaBrowser.Controller.Entities.Audio
         }
 
         [IgnoreDataMember]
+        public override bool IsDisplayedAsFolder
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+        [IgnoreDataMember]
         public override bool SupportsAddingToPlaylist
         {
             get { return true; }
@@ -57,6 +66,11 @@ namespace MediaBrowser.Controller.Entities.Audio
             {
                 return false;
             }
+        }
+
+        public override double? GetDefaultPrimaryImageAspectRatio()
+        {
+            return 1;
         }
 
         public override bool CanDelete()
@@ -275,7 +289,12 @@ namespace MediaBrowser.Controller.Entities.Audio
             }
         }
 
-        public static string GetPath(string name, bool normalizeName = true)
+        public static string GetPath(string name)
+        {
+            return GetPath(name, true);
+        }
+
+        public static string GetPath(string name, bool normalizeName)
         {
             // Trim the period at the end because windows will have a hard time with that
             var validName = normalizeName ?

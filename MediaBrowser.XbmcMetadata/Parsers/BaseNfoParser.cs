@@ -320,38 +320,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
-                case "budget":
-                    {
-                        var text = reader.ReadElementContentAsString();
-                        var hasBudget = item as IHasBudget;
-                        if (hasBudget != null)
-                        {
-                            double value;
-                            if (double.TryParse(text, NumberStyles.Any, _usCulture, out value))
-                            {
-                                hasBudget.Budget = value;
-                            }
-                        }
-
-                        break;
-                    }
-
-                case "revenue":
-                    {
-                        var text = reader.ReadElementContentAsString();
-                        var hasBudget = item as IHasBudget;
-                        if (hasBudget != null)
-                        {
-                            double value;
-                            if (double.TryParse(text, NumberStyles.Any, _usCulture, out value))
-                            {
-                                hasBudget.Revenue = value;
-                            }
-                        }
-
-                        break;
-                    }
-
                 case "metascore":
                     {
                         var text = reader.ReadElementContentAsString();
@@ -390,17 +358,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         if (!string.IsNullOrWhiteSpace(val))
                         {
                             item.ForcedSortName = val;
-                        }
-                        break;
-                    }
-
-                case "outline":
-                    {
-                        var val = reader.ReadElementContentAsString();
-
-                        if (!string.IsNullOrWhiteSpace(val))
-                        {
-                            item.ShortOverview = val;
                         }
                         break;
                     }
@@ -507,10 +464,9 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            item.ProductionLocations = val.Split('/')
+                            item.ProductionLocations.AddRange(val.Split('/')
                                 .Select(i => i.Trim())
-                                .Where(i => !string.IsNullOrWhiteSpace(i))
-                                .ToList();
+                                .Where(i => !string.IsNullOrWhiteSpace(i)));
                         }
                         break;
                     }
@@ -964,7 +920,20 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     }
 
                 default:
-                    reader.Skip();
+                    string readerName = reader.Name;
+                    string providerIdValue;
+                    if (_validProviderIds.TryGetValue(readerName, out providerIdValue))
+                    {
+                        var id = reader.ReadElementContentAsString();
+                        if (!string.IsNullOrWhiteSpace(id))
+                        {
+                            item.SetProviderId(providerIdValue, id);
+                        }
+                    }
+                    else
+                    {
+                        reader.Skip();
+                    }
                     break;
             }
         }
