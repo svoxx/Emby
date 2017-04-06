@@ -15,6 +15,11 @@ namespace MediaBrowser.Controller.LiveTv
 {
     public class LiveTvProgram : BaseItem, IHasLookupInfo<LiveTvProgramLookupInfo>, IHasStartDate, IHasProgramAttributes
     {
+        public LiveTvProgram()
+        {
+            IsVirtualItem = true;
+        }
+
         public override List<string> GetUserDataKeys()
         {
             var list = base.GetUserDataKeys();
@@ -41,6 +46,19 @@ namespace MediaBrowser.Controller.LiveTv
             }
 
             return list;
+        }
+
+        public override double? GetDefaultPrimaryImageAspectRatio()
+        {
+            if (IsMovie)
+            {
+                double value = 2;
+                value /= 3;
+
+                return value;
+            }
+
+            return null;
         }
 
         [IgnoreDataMember]

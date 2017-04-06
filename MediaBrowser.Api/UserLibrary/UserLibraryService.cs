@@ -360,7 +360,8 @@ namespace MediaBrowser.Api.UserLibrary
                 var currentUser = user;
 
                 var dtos = series
-                    .GetRecursiveChildren(i => i is Episode && i.ParentIndexNumber.HasValue && i.ParentIndexNumber.Value == 0)
+                    .GetEpisodes(user)
+                    .Where(i => i.ParentIndexNumber.HasValue && i.ParentIndexNumber.Value == 0)
                     .OrderBy(i =>
                     {
                         if (i.PremiereDate.HasValue)
@@ -405,13 +406,6 @@ namespace MediaBrowser.Api.UserLibrary
         /// <returns>System.Object.</returns>
         public object Get(GetLocalTrailers request)
         {
-            var result = GetAsync(request);
-
-            return ToOptimizedSerializedResultUsingCache(result);
-        }
-
-        private List<BaseItemDto> GetAsync(GetLocalTrailers request)
-        {
             var user = _userManager.GetUserById(request.UserId);
 
             var item = string.IsNullOrEmpty(request.Id) ? user.RootFolder : _libraryManager.GetItemById(request.Id);
@@ -430,7 +424,7 @@ namespace MediaBrowser.Api.UserLibrary
                 .Select(_libraryManager.GetItemById)
                 .Select(i => _dtoService.GetBaseItemDto(i, dtoOptions, user, item));
 
-            return dtos.ToList();
+            return ToOptimizedSerializedResultUsingCache(dtos);
         }
 
         /// <summary>

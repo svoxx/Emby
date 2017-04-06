@@ -2,16 +2,24 @@
 <html class="preload">
 <head>
     <title>Emby</title>
+
+    <style>
+        .transparentDocument, .backgroundContainer-transparent:not(.withBackdrop) {
+            background: none !important;
+            background-color: transparent !important;
+        }
+
+        .mouseIdle, .mouseIdle * {
+            cursor: none !important;
+        }
+    </style>
+
 </head>
 <body>
     <div class="backdropContainer"></div>
     <div class="backgroundContainer"></div>
-    <div class="mainDrawerPanel">
-        <div class="mainDrawer hide"><div class="mainDrawer-scrollContainer scrollContainer"></div></div>
-        <div class="mainDrawerPanelContent">
-            <div class="skinHeader"></div>
-            <div class="mainAnimatedPages skinBody"></div>
-        </div>
-    </div>
+    <div class="mainDrawer hide"><div class="mainDrawer-scrollContainer scrollContainer"></div></div>
+    <div class="skinHeader"></div>
+    <div class="mainAnimatedPages skinBody"></div>
 </body>
 </html>

@@ -50,8 +50,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     "rottentomatoesid",
                     "language",
                     "tvcomid",
-                    "budget",
-                    "revenue",
                     "tagline",
                     "studio",
                     "genre",
@@ -183,9 +181,18 @@ namespace MediaBrowser.XbmcMetadata.Savers
         /// <returns><c>true</c> if [is enabled for] [the specified item]; otherwise, <c>false</c>.</returns>
         public abstract bool IsEnabledFor(IHasMetadata item, ItemUpdateType updateType);
 
-        protected virtual List<string> GetTagsUsed()
+        protected virtual List<string> GetTagsUsed(IHasMetadata item)
         {
-            return new List<string>();
+            var list = new List<string>();
+            foreach (var providerKey in item.ProviderIds.Keys)
+            {
+                var providerIdTagName = GetTagForProviderKey(providerKey);
+                if (!CommonTags.ContainsKey(providerIdTagName))
+                {
+                    list.Add(providerIdTagName);
+                }
+            }
+            return list;
         }
 
         public void Save(IHasMetadata item, CancellationToken cancellationToken)
@@ -271,7 +278,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     AddMediaInfo(hasMediaSources, writer);
                 }
 
-                var tagsUsed = GetTagsUsed();
+                var tagsUsed = GetTagsUsed(item);
 
                 try
                 {
@@ -316,11 +323,11 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
                     if ((stream.CodecTag ?? string.Empty).IndexOf("xvid", StringComparison.OrdinalIgnoreCase) != -1)
                     {
-                        codec = "xvid;";
+                        codec = "xvid";
                     }
                     else if ((stream.CodecTag ?? string.Empty).IndexOf("divx", StringComparison.OrdinalIgnoreCase) != -1)
                     {
-                        codec = "divx;";
+                        codec = "divx";
                     }
 
                     writer.WriteElementString("codec", codec);
@@ -457,7 +464,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             if (item is Video)
             {
-                var outline = (item.ShortOverview ?? string.Empty)
+                var outline = (item.Tagline ?? string.Empty)
                     .StripHtml()
                     .Replace("&quot;", "'");
 
@@ -570,14 +577,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writer.WriteElementString("website", item.HomePageUrl);
             }
 
-            var rt = item.GetProviderId(MetadataProviders.RottenTomatoes);
-
-            if (!string.IsNullOrEmpty(rt))
-            {
-                writer.WriteElementString("rottentomatoesid", rt);
-                writtenProviderIds.Add(MetadataProviders.RottenTomatoes.ToString());
-            }
-
             var tmdbCollection = item.GetProviderId(MetadataProviders.TmdbCollection);
 
             if (!string.IsNullOrEmpty(tmdbCollection))
@@ -682,20 +681,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
             if (item.VoteCount.HasValue)
             {
                 writer.WriteElementString("votes", item.VoteCount.Value.ToString(UsCulture));
-            }
-
-            var hasBudget = item as IHasBudget;
-            if (hasBudget != null)
-            {
-                if (hasBudget.Budget.HasValue)
-                {
-                    writer.WriteElementString("budget", hasBudget.Budget.Value.ToString(UsCulture));
-                }
-
-                if (hasBudget.Revenue.HasValue)
-                {
-                    writer.WriteElementString("revenue", hasBudget.Revenue.Value.ToString(UsCulture));
-                }
             }
 
             var hasMetascore = item as IHasMetascore;
@@ -834,7 +819,8 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     var providerId = item.ProviderIds[providerKey];
                     if (!string.IsNullOrEmpty(providerId) && !writtenProviderIds.Contains(providerKey))
                     {
-                        writer.WriteElementString(providerKey.ToLower() + "id", providerId);
+                        writer.WriteElementString(GetTagForProviderKey(providerKey), providerId);
+                        writtenProviderIds.Add(providerKey);
                     }
                 }
             }
@@ -846,7 +832,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             AddUserData(item, writer, userManager, userDataRepo, options);
 
-            AddActors(people, writer, libraryManager, fileSystem, config);
+            AddActors(people, writer, libraryManager, fileSystem, config, options.SaveImagePathsInNfo);
 
             var folder = item as BoxSet;
             if (folder != null)
@@ -974,7 +960,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
             writer.WriteEndElement();
         }
 
-        private static void AddActors(List<PersonInfo> people, XmlWriter writer, ILibraryManager libraryManager, IFileSystem fileSystem, IServerConfigurationManager config)
+        private static void AddActors(List<PersonInfo> people, XmlWriter writer, ILibraryManager libraryManager, IFileSystem fileSystem, IServerConfigurationManager config, bool saveImagePath)
         {
             var actors = people
                 .Where(i => !IsPersonType(i, PersonType.Director) && !IsPersonType(i, PersonType.Writer))
@@ -1004,19 +990,22 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     writer.WriteElementString("sortorder", person.SortOrder.Value.ToString(UsCulture));
                 }
 
-                try
+                if (saveImagePath)
                 {
-                    var personEntity = libraryManager.GetPerson(person.Name);
-                    var image = personEntity.GetImageInfo(ImageType.Primary, 0);
-
-                    if (image != null)
+                    try
                     {
-                        writer.WriteElementString("thumb", GetImagePathToSave(image, libraryManager, config));
+                        var personEntity = libraryManager.GetPerson(person.Name);
+                        var image = personEntity.GetImageInfo(ImageType.Primary, 0);
+
+                        if (image != null)
+                        {
+                            writer.WriteElementString("thumb", GetImagePathToSave(image, libraryManager, config));
+                        }
                     }
-                }
-                catch (Exception)
-                {
-                    // Already logged in core
+                    catch (Exception)
+                    {
+                        // Already logged in core
+                    }
                 }
 
                 writer.WriteEndElement();
@@ -1089,6 +1078,11 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     }
                 }
             }
+        }
+
+        private static string GetTagForProviderKey(string providerKey)
+        {
+            return providerKey.ToLower() + "id";
         }
     }
 }

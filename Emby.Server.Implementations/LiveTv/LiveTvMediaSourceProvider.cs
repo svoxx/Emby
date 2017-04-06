@@ -154,6 +154,7 @@ namespace Emby.Server.Implementations.LiveTv
                 _logger.ErrorException("Error probing live tv stream", ex);
             }
 
+            _logger.Info("Live stream info: {0}", _jsonSerializer.SerializeToString(stream));
             return new Tuple<MediaSourceInfo, IDirectStreamProvider>(stream, directStreamProvider);
         }
 
@@ -200,15 +201,7 @@ namespace Emby.Server.Implementations.LiveTv
             }
 
             // Try to estimate this
-            if (!mediaSource.Bitrate.HasValue)
-            {
-                var total = mediaSource.MediaStreams.Select(i => i.BitRate ?? 0).Sum();
-
-                if (total > 0)
-                {
-                    mediaSource.Bitrate = total;
-                }
-            }
+            mediaSource.InferTotalBitrate();
         }
 
         public Task CloseMediaSource(string liveStreamId)

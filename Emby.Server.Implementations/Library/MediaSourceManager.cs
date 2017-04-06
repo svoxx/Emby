@@ -199,6 +199,8 @@ namespace Emby.Server.Implementations.Library
 
                 foreach (var mediaSource in list)
                 {
+                    mediaSource.InferTotalBitrate();
+
                     SetKeyProperties(provider, mediaSource);
                 }
 
@@ -366,6 +368,8 @@ namespace Emby.Server.Implementations.Library
         public async Task<LiveStreamResponse> OpenLiveStream(LiveStreamRequest request, bool enableAutoClose, CancellationToken cancellationToken)
         {
             await _liveStreamSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            enableAutoClose = false;
 
             try
             {

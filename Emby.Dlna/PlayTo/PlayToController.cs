@@ -149,6 +149,11 @@ namespace Emby.Dlna.PlayTo
 
         async void _device_MediaChanged(object sender, MediaChangedEventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             try
             {
                 var streamInfo = await StreamParams.ParseFromUrl(e.OldMediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
@@ -176,6 +181,11 @@ namespace Emby.Dlna.PlayTo
 
         async void _device_PlaybackStopped(object sender, PlaybackStoppedEventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             try
             {
                 var streamInfo = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager)
@@ -239,6 +249,11 @@ namespace Emby.Dlna.PlayTo
 
         async void _device_PlaybackStart(object sender, PlaybackStartEventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             try
             {
                 var info = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
@@ -258,6 +273,11 @@ namespace Emby.Dlna.PlayTo
 
         async void _device_PlaybackProgress(object sender, PlaybackProgressEventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             try
             {
                 var info = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
@@ -522,7 +542,7 @@ namespace Emby.Dlna.PlayTo
             {
                 var list = new ContentFeatureBuilder(profile)
                     .BuildVideoHeader(streamInfo.Container,
-                    streamInfo.VideoCodec,
+                    streamInfo.TargetVideoCodec,
                     streamInfo.TargetAudioCodec,
                     streamInfo.TargetWidth,
                     streamInfo.TargetHeight,

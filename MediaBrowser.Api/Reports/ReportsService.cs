@@ -293,7 +293,11 @@ namespace MediaBrowser.Api.Reports
             // ExcludeLocationTypes
             if (!string.IsNullOrEmpty(request.ExcludeLocationTypes))
             {
-                query.ExcludeLocationTypes = request.ExcludeLocationTypes.Split(',').Select(d => (LocationType)Enum.Parse(typeof(LocationType), d, true)).ToArray();
+                var excludeLocationTypes = request.ExcludeLocationTypes.Split(',').Select(d => (LocationType)Enum.Parse(typeof(LocationType), d, true)).ToArray();
+                if (excludeLocationTypes.Contains(LocationType.Virtual))
+                {
+                    query.IsVirtualItem = false;
+                }
             }
 
             if (!string.IsNullOrEmpty(request.LocationTypes))
@@ -311,12 +315,6 @@ namespace MediaBrowser.Api.Reports
             if (!string.IsNullOrWhiteSpace(request.MaxOfficialRating))
             {
                 query.MaxParentalRating = _localization.GetRatingLevel(request.MaxOfficialRating);
-            }
-
-            // Albums
-            if (!string.IsNullOrEmpty(request.Albums))
-            {
-                query.AlbumNames = request.Albums.Split('|');
             }
 
             return query;

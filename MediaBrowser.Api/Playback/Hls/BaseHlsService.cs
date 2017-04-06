@@ -41,9 +41,16 @@ namespace MediaBrowser.Api.Playback.Hls
         /// <summary>
         /// Gets the segment file extension.
         /// </summary>
-        /// <param name="state">The state.</param>
-        /// <returns>System.String.</returns>
-        protected abstract string GetSegmentFileExtension(StreamState state);
+        protected string GetSegmentFileExtension(StreamRequest request)
+        {
+            var segmentContainer = request.SegmentContainer;
+            if (!string.IsNullOrWhiteSpace(segmentContainer))
+            {
+                return "." + segmentContainer;
+            }
+
+            return ".ts";
+        }
 
         /// <summary>
         /// Gets the type of the transcoding job.
@@ -103,8 +110,11 @@ namespace MediaBrowser.Api.Playback.Hls
                             throw;
                         }
 
-                        var waitForSegments = state.SegmentLength >= 10 ? 2 : (state.SegmentLength > 3 || !isLive ? 3 : 3);
-                        await WaitForMinimumSegmentCount(playlist, waitForSegments, cancellationTokenSource.Token).ConfigureAwait(false);
+                        var minSegments = state.MinSegments;
+                        if (minSegments > 0)
+                        {
+                            await WaitForMinimumSegmentCount(playlist, minSegments, cancellationTokenSource.Token).ConfigureAwait(false);
+                        }
                     }
                 }
                 finally
@@ -223,6 +233,7 @@ namespace MediaBrowser.Api.Playback.Hls
         protected Stream GetPlaylistFileStream(string path)
         {
             var tmpPath = path + ".tmp";
+            tmpPath = path;
 
             try
             {
@@ -236,13 +247,15 @@ namespace MediaBrowser.Api.Playback.Hls
 
         protected override string GetCommandLineArguments(string outputPath, StreamState state, bool isEncoding)
         {
+            var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
+
             var itsOffsetMs = 0;
 
             var itsOffset = itsOffsetMs == 0 ? string.Empty : string.Format("-itsoffset {0} ", TimeSpan.FromMilliseconds(itsOffsetMs).TotalSeconds.ToString(UsCulture));
 
-            var threads = GetNumberOfThreads(state, false);
+            var threads = EncodingHelper.GetNumberOfThreads(state, encodingOptions, false);
 
-            var inputModifier = GetInputModifier(state);
+            var inputModifier = EncodingHelper.GetInputModifier(state, encodingOptions);
 
             // If isEncoding is true we're actually starting ffmpeg
             var startNumberParam = isEncoding ? GetStartNumber(state).ToString(UsCulture) : "0";
@@ -255,15 +268,47 @@ namespace MediaBrowser.Api.Playback.Hls
                     "hls/" + Path.GetFileNameWithoutExtension(outputPath));
             }
 
+            var useGenericSegmenter = true;
+            if (useGenericSegmenter)
+            {
+                var outputTsArg = Path.Combine(Path.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath)) + "%d" + GetSegmentFileExtension(state.Request);
+
+                var timeDeltaParam = String.Empty;
+
+                var segmentFormat = GetSegmentFileExtension(state.Request).TrimStart('.');
+                if (string.Equals(segmentFormat, "ts", StringComparison.OrdinalIgnoreCase))
+                {
+                    segmentFormat = "mpegts";
+                }
+
+                baseUrlParam = string.Format("\"{0}/\"", "hls/" + Path.GetFileNameWithoutExtension(outputPath));
+
+                return string.Format("{0} {1} -map_metadata -1 -map_chapters -1 -threads {2} {3} {4} {5} -f segment -max_delay 5000000 -avoid_negative_ts disabled -start_at_zero -segment_time {6} {10} -individual_header_trailer 0 -segment_format {11} -segment_list_entry_prefix {12} -segment_list_type m3u8 -segment_start_number {7} -segment_list \"{8}\" -y \"{9}\"",
+                    inputModifier,
+                    EncodingHelper.GetInputArgument(state, encodingOptions),
+                    threads,
+                    EncodingHelper.GetMapArgs(state),
+                    GetVideoArguments(state),
+                    GetAudioArguments(state),
+                    state.SegmentLength.ToString(UsCulture),
+                    startNumberParam,
+                    outputPath,
+                    outputTsArg,
+                    timeDeltaParam,
+                    segmentFormat,
+                    baseUrlParam
+                ).Trim();
+            }
+
             // add when stream copying? 
             // -avoid_negative_ts make_zero -fflags +genpts
 
-            var args = string.Format("{0} {1} {2} -map_metadata -1 -map_chapters -1 -threads {3} {4} {5} -fflags +genpts -sc_threshold 0 {6} -hls_time {7} -start_number {8} -hls_list_size {9}{10} -y \"{11}\"",
+            var args = string.Format("{0} {1} {2} -map_metadata -1 -map_chapters -1 -threads {3} {4} {5} -max_delay 5000000 -avoid_negative_ts disabled -start_at_zero {6} -hls_time {7} -individual_header_trailer 0 -start_number {8} -hls_list_size {9}{10} -y \"{11}\"",
                 itsOffset,
                 inputModifier,
-                GetInputArgument(state),
+                EncodingHelper.GetInputArgument(state, encodingOptions),
                 threads,
-                GetMapArgs(state),
+                EncodingHelper.GetMapArgs(state),
                 GetVideoArguments(state),
                 GetAudioArguments(state),
                 state.SegmentLength.ToString(UsCulture),
@@ -284,13 +329,6 @@ namespace MediaBrowser.Api.Playback.Hls
         protected virtual int GetStartNumber(StreamState state)
         {
             return 0;
-        }
-
-        protected bool IsLiveStream(StreamState state)
-        {
-            var isLiveStream = (state.RunTimeTicks ?? 0) == 0;
-
-            return isLiveStream;
         }
 
         public BaseHlsService(IServerConfigurationManager serverConfig, IUserManager userManager, ILibraryManager libraryManager, IIsoManager isoManager, IMediaEncoder mediaEncoder, IFileSystem fileSystem, IDlnaManager dlnaManager, ISubtitleEncoder subtitleEncoder, IDeviceManager deviceManager, IMediaSourceManager mediaSourceManager, IZipClient zipClient, IJsonSerializer jsonSerializer, IAuthorizationContext authorizationContext) : base(serverConfig, userManager, libraryManager, isoManager, mediaEncoder, fileSystem, dlnaManager, subtitleEncoder, deviceManager, mediaSourceManager, zipClient, jsonSerializer, authorizationContext)

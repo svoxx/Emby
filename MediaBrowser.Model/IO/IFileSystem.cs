@@ -10,6 +10,8 @@ namespace MediaBrowser.Model.IO
     /// </summary>
     public interface IFileSystem
     {
+        void AddShortcutHandler(IShortcutHandler handler);
+
         /// <summary>
         /// Determines whether the specified filename is shortcut.
         /// </summary>
@@ -119,6 +121,8 @@ namespace MediaBrowser.Model.IO
         /// <param name="file1">The file1.</param>
         /// <param name="file2">The file2.</param>
         void SwapFiles(string file1, string file2);
+
+        bool AreEqual(string path1, string path2);
 
         /// <summary>
         /// Determines whether [contains sub path] [the specified parent path].

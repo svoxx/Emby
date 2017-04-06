@@ -147,7 +147,7 @@ namespace Emby.Common.Implementations
         /// <value>The configuration manager.</value>
         protected IConfigurationManager ConfigurationManager { get; private set; }
 
-        protected IFileSystem FileSystemManager { get; private set; }
+        public IFileSystem FileSystemManager { get; private set; }
 
         protected IIsoManager IsoManager { get; private set; }
 
@@ -160,12 +160,6 @@ namespace Emby.Common.Implementations
         /// </summary>
         /// <value>The name.</value>
         public abstract string Name { get; }
-
-        /// <summary>
-        /// Gets a value indicating whether this instance is running as service.
-        /// </summary>
-        /// <value><c>true</c> if this instance is running as service; otherwise, <c>false</c>.</value>
-        public abstract bool IsRunningAsService { get; }
 
         protected ICryptoProvider CryptographyProvider = new CryptographyProvider();
 
@@ -533,7 +527,7 @@ return null;
 
             RegisterSingleInstance(FileSystemManager);
 
-            HttpClient = new HttpClientManager.HttpClientManager(ApplicationPaths, LogManager.GetLogger("HttpClient"), FileSystemManager, MemoryStreamFactory);
+            HttpClient = new HttpClientManager.HttpClientManager(ApplicationPaths, LogManager.GetLogger("HttpClient"), FileSystemManager, MemoryStreamFactory, GetDefaultUserAgent);
             RegisterSingleInstance(HttpClient);
 
             RegisterSingleInstance(NetworkManager);
@@ -553,6 +547,30 @@ return null;
             RegisterSingleInstance(CryptographyProvider);
 
             return Task.FromResult(true);
+        }
+
+        private string GetDefaultUserAgent()
+        {
+            var name = FormatAttribute(Name);
+
+            return name + "/" + ApplicationVersion.ToString();
+        }
+
+        private string FormatAttribute(string str)
+        {
+            var arr = str.ToCharArray();
+
+            arr = Array.FindAll<char>(arr, (c => (char.IsLetterOrDigit(c)
+                                              || char.IsWhiteSpace(c))));
+
+            var result = new string(arr);
+
+            if (string.IsNullOrWhiteSpace(result))
+            {
+                result = "Emby";
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -855,7 +873,13 @@ return null;
         /// Gets or sets a value indicating whether this instance can self update.
         /// </summary>
         /// <value><c>true</c> if this instance can self update; otherwise, <c>false</c>.</value>
-        public abstract bool CanSelfUpdate { get; }
+        public virtual bool CanSelfUpdate
+        {
+            get
+            {
+                return false;
+            }
+        }
 
         /// <summary>
         /// Checks for update.

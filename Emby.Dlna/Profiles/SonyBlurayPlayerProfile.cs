@@ -83,7 +83,7 @@ namespace Emby.Dlna.Profiles
                 },
                 new DirectPlayProfile
                 {
-                    Container = "avi,mp4",
+                    Container = "avi,mp4,m4v",
                     VideoCodec = "mpeg4,h264",
                     AudioCodec = "ac3,aac,mp3,pcm",
                     Type = DlnaProfileType.Video
@@ -250,6 +250,13 @@ namespace Emby.Dlna.Profiles
 
                 new ResponseProfile
                 {
+                    Container = "m4v",
+                    MimeType = "video/mpeg",
+                    Type = DlnaProfileType.Video
+                },
+
+                new ResponseProfile
+                {
                     Container = "mpeg",
                     MimeType = "video/mpeg",
                     Type = DlnaProfileType.Video
@@ -260,6 +267,15 @@ namespace Emby.Dlna.Profiles
                     Container = "mp3",
                     MimeType = "audio/mpeg",
                     Type = DlnaProfileType.Audio
+                }
+            };
+
+            SubtitleProfiles = new[]
+            {
+                new SubtitleProfile
+                {
+                    Format = "srt",
+                    Method = SubtitleDeliveryMethod.Embed
                 }
             };
         }

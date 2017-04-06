@@ -8,25 +8,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
     {
         public static string GetInputArgument(List<string> inputFiles, MediaProtocol protocol)
         {
-            if (protocol == MediaProtocol.Http)
-            {
-                var url = inputFiles.First();
-
-                return string.Format("\"{0}\"", url);
-            }
-            if (protocol == MediaProtocol.Rtmp)
-            {
-                var url = inputFiles.First();
-
-                return string.Format("\"{0}\"", url);
-            }
-            if (protocol == MediaProtocol.Rtsp)
-            {
-                var url = inputFiles.First();
-
-                return string.Format("\"{0}\"", url);
-            }
-            if (protocol == MediaProtocol.Udp)
+            if (protocol != MediaProtocol.File)
             {
                 var url = inputFiles.First();
 
@@ -78,16 +60,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
             // Quotes are valid path characters in linux and they need to be escaped here with a leading \
             return path.Replace("\"", "\\\"");
-        }
-
-        public static string GetProbeSizeArgument(int numInputFiles)
-        {
-            return numInputFiles > 1 ? "-probesize 1G" : "";
-        }
-
-        public static string GetAnalyzeDurationArgument(int numInputFiles)
-        {
-            return numInputFiles > 1 ? "-analyzeduration 200M" : "";
         }
     }
 }
