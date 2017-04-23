@@ -72,6 +72,10 @@ namespace MediaBrowser.Controller.MediaEncoding
         [ApiMember(Name = "EnableAutoStreamCopy", Description = "Whether or not to allow automatic stream copy if requested values match the original source. Defaults to true.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool EnableAutoStreamCopy { get; set; }
 
+        public bool AllowVideoStreamCopy { get; set; }
+        public bool AllowAudioStreamCopy { get; set; }
+        public bool BreakOnNonKeyFrames { get; set; }
+
         /// <summary>
         /// Gets or sets the audio sample rate.
         /// </summary>
@@ -189,6 +193,7 @@ namespace MediaBrowser.Controller.MediaEncoding
         public int? TranscodingMaxAudioChannels { get; set; }
         public int? CpuCoreLimit { get; set; }
         public string OutputContainer { get; set; }
+        public string LiveStreamId { get; set; }
 
         /// <summary>
         /// Gets or sets the video codec.
@@ -218,6 +223,8 @@ namespace MediaBrowser.Controller.MediaEncoding
         public BaseEncodingJobOptions()
         {
             EnableAutoStreamCopy = true;
+            AllowVideoStreamCopy = true;
+            AllowAudioStreamCopy = true;
             Context = EncodingContext.Streaming;
         }
     }

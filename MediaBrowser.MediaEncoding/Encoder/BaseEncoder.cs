@@ -350,13 +350,13 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 state.IsoMount = await IsoManager.Mount(state.MediaPath, cancellationToken).ConfigureAwait(false);
             }
 
-            if (state.MediaSource.RequiresOpening && string.IsNullOrWhiteSpace(state.LiveStreamId))
+            if (state.MediaSource.RequiresOpening && string.IsNullOrWhiteSpace(state.Options.LiveStreamId))
             {
                 var liveStreamResponse = await MediaSourceManager.OpenLiveStream(new LiveStreamRequest
                 {
                     OpenToken = state.MediaSource.OpenToken
 
-                }, false, cancellationToken).ConfigureAwait(false);
+                }, cancellationToken).ConfigureAwait(false);
 
                 EncodingHelper.AttachMediaSourceInfo(state, liveStreamResponse.MediaSource, null);
 

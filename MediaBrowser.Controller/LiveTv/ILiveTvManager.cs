@@ -157,7 +157,7 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="mediaSourceId">The media source identifier.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{StreamResponseInfo}.</returns>
-        Task<Tuple<MediaSourceInfo, IDirectStreamProvider, bool>> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken);
+        Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the program.
@@ -367,7 +367,7 @@ namespace MediaBrowser.Controller.LiveTv
         /// <param name="items">The items.</param>
         /// <param name="options">The options.</param>
         /// <param name="user">The user.</param>
-        void AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> items, DtoOptions options, User user);
+        Task AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> items, DtoOptions options, User user);
 
         /// <summary>
         /// Called when [recording file deleted].

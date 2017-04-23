@@ -261,7 +261,7 @@ namespace Emby.Server.Implementations.LiveTv
             return info.Item1;
         }
 
-        public Task<Tuple<MediaSourceInfo, IDirectStreamProvider, bool>> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken)
+        public Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> GetChannelStream(string id, string mediaSourceId, CancellationToken cancellationToken)
         {
             return GetLiveStream(id, mediaSourceId, true, cancellationToken);
         }
@@ -323,7 +323,7 @@ namespace Emby.Server.Implementations.LiveTv
             return _services.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
-        private async Task<Tuple<MediaSourceInfo, IDirectStreamProvider, bool>> GetLiveStream(string id, string mediaSourceId, bool isChannel, CancellationToken cancellationToken)
+        private async Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> GetLiveStream(string id, string mediaSourceId, bool isChannel, CancellationToken cancellationToken)
         {
             if (string.Equals(id, mediaSourceId, StringComparison.OrdinalIgnoreCase))
             {
@@ -334,7 +334,6 @@ namespace Emby.Server.Implementations.LiveTv
             bool isVideo;
             ILiveTvService service;
             IDirectStreamProvider directStreamProvider = null;
-            var assumeInterlaced = false;
 
             if (isChannel)
             {
@@ -383,12 +382,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             Normalize(info, service, isVideo);
 
-            if (!(service is EmbyTV.EmbyTV))
-            {
-                assumeInterlaced = true;
-            }
-
-            return new Tuple<MediaSourceInfo, IDirectStreamProvider, bool>(info, directStreamProvider, assumeInterlaced);
+            return new Tuple<MediaSourceInfo, IDirectStreamProvider>(info, directStreamProvider);
         }
 
         private void Normalize(MediaSourceInfo mediaSource, ILiveTvService service, bool isVideo)
@@ -491,6 +485,11 @@ namespace Emby.Server.Implementations.LiveTv
                     if (stream.Type == MediaStreamType.Video && string.IsNullOrWhiteSpace(stream.NalLengthSize))
                     {
                         stream.NalLengthSize = "0";
+                    }
+
+                    if (stream.Type == MediaStreamType.Video)
+                    {
+                        stream.IsInterlaced = true;
                     }
                 }
             }
@@ -1015,29 +1014,28 @@ namespace Emby.Server.Implementations.LiveTv
                 }
             }
 
-            IEnumerable<LiveTvProgram> programs = _libraryManager.QueryItems(internalQuery).Items.Cast<LiveTvProgram>();
+            var programList = _libraryManager.QueryItems(internalQuery).Items.Cast<LiveTvProgram>().ToList();
+            var totalCount = programList.Count;
 
-            var programList = programs.ToList();
+            IOrderedEnumerable<LiveTvProgram> orderedPrograms = programList.OrderBy(i => i.StartDate.Date);
 
-            var factorChannelWatchCount = (query.IsAiring ?? false) || (query.IsKids ?? false) || (query.IsSports ?? false) || (query.IsMovie ?? false) || (query.IsNews ?? false) || (query.IsSeries ?? false);
+            if (query.IsAiring ?? false)
+            {
+                orderedPrograms = orderedPrograms
+                    .ThenByDescending(i => GetRecommendationScore(i, user.Id, true));
+            }
 
-            programs = programList.OrderBy(i => i.StartDate.Date)
-                .ThenByDescending(i => GetRecommendationScore(i, user.Id, factorChannelWatchCount))
-                .ThenBy(i => i.StartDate);
+            IEnumerable<LiveTvProgram> programs = orderedPrograms;
 
             if (query.Limit.HasValue)
             {
                 programs = programs.Take(query.Limit.Value);
             }
 
-            programList = programs.ToList();
-
-            var returnArray = programList.ToArray();
-
             var result = new QueryResult<LiveTvProgram>
             {
-                Items = returnArray,
-                TotalRecordCount = returnArray.Length
+                Items = programs.ToArray(),
+                TotalRecordCount = totalCount
             };
 
             return result;
@@ -2285,7 +2283,7 @@ namespace Emby.Server.Implementations.LiveTv
             };
         }
 
-        public void AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> tuples, DtoOptions options, User user)
+        public async Task AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> tuples, DtoOptions options, User user)
         {
             var now = DateTime.UtcNow;
 
@@ -2305,6 +2303,12 @@ namespace Emby.Server.Implementations.LiveTv
 
             RemoveFields(options);
 
+            var currentProgramsList = new List<BaseItem>();
+            var currentChannelsDict = new Dictionary<string, BaseItemDto>();
+
+            var addCurrentProgram = options.AddCurrentProgram;
+            var addMediaSources = options.Fields.Contains(ItemFields.MediaSources);
+
             foreach (var tuple in tuples)
             {
                 var dto = tuple.Item1;
@@ -2315,19 +2319,38 @@ namespace Emby.Server.Implementations.LiveTv
                 dto.ChannelType = channel.ChannelType;
                 dto.ServiceName = channel.ServiceName;
 
-                if (options.Fields.Contains(ItemFields.MediaSources))
+                currentChannelsDict[dto.Id] = dto;
+
+                if (addMediaSources)
                 {
                     dto.MediaSources = channel.GetMediaSources(true).ToList();
                 }
 
-                if (options.AddCurrentProgram)
+                if (addCurrentProgram)
                 {
                     var channelIdString = channel.Id.ToString("N");
                     var currentProgram = programs.FirstOrDefault(i => string.Equals(i.ChannelId, channelIdString));
 
                     if (currentProgram != null)
                     {
-                        dto.CurrentProgram = _dtoService.GetBaseItemDto(currentProgram, options, user);
+                        currentProgramsList.Add(currentProgram);
+                    }
+                }
+            }
+
+            if (addCurrentProgram)
+            {
+                var currentProgramDtos = await _dtoService.GetBaseItemDtos(currentProgramsList, options, user).ConfigureAwait(false);
+
+                foreach (var programDto in currentProgramDtos)
+                {
+                    if (!string.IsNullOrWhiteSpace(programDto.ChannelId))
+                    {
+                        BaseItemDto channelDto;
+                        if (currentChannelsDict.TryGetValue(programDto.ChannelId, out channelDto))
+                        {
+                            channelDto.CurrentProgram = programDto;
+                        }
                     }
                 }
             }
