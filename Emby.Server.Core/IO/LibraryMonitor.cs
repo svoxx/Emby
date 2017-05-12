@@ -294,6 +294,15 @@ namespace Emby.Server.Core.IO
                 return;
             }
 
+            if (_environmentInfo.OperatingSystem != MediaBrowser.Model.System.OperatingSystem.Windows)
+            {
+                if (path.StartsWith("\\\\", StringComparison.OrdinalIgnoreCase) || path.StartsWith("smb://", StringComparison.OrdinalIgnoreCase))
+                {
+                    // not supported
+                    return;
+                }
+            }
+
             // Already being watched
             if (_fileSystemWatchers.ContainsKey(path))
             {
@@ -453,7 +462,7 @@ namespace Emby.Server.Core.IO
             // If the parent of an ignored path has a change event, ignore that too
             if (tempIgnorePaths.Any(i =>
             {
-                if (string.Equals(i, path, StringComparison.OrdinalIgnoreCase))
+                if (_fileSystem.AreEqual(i, path))
                 {
                     Logger.Debug("Ignoring change to {0}", path);
                     return true;
@@ -466,10 +475,10 @@ namespace Emby.Server.Core.IO
                 }
 
                 // Go up a level
-                var parent = Path.GetDirectoryName(i);
+                var parent = _fileSystem.GetDirectoryName(i);
                 if (!string.IsNullOrEmpty(parent))
                 {
-                    if (string.Equals(parent, path, StringComparison.OrdinalIgnoreCase))
+                    if (_fileSystem.AreEqual(parent, path))
                     {
                         Logger.Debug("Ignoring change to {0}", path);
                         return true;
@@ -492,7 +501,7 @@ namespace Emby.Server.Core.IO
 
         private void CreateRefresher(string path)
         {
-            var parentPath = Path.GetDirectoryName(path);
+            var parentPath = _fileSystem.GetDirectoryName(path);
 
             lock (_activeRefreshers)
             {
@@ -500,7 +509,7 @@ namespace Emby.Server.Core.IO
                 foreach (var refresher in refreshers)
                 {
                     // Path is already being refreshed
-                    if (string.Equals(path, refresher.Path, StringComparison.Ordinal))
+                    if (_fileSystem.AreEqual(path, refresher.Path))
                     {
                         refresher.RestartTimer();
                         return;
@@ -521,7 +530,7 @@ namespace Emby.Server.Core.IO
                     }
 
                     // They are siblings. Rebase the refresher to the parent folder.
-                    if (string.Equals(parentPath, Path.GetDirectoryName(refresher.Path), StringComparison.Ordinal))
+                    if (string.Equals(parentPath, _fileSystem.GetDirectoryName(refresher.Path), StringComparison.Ordinal))
                     {
                         refresher.ResetPath(parentPath, path);
                         return;
