@@ -240,7 +240,6 @@ namespace MediaBrowser.Api
             item.OriginalTitle = string.IsNullOrWhiteSpace(request.OriginalTitle) ? null : request.OriginalTitle;
 
             item.CriticRating = request.CriticRating;
-            item.CriticRatingSummary = request.CriticRatingSummary;
 
             item.DisplayMediaType = request.DisplayMediaType;
             item.CommunityRating = request.CommunityRating;
@@ -334,12 +333,6 @@ namespace MediaBrowser.Api
             if (video != null)
             {
                 video.Video3DFormat = request.Video3DFormat;
-            }
-
-            var hasAwards = item as IHasAwards;
-            if (hasAwards != null)
-            {
-                hasAwards.AwardSummary = request.AwardSummary;
             }
 
             var game = item as Game;

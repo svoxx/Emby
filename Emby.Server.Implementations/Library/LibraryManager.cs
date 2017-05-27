@@ -41,6 +41,7 @@ using SortOrder = MediaBrowser.Model.Entities.SortOrder;
 using VideoResolver = MediaBrowser.Naming.Video.VideoResolver;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Tasks;
 
 namespace Emby.Server.Implementations.Library
@@ -375,11 +376,22 @@ namespace Emby.Server.Implementations.Library
                 throw new ArgumentNullException("item");
             }
 
-            _logger.Debug("Deleting item, Type: {0}, Name: {1}, Path: {2}, Id: {3}",
-                item.GetType().Name,
-                item.Name ?? "Unknown name",
-                item.Path ?? string.Empty,
-                item.Id);
+            if (item is LiveTvProgram)
+            {
+                _logger.Debug("Deleting item, Type: {0}, Name: {1}, Path: {2}, Id: {3}",
+                    item.GetType().Name,
+                    item.Name ?? "Unknown name",
+                    item.Path ?? string.Empty,
+                    item.Id);
+            }
+            else
+            {
+                _logger.Info("Deleting item, Type: {0}, Name: {1}, Path: {2}, Id: {3}",
+                    item.GetType().Name,
+                    item.Name ?? "Unknown name",
+                    item.Path ?? string.Empty,
+                    item.Id);
+            }
 
             var parent = item.Parent;
 
@@ -1185,6 +1197,7 @@ namespace Emby.Server.Implementations.Library
                 catch (OperationCanceledException)
                 {
                     _logger.Info("Post-scan task cancelled: {0}", task.GetType().Name);
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -1950,8 +1963,34 @@ namespace Emby.Server.Implementations.Library
                 return new List<Folder>();
             }
 
-            return GetUserRootFolder().Children
-                .OfType<Folder>()
+            return GetCollectionFoldersInternal(item, GetUserRootFolder().Children.OfType<Folder>().ToList());
+        }
+
+        public List<Folder> GetCollectionFolders(BaseItem item, List<Folder> allUserRootChildren)
+        {
+            while (item != null)
+            {
+                var parent = item.GetParent();
+
+                if (parent == null || parent is AggregateFolder)
+                {
+                    break;
+                }
+
+                item = parent;
+            }
+
+            if (item == null)
+            {
+                return new List<Folder>();
+            }
+
+            return GetCollectionFoldersInternal(item, allUserRootChildren);
+        }
+
+        private List<Folder> GetCollectionFoldersInternal(BaseItem item, List<Folder> allUserRootChildren)
+        {
+            return allUserRootChildren
                 .Where(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase) || i.PhysicalLocations.Contains(item.Path, StringComparer.OrdinalIgnoreCase))
                 .ToList();
         }
@@ -2114,7 +2153,8 @@ namespace Emby.Server.Implementations.Library
                     // Not sure why this is necessary but need to figure it out
                     // View images are not getting utilized without this
                     ForceSave = true
-                });
+
+                }, RefreshPriority.Normal);
             }
 
             return item;
@@ -2176,7 +2216,8 @@ namespace Emby.Server.Implementations.Library
                 {
                     // Need to force save to increment DateLastSaved
                     ForceSave = true
-                });
+
+                }, RefreshPriority.Normal);
             }
 
             return item;
@@ -2240,7 +2281,8 @@ namespace Emby.Server.Implementations.Library
                 {
                     // Need to force save to increment DateLastSaved
                     ForceSave = true
-                });
+
+                }, RefreshPriority.Normal);
             }
 
             return item;
@@ -2316,7 +2358,7 @@ namespace Emby.Server.Implementations.Library
                 {
                     // Need to force save to increment DateLastSaved
                     ForceSave = true
-                });
+                }, RefreshPriority.Normal);
             }
 
             return item;
@@ -2565,7 +2607,7 @@ namespace Emby.Server.Implementations.Library
                 }).OrderBy(i => i.Path).ToList();
         }
 
-        private static readonly string[] ExtrasSubfolderNames = new[] { "extras", "specials", "shorts", "scenes", "featurettes", "behind the scenes", "deleted scenes" };
+        private static readonly string[] ExtrasSubfolderNames = new[] { "extras", "specials", "shorts", "scenes", "featurettes", "behind the scenes", "deleted scenes", "interviews" };
 
         public IEnumerable<Video> FindExtras(BaseItem owner, List<FileSystemMetadata> fileSystemChildren, IDirectoryService directoryService)
         {

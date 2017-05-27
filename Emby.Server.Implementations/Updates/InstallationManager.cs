@@ -250,7 +250,7 @@ namespace Emby.Server.Implementations.Updates
 
                 }).ConfigureAwait(false);
 
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(PackageCachePath));
+                _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(PackageCachePath));
 
                 _fileSystem.CopyFile(tempFile, PackageCachePath, true);
                 _lastPackageUpdateTime = DateTime.UtcNow;
@@ -270,9 +270,14 @@ namespace Emby.Server.Implementations.Updates
             }
         }
 
+        private PackageVersionClass GetSystemUpdateLevel()
+        {
+            return _applicationHost.SystemUpdateLevel;
+        }
+
         private TimeSpan GetCacheLength()
         {
-            switch (_config.CommonConfiguration.SystemUpdateLevel)
+            switch (GetSystemUpdateLevel())
             {
                 case PackageVersionClass.Beta:
                     return TimeSpan.FromMinutes(30);
@@ -424,10 +429,12 @@ namespace Emby.Server.Implementations.Updates
                     .ToList();
             }
 
+            var systemUpdateLevel = GetSystemUpdateLevel();
+
             // Figure out what needs to be installed
             var packages = plugins.Select(p =>
             {
-                var latestPluginInfo = GetLatestCompatibleVersion(catalog, p.Name, p.Id.ToString(), applicationVersion, _config.CommonConfiguration.SystemUpdateLevel);
+                var latestPluginInfo = GetLatestCompatibleVersion(catalog, p.Name, p.Id.ToString(), applicationVersion, systemUpdateLevel);
 
                 return latestPluginInfo != null && GetPackageVersion(latestPluginInfo) > p.Version ? latestPluginInfo : null;
 
@@ -620,7 +627,7 @@ namespace Emby.Server.Implementations.Updates
             // Success - move it to the real target 
             try
             {
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(target));
+                _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(target));
                 _fileSystem.CopyFile(tempFile, target, true);
                 //If it is an archive - write out a version file so we know what it is
                 if (isArchive)
@@ -657,9 +664,19 @@ namespace Emby.Server.Implementations.Updates
             // Remove it the quick way for now
             _applicationHost.RemovePlugin(plugin);
 
-            _logger.Info("Deleting plugin file {0}", plugin.AssemblyFilePath);
+            var path = plugin.AssemblyFilePath;
+            _logger.Info("Deleting plugin file {0}", path);
 
-            _fileSystem.DeleteFile(plugin.AssemblyFilePath);
+            // Make this case-insensitive to account for possible incorrect assembly naming
+            var file = _fileSystem.GetFilePaths(_fileSystem.GetDirectoryName(path))
+                .FirstOrDefault(i => string.Equals(i, path, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(file))
+            {
+                path = file;
+            }
+
+            _fileSystem.DeleteFile(path);
 
             OnPluginUninstalled(plugin);
 

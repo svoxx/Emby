@@ -39,6 +39,7 @@ using MediaBrowser.Model.FileOrganization;
 using MediaBrowser.Model.System;
 using MediaBrowser.Model.Threading;
 using MediaBrowser.Model.Extensions;
+using MediaBrowser.Model.Querying;
 
 namespace Emby.Server.Implementations.LiveTv.EmbyTV
 {
@@ -421,7 +422,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                 {
                     if (!string.IsNullOrWhiteSpace(epgChannel.Name))
                     {
-                        tunerChannel.Name = epgChannel.Name;
+                        //tunerChannel.Name = epgChannel.Name;
                     }
                     if (!string.IsNullOrWhiteSpace(epgChannel.ImageUrl))
                     {
@@ -1230,7 +1231,8 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                     RequiresOpening = false,
                     RequiresClosing = false,
                     Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.Http,
-                    BufferMs = 0
+                    BufferMs = 0,
+                    IgnoreDts = true
                 };
 
                 var isAudio = false;
@@ -1495,7 +1497,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
 
                 _libraryManager.RegisterIgnoredPath(recordPath);
                 _libraryMonitor.ReportFileSystemChangeBeginning(recordPath);
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(recordPath));
+                _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(recordPath));
                 activeRecordingInfo.Path = recordPath;
 
                 var duration = recordingEndDate - DateTime.UtcNow;
@@ -1512,11 +1514,10 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                     _timerProvider.AddOrUpdate(timer, false);
 
                     SaveRecordingMetadata(timer, recordPath, seriesPath);
-                    EnforceKeepUpTo(timer);
+                    EnforceKeepUpTo(timer, seriesPath);
                 };
 
-                await recorder.Record(mediaStreamInfo, recordPath, duration, onStarted, cancellationToken)
-                        .ConfigureAwait(false);
+                await recorder.Record(mediaStreamInfo, recordPath, duration, onStarted, cancellationToken).ConfigureAwait(false);
 
                 recordingStatus = RecordingStatus.Completed;
                 _logger.Info("Recording completed: {0}", recordPath);
@@ -1583,9 +1584,13 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
             }, _logger);
         }
 
-        private async void EnforceKeepUpTo(TimerInfo timer)
+        private async void EnforceKeepUpTo(TimerInfo timer, string seriesPath)
         {
             if (string.IsNullOrWhiteSpace(timer.SeriesTimerId))
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(seriesPath))
             {
                 return;
             }
@@ -1621,6 +1626,43 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                     .ToList();
 
                 await DeleteLibraryItemsForTimers(timersToDelete).ConfigureAwait(false);
+
+                var librarySeries = _libraryManager.FindByPath(seriesPath, true) as Folder;
+
+                if (librarySeries == null)
+                {
+                    return;
+                }
+
+                var episodesToDelete = (await librarySeries.GetItems(new InternalItemsQuery
+                {
+                    SortBy = new[] { ItemSortBy.DateCreated },
+                    SortOrder = SortOrder.Descending,
+                    IsVirtualItem = false,
+                    IsFolder = false,
+                    Recursive = true
+
+                }).ConfigureAwait(false))
+                    .Items
+                    .Where(i => i.LocationType == LocationType.FileSystem && _fileSystem.FileExists(i.Path))
+                    .Skip(seriesTimer.KeepUpTo - 1)
+                    .ToList();
+
+                foreach (var item in episodesToDelete)
+                {
+                    try
+                    {
+                        await _libraryManager.DeleteItem(item, new DeleteOptions
+                        {
+                            DeleteFileLocation = true
+
+                        }).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.ErrorException("Error deleting item", ex);
+                    }
+                }
             }
             finally
             {
@@ -1658,7 +1700,8 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                 await _libraryManager.DeleteItem(libraryItem, new DeleteOptions
                 {
                     DeleteFileLocation = true
-                });
+
+                }).ConfigureAwait(false);
             }
             else
             {
@@ -1682,7 +1725,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
 
             while (FileExists(path, timerId))
             {
-                var parent = Path.GetDirectoryName(originalPath);
+                var parent = _fileSystem.GetDirectoryName(originalPath);
                 var name = Path.GetFileNameWithoutExtension(originalPath);
                 name += "-" + index.ToString(CultureInfo.InvariantCulture);
 
@@ -1722,7 +1765,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
 
                 if (regInfo.IsValid)
                 {
-                    return new EncodedRecorder(_logger, _fileSystem, _mediaEncoder, _config.ApplicationPaths, _jsonSerializer, config, _httpClient, _processFactory);
+                    return new EncodedRecorder(_logger, _fileSystem, _mediaEncoder, _config.ApplicationPaths, _jsonSerializer, config, _httpClient, _processFactory, _config);
                 }
             }
 
@@ -1849,7 +1892,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                 return;
             }
 
-            var imageSavePath = Path.Combine(Path.GetDirectoryName(recordingPath), imageSaveFilenameWithoutExtension);
+            var imageSavePath = Path.Combine(_fileSystem.GetDirectoryName(recordingPath), imageSaveFilenameWithoutExtension);
 
             // preserve original image extension
             imageSavePath = Path.ChangeExtension(imageSavePath, Path.GetExtension(image.Path));
@@ -2112,11 +2155,6 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                         writer.WriteElementString("mpaa", item.OfficialRating);
                     }
 
-                    if (!string.IsNullOrEmpty(item.OfficialRatingDescription))
-                    {
-                        writer.WriteElementString("mpaadescription", item.OfficialRatingDescription);
-                    }
-
                     var overview = (item.Overview ?? string.Empty)
                         .StripHtml()
                         .Replace("&quot;", "'");
@@ -2206,11 +2244,6 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                     if (item.CriticRating.HasValue)
                     {
                         writer.WriteElementString("criticrating", item.CriticRating.Value.ToString(CultureInfo.InvariantCulture));
-                    }
-
-                    if (!string.IsNullOrEmpty(item.CriticRatingSummary))
-                    {
-                        writer.WriteElementString("criticratingsummary", item.CriticRatingSummary);
                     }
 
                     if (!string.IsNullOrWhiteSpace(item.Tagline))
@@ -2507,7 +2540,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
         private void SaveEpgDataForChannel(string channelId, List<ProgramInfo> epgData)
         {
             var path = GetChannelEpgCachePath(channelId);
-            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(path));
             lock (_epgLock)
             {
                 _jsonSerializer.SerializeToFile(epgData, path);

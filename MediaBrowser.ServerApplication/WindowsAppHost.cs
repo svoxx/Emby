@@ -17,13 +17,15 @@ using MediaBrowser.Controller.Sync;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.System;
+using MediaBrowser.Model.Updates;
+using MediaBrowser.Server.Startup.Common;
 using MediaBrowser.ServerApplication.Native;
 
 namespace MediaBrowser.ServerApplication
 {
     public class WindowsAppHost : ApplicationHost
     {
-        public WindowsAppHost(ServerApplicationPaths applicationPaths, ILogManager logManager, StartupOptions options, IFileSystem fileSystem, IPowerManagement powerManagement, string releaseAssetFilename, IEnvironmentInfo environmentInfo, MediaBrowser.Controller.Drawing.IImageEncoder imageEncoder, ISystemEvents systemEvents, IMemoryStreamFactory memoryStreamFactory, MediaBrowser.Common.Net.INetworkManager networkManager, Action<string, string> certificateGenerator, Func<string> defaultUsernameFactory)
+        public WindowsAppHost(ServerApplicationPaths applicationPaths, ILogManager logManager, StartupOptions options, IFileSystem fileSystem, IPowerManagement powerManagement, string releaseAssetFilename, IEnvironmentInfo environmentInfo, MediaBrowser.Controller.Drawing.IImageEncoder imageEncoder, ISystemEvents systemEvents, IMemoryStreamFactory memoryStreamFactory, MediaBrowser.Common.Net.INetworkManager networkManager, Action<string, string, string> certificateGenerator, Func<string> defaultUsernameFactory)
             : base(applicationPaths, logManager, options, fileSystem, powerManagement, releaseAssetFilename, environmentInfo, imageEncoder, systemEvents, memoryStreamFactory, networkManager, certificateGenerator, defaultUsernameFactory)
         {
         }
@@ -51,6 +53,11 @@ namespace MediaBrowser.ServerApplication
         public override void EnableLoopback(string appName)
         {
             LoopUtil.Run(appName);
+        }
+
+        public override PackageVersionClass SystemUpdateLevel
+        {
+            get { return UpdateLevelHelper.GetSystemUpdateLevel(ConfigurationManager); }
         }
 
         protected override List<Assembly> GetAssembliesWithPartsInternal()

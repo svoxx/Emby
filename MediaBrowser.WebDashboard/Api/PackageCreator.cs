@@ -98,8 +98,8 @@ namespace MediaBrowser.WebDashboard.Api
             }
 
             path = GetDashboardResourcePath(path);
-            var parent = Path.GetDirectoryName(path);
-
+            var parent = _fileSystem.GetDirectoryName(path);
+            
             return string.Equals(_basePath, parent, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(Path.Combine(_basePath, "voice"), parent, StringComparison.OrdinalIgnoreCase);
         }
@@ -280,9 +280,7 @@ namespace MediaBrowser.WebDashboard.Api
 
             var files = new List<string>();
 
-            files.Add("bower_components/requirejs/require.js" + versionString);
-
-            files.Add("scripts/site.js" + versionString);
+            files.Add("scripts/apploader.js" + versionString);
 
             if (string.Equals(mode, "cordova", StringComparison.OrdinalIgnoreCase))
             {

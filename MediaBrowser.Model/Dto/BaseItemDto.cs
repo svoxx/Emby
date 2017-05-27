@@ -79,8 +79,6 @@ namespace MediaBrowser.Model.Dto
         public string PreferredMetadataLanguage { get; set; }
         public string PreferredMetadataCountryCode { get; set; }
 
-        public string AwardSummary { get; set; }
-
         /// <summary>
         /// Gets or sets a value indicating whether [supports synchronize].
         /// </summary>
@@ -164,12 +162,6 @@ namespace MediaBrowser.Model.Dto
         public string GameSystem { get; set; }
 
         public string[] ProductionLocations { get; set; }
-
-        /// <summary>
-        /// Gets or sets the critic rating summary.
-        /// </summary>
-        /// <value>The critic rating summary.</value>
-        public string CriticRatingSummary { get; set; }
 
         public List<string> MultiPartGameFiles { get; set; }
 

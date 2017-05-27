@@ -49,21 +49,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
         /// </summary>
         private readonly SemaphoreSlim _thumbnailResourcePool = new SemaphoreSlim(1, 1);
 
-        /// <summary>
-        /// The video image resource pool
-        /// </summary>
-        private readonly SemaphoreSlim _videoImageResourcePool = new SemaphoreSlim(1, 1);
-
-        /// <summary>
-        /// The audio image resource pool
-        /// </summary>
-        private readonly SemaphoreSlim _audioImageResourcePool = new SemaphoreSlim(2, 2);
-
-        /// <summary>
-        /// The FF probe resource pool
-        /// </summary>
-        private readonly SemaphoreSlim _ffProbeResourcePool = new SemaphoreSlim(2, 2);
-
         public string FFMpegPath { get; private set; }
 
         public string FFProbePath { get; private set; }
@@ -202,18 +187,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
         }
 
-        public bool IsDefaultEncoderPath
-        {
-            get
-            {
-                var path = FFMpegPath;
-
-                var parentPath = Path.Combine(ConfigurationManager.ApplicationPaths.ProgramDataPath, "ffmpeg", "20160410");
-
-                return FileSystem.ContainsSubPath(parentPath, path);
-            }
-        }
-
         private bool IsSystemInstalledPath(string path)
         {
             if (path.IndexOf("/", StringComparison.Ordinal) == -1 && path.IndexOf("\\", StringComparison.Ordinal) == -1)
@@ -237,12 +210,11 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
                 if (EnableEncoderFontFile)
                 {
-                    var directory = Path.GetDirectoryName(FFMpegPath);
+                    var directory = FileSystem.GetDirectoryName(FFMpegPath);
 
                     if (!string.IsNullOrWhiteSpace(directory) && FileSystem.ContainsSubPath(ConfigurationManager.ApplicationPaths.ProgramDataPath, directory))
                     {
-                        await new FontConfigLoader(_httpClient, ConfigurationManager.ApplicationPaths, _logger, _zipClient,
-                                FileSystem).DownloadFonts(directory).ConfigureAwait(false);
+                        await new FontConfigLoader(_httpClient, ConfigurationManager.ApplicationPaths, _logger, _zipClient, FileSystem).DownloadFonts(directory).ConfigureAwait(false);
                     }
                 }
             }
@@ -443,7 +415,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
         private string GetProbePathFromEncoderPath(string appPath)
         {
-            return FileSystem.GetFilePaths(Path.GetDirectoryName(appPath))
+            return FileSystem.GetFilePaths(FileSystem.GetDirectoryName(appPath))
                 .FirstOrDefault(i => string.Equals(Path.GetFileNameWithoutExtension(i), "ffprobe", StringComparison.OrdinalIgnoreCase));
         }
 
@@ -601,20 +573,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             using (var processWrapper = new ProcessWrapper(process, this, _logger))
             {
-                await _ffProbeResourcePool.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-                try
-                {
-                    StartProcess(processWrapper);
-                }
-                catch (Exception ex)
-                {
-                    _ffProbeResourcePool.Release();
-
-                    _logger.ErrorException("Error starting ffprobe", ex);
-
-                    throw;
-                }
+                StartProcess(processWrapper);
 
                 try
                 {
@@ -665,37 +624,21 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
                     throw;
                 }
-                finally
-                {
-                    _ffProbeResourcePool.Release();
-                }
             }
         }
 
         private bool DetectInterlaced(MediaSourceInfo video, MediaStream videoStream)
         {
-            var formats = (video.Container ?? string.Empty).Split(',').ToList();
-            var enableInterlacedDection = formats.Contains("vob", StringComparer.OrdinalIgnoreCase) ||
-                                          formats.Contains("m2ts", StringComparer.OrdinalIgnoreCase) ||
-                                          formats.Contains("ts", StringComparer.OrdinalIgnoreCase) ||
-                                          formats.Contains("mpegts", StringComparer.OrdinalIgnoreCase) ||
-                                          formats.Contains("wtv", StringComparer.OrdinalIgnoreCase);
-
             // If it's mpeg based, assume true
             if ((videoStream.Codec ?? string.Empty).IndexOf("mpeg", StringComparison.OrdinalIgnoreCase) != -1)
             {
-                if (enableInterlacedDection)
-                {
-                    return true;
-                }
-            }
-            else
-            {
-                // If the video codec is not some form of mpeg, then take a shortcut and limit this to containers that are likely to have interlaced content
-                if (!enableInterlacedDection)
-                {
-                    return false;
-                }
+                var formats = (video.Container ?? string.Empty).Split(',').ToList();
+                return formats.Contains("vob", StringComparer.OrdinalIgnoreCase) ||
+                                              formats.Contains("m2ts", StringComparer.OrdinalIgnoreCase) ||
+                                              formats.Contains("ts", StringComparer.OrdinalIgnoreCase) ||
+                                              formats.Contains("mpegts", StringComparer.OrdinalIgnoreCase) ||
+                                              formats.Contains("wtv", StringComparer.OrdinalIgnoreCase);
+
             }
 
             return false;
@@ -724,8 +667,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
         private async Task<string> ExtractImage(string[] inputFiles, string container, int? imageStreamIndex, MediaProtocol protocol, bool isAudio,
             Video3DFormat? threedFormat, TimeSpan? offset, CancellationToken cancellationToken)
         {
-            var resourcePool = isAudio ? _audioImageResourcePool : _videoImageResourcePool;
-
             var inputArgument = GetInputArgument(inputFiles, protocol);
 
             if (isAudio)
@@ -740,7 +681,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             {
                 try
                 {
-                    return await ExtractImageInternal(inputArgument, container, imageStreamIndex, protocol, threedFormat, offset, true, resourcePool, cancellationToken).ConfigureAwait(false);
+                    return await ExtractImageInternal(inputArgument, container, imageStreamIndex, protocol, threedFormat, offset, true, cancellationToken).ConfigureAwait(false);
                 }
                 catch (ArgumentException)
                 {
@@ -752,10 +693,10 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 }
             }
 
-            return await ExtractImageInternal(inputArgument, container, imageStreamIndex, protocol, threedFormat, offset, false, resourcePool, cancellationToken).ConfigureAwait(false);
+            return await ExtractImageInternal(inputArgument, container, imageStreamIndex, protocol, threedFormat, offset, false, cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<string> ExtractImageInternal(string inputPath, string container, int? imageStreamIndex, MediaProtocol protocol, Video3DFormat? threedFormat, TimeSpan? offset, bool useIFrame, SemaphoreSlim resourcePool, CancellationToken cancellationToken)
+        private async Task<string> ExtractImageInternal(string inputPath, string container, int? imageStreamIndex, MediaProtocol protocol, Video3DFormat? threedFormat, TimeSpan? offset, bool useIFrame, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(inputPath))
             {
@@ -763,7 +704,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
 
             var tempExtractPath = Path.Combine(ConfigurationManager.ApplicationPaths.TempDirectory, Guid.NewGuid() + ".jpg");
-            FileSystem.CreateDirectory(Path.GetDirectoryName(tempExtractPath));
+            FileSystem.CreateDirectory(FileSystem.GetDirectoryName(tempExtractPath));
 
             // apply some filters to thumbnail extracted below (below) crop any black lines that we made and get the correct ar then scale to width 600. 
             // This filter chain may have adverse effects on recorded tv thumbnails if ar changes during presentation ex. commercials @ diff ar
@@ -835,31 +776,21 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             using (var processWrapper = new ProcessWrapper(process, this, _logger))
             {
-                await resourcePool.WaitAsync(cancellationToken).ConfigureAwait(false);
-
                 bool ranToCompletion;
 
-                try
+                StartProcess(processWrapper);
+
+                var timeoutMs = ConfigurationManager.Configuration.ImageExtractionTimeoutMs;
+                if (timeoutMs <= 0)
                 {
-                    StartProcess(processWrapper);
-
-                    var timeoutMs = ConfigurationManager.Configuration.ImageExtractionTimeoutMs;
-                    if (timeoutMs <= 0)
-                    {
-                        timeoutMs = DefaultImageExtractionTimeoutMs;
-                    }
-
-                    ranToCompletion = process.WaitForExit(timeoutMs);
-
-                    if (!ranToCompletion)
-                    {
-                        StopProcess(processWrapper, 1000);
-                    }
-
+                    timeoutMs = DefaultImageExtractionTimeoutMs;
                 }
-                finally
+
+                ranToCompletion = process.WaitForExit(timeoutMs);
+
+                if (!ranToCompletion)
                 {
-                    resourcePool.Release();
+                    StopProcess(processWrapper, 1000);
                 }
 
                 var exitCode = ranToCompletion ? processWrapper.ExitCode ?? 0 : -1;
@@ -1118,7 +1049,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
             if (dispose)
             {
-                _videoImageResourcePool.Dispose();
                 StopProcesses();
             }
         }

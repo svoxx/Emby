@@ -91,7 +91,7 @@ namespace Emby.Drawing.ImageMagick
             try
             {
                 var tmpPath = Path.Combine(_appPaths.TempDirectory, Guid.NewGuid() + ".webp");
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
+                _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(tmpPath));
 
                 using (var wand = new MagickWand(1, 1, new PixelWand("none", 1)))
                 {
@@ -102,17 +102,6 @@ namespace Emby.Drawing.ImageMagick
             {
                 //_logger.ErrorException("Error loading webp: ", ex);
                 _webpAvailable = false;
-            }
-        }
-
-        public void CropWhiteSpace(string inputPath, string outputPath)
-        {
-            CheckDisposed();
-
-            using (var wand = new MagickWand(inputPath))
-            {
-                wand.CurrentImage.TrimImage(10);
-                wand.SaveImage(outputPath);
             }
         }
 
@@ -141,7 +130,7 @@ namespace Emby.Drawing.ImageMagick
                 string.Equals(ext, ".webp", StringComparison.OrdinalIgnoreCase);
         }
 
-        public void EncodeImage(string inputPath, string outputPath, bool autoOrient, int width, int height, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
+        public void EncodeImage(string inputPath, ImageSize? originalImageSize, string outputPath, bool autoOrient, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
         {
             // Even if the caller specified 100, don't use it because it takes forever
             quality = Math.Min(quality, 99);
@@ -150,6 +139,21 @@ namespace Emby.Drawing.ImageMagick
             {
                 using (var originalImage = new MagickWand(inputPath))
                 {
+                    if (options.CropWhiteSpace)
+                    {
+                        originalImage.CurrentImage.TrimImage(10);
+                    }
+
+                    if (options.CropWhiteSpace || !originalImageSize.HasValue)
+                    {
+                        originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
+                    }
+
+                    var newImageSize = ImageHelper.GetNewImageSize(options, originalImageSize);
+
+                    var width = Convert.ToInt32(Math.Round(newImageSize.Width));
+                    var height = Convert.ToInt32(Math.Round(newImageSize.Height));
+
                     ScaleImage(originalImage, width, height, options.Blur ?? 0);
 
                     if (autoOrient)
@@ -168,9 +172,19 @@ namespace Emby.Drawing.ImageMagick
             }
             else
             {
-                using (var wand = new MagickWand(width, height, options.BackgroundColor))
+                using (var originalImage = new MagickWand(inputPath))
                 {
-                    using (var originalImage = new MagickWand(inputPath))
+                    if (options.CropWhiteSpace || !originalImageSize.HasValue)
+                    {
+                        originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
+                    }
+
+                    var newImageSize = ImageHelper.GetNewImageSize(options, originalImageSize);
+
+                    var width = Convert.ToInt32(Math.Round(newImageSize.Width));
+                    var height = Convert.ToInt32(Math.Round(newImageSize.Height));
+
+                    using (var wand = new MagickWand(width, height, options.BackgroundColor))
                     {
                         ScaleImage(originalImage, width, height, options.Blur ?? 0);
 

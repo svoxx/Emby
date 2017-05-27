@@ -146,7 +146,7 @@ namespace Emby.Server.Implementations.Dto
 
             if (channelTuples.Count > 0)
             {
-                _livetvManager().AddChannelInfo(channelTuples, options, user);
+                await _livetvManager().AddChannelInfo(channelTuples, options, user).ConfigureAwait(false);
             }
 
             return list;
@@ -161,7 +161,8 @@ namespace Emby.Server.Implementations.Dto
             if (tvChannel != null)
             {
                 var list = new List<Tuple<BaseItemDto, LiveTvChannel>> { new Tuple<BaseItemDto, LiveTvChannel>(dto, tvChannel) };
-                _livetvManager().AddChannelInfo(list, options, user);
+                var task = _livetvManager().AddChannelInfo(list, options, user);
+                Task.WaitAll(task);
             }
             else if (item is LiveTvProgram)
             {
@@ -498,7 +499,7 @@ namespace Emby.Server.Implementations.Dto
 
             if (fields.Contains(ItemFields.BasicSyncInfo) || fields.Contains(ItemFields.SyncInfo))
             {
-                var userCanSync = user != null && user.Policy.EnableSync;
+                var userCanSync = user != null && user.Policy.EnableContentDownloading;
                 if (userCanSync && _syncManager.SupportsSync(item))
                 {
                     dto.SupportsSync = true;
@@ -882,15 +883,6 @@ namespace Emby.Server.Implementations.Dto
                 dto.AspectRatio = hasAspectRatio.AspectRatio;
             }
 
-            if (fields.Contains(ItemFields.AwardSummary))
-            {
-                var hasAwards = item as IHasAwards;
-                if (hasAwards != null)
-                {
-                    dto.AwardSummary = hasAwards.AwardSummary;
-                }
-            }
-
             var backdropLimit = options.GetImageLimit(ImageType.Backdrop);
             if (backdropLimit > 0)
             {
@@ -965,11 +957,6 @@ namespace Emby.Server.Implementations.Dto
             }
 
             dto.CriticRating = item.CriticRating;
-
-            if (fields.Contains(ItemFields.CriticRatingSummary))
-            {
-                dto.CriticRatingSummary = item.CriticRatingSummary;
-            }
 
             var hasTrailers = item as IHasTrailers;
             if (hasTrailers != null)

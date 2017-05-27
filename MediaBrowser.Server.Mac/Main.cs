@@ -32,6 +32,10 @@ using Mono.Unix.Native;
 using MediaBrowser.Model.System;
 using MediaBrowser.Model.IO;
 using Emby.Server.Core.Logging;
+using Emby.Drawing;
+using Emby.Drawing.Skia;
+using MediaBrowser.Controller.Drawing;
+using MediaBrowser.Model.Drawing;
 
 namespace MediaBrowser.Server.Mac
 {
@@ -111,12 +115,7 @@ namespace MediaBrowser.Server.Mac
 
 			_fileSystem = fileSystem;
 
-			var imageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, 
-			                                                      logManager, 
-			                                                      fileSystem, 
-			                                                      options, 
-			                                                      () => AppHost.HttpClient, 
-			                                                      appPaths);
+			var imageEncoder = GetImageEncoder(appPaths, fileSystem, logManager);
 
 			AppHost = new MacAppHost(appPaths,
 									 logManager,
@@ -142,9 +141,21 @@ namespace MediaBrowser.Server.Mac
 			Task.Run (() => StartServer(CancellationToken.None));
         }
 
-        private static void GenerateCertificate(string certPath, string certHost)
+	    private static IImageEncoder GetImageEncoder(ServerApplicationPaths appPaths, IFileSystem fileSystem, ILogManager logManager)
+	    {
+	        try
+	        {
+                return new SkiaEncoder(logManager.GetLogger("Skia"), appPaths, () => AppHost.HttpClient, fileSystem);
+            }
+            catch (Exception ex)
+	        {
+	            return new NullImageEncoder();
+	        }
+	    }
+
+        private static void GenerateCertificate(string certPath, string certHost, string certPassword)
         {
-            CertificateGenerator.CreateSelfSignCertificatePfx(certPath, certHost, _logger);
+			CertificateGenerator.CreateSelfSignCertificatePfx(certPath, certHost, certPassword, _logger);
         }
 
         private static EnvironmentInfo GetEnvironmentInfo()

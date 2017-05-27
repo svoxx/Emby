@@ -41,8 +41,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
         public string ItemType { get; set; }
 
-        public string AlbumCoverPath { get; set; }
-
         public string GetMimeType(string outputPath)
         {
             if (!string.IsNullOrEmpty(MimeType))
@@ -57,7 +55,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         private readonly IMediaSourceManager _mediaSourceManager;
 
         public EncodingJob(ILogger logger, IMediaSourceManager mediaSourceManager) : 
-            base(logger)
+            base(logger, TranscodingJobType.Progressive)
         {
             _logger = logger;
             _mediaSourceManager = mediaSourceManager;

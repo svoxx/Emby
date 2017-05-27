@@ -89,6 +89,7 @@ namespace MediaBrowser.Api.Playback.Hls
         public string SegmentId { get; set; }
     }
 
+    [Authenticated]
     public class DynamicHlsService : BaseHlsService
     {
 
@@ -378,7 +379,7 @@ namespace MediaBrowser.Api.Playback.Hls
 
         private static FileSystemMetadata GetLastTranscodingFile(string playlist, string segmentExtension, IFileSystem fileSystem)
         {
-            var folder = Path.GetDirectoryName(playlist);
+            var folder = fileSystem.GetDirectoryName(playlist);
 
             var filePrefix = Path.GetFileNameWithoutExtension(playlist) ?? string.Empty;
 
@@ -415,7 +416,7 @@ namespace MediaBrowser.Api.Playback.Hls
 
         private string GetSegmentPath(StreamState state, string playlist, int index)
         {
-            var folder = Path.GetDirectoryName(playlist);
+            var folder = FileSystem.GetDirectoryName(playlist);
 
             var filename = Path.GetFileNameWithoutExtension(playlist);
 
@@ -807,7 +808,7 @@ namespace MediaBrowser.Api.Playback.Hls
 
             if (string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                return "-codec:a:0 copy";
+                return "-codec:a:0 copy -copypriorss:a:0 0";
             }
 
             var args = "-codec:a:0 " + codec;
@@ -824,6 +825,11 @@ namespace MediaBrowser.Api.Playback.Hls
             if (bitrate.HasValue)
             {
                 args += " -ab " + bitrate.Value.ToString(UsCulture);
+            }
+
+            if (state.OutputAudioSampleRate.HasValue)
+            {
+                args += " -ar " + state.OutputAudioSampleRate.Value.ToString(UsCulture);
             }
 
             args += " " + EncodingHelper.GetAudioFilterParam(state, ApiEntryPoint.Instance.GetEncodingOptions(), true);
@@ -873,7 +879,7 @@ namespace MediaBrowser.Api.Playback.Hls
                 // Add resolution params, if specified
                 if (!hasGraphicalSubs)
                 {
-                    args += EncodingHelper.GetOutputSizeParam(state, codec, EnableCopyTs(state));
+                    args += EncodingHelper.GetOutputSizeParam(state, codec, true);
                 }
 
                 // This is for internal graphical subs
@@ -885,18 +891,19 @@ namespace MediaBrowser.Api.Playback.Hls
                 //args += " -flags -global_header";
             }
 
-            if (EnableCopyTs(state) && args.IndexOf("-copyts", StringComparison.OrdinalIgnoreCase) == -1)
+            if (args.IndexOf("-copyts", StringComparison.OrdinalIgnoreCase) == -1)
             {
                 args += " -copyts";
             }
 
-            return args;
-        }
+            if (!string.IsNullOrEmpty(state.OutputVideoSync))
+            {
+                args += " -vsync " + state.OutputVideoSync;
+            }
 
-        private bool EnableCopyTs(StreamState state)
-        {
-            //return state.SubtitleStream != null && state.SubtitleStream.IsTextSubtitleStream && state.VideoRequest.SubtitleMethod == SubtitleDeliveryMethod.Encode;
-            return true;
+            args += EncodingHelper.GetOutputFFlags(state);
+
+            return args;
         }
 
         protected override string GetCommandLineArguments(string outputPath, StreamState state, bool isEncoding)
@@ -915,7 +922,7 @@ namespace MediaBrowser.Api.Playback.Hls
 
             if (useGenericSegmenter)
             {
-                var outputTsArg = Path.Combine(Path.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath)) + "%d" + GetSegmentFileExtension(state.Request);
+                var outputTsArg = Path.Combine(FileSystem.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath)) + "%d" + GetSegmentFileExtension(state.Request);
 
                 var timeDeltaParam = String.Empty;
 
@@ -932,7 +939,7 @@ namespace MediaBrowser.Api.Playback.Hls
                 }
 
                 var videoCodec = EncodingHelper.GetVideoEncoder(state, ApiEntryPoint.Instance.GetEncodingOptions());
-                var breakOnNonKeyFrames = state.Request.BreakOnNonKeyFrames && string.Equals(videoCodec, "copy", StringComparison.OrdinalIgnoreCase);
+                var breakOnNonKeyFrames = state.EnableBreakOnNonKeyFrames(videoCodec);
 
                 var breakOnNonKeyFramesArg = breakOnNonKeyFrames ? " -break_non_keyframes 1" : "";
 
