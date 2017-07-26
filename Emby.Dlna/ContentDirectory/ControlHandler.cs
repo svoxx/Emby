@@ -23,8 +23,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Xml;
 
@@ -85,7 +87,7 @@ namespace Emby.Dlna.ContentDirectory
                 return HandleGetSystemUpdateID();
 
             if (string.Equals(methodName, "Browse", StringComparison.OrdinalIgnoreCase))
-                return HandleBrowse(methodParams, user, deviceId).Result;
+                return HandleBrowse(methodParams, user, deviceId);
 
             if (string.Equals(methodName, "X_GetFeatureList", StringComparison.OrdinalIgnoreCase))
                 return HandleXGetFeatureList();
@@ -97,10 +99,10 @@ namespace Emby.Dlna.ContentDirectory
                 return HandleXSetBookmark(methodParams, user);
 
             if (string.Equals(methodName, "Search", StringComparison.OrdinalIgnoreCase))
-                return HandleSearch(methodParams, user, deviceId).Result;
+                return HandleSearch(methodParams, user, deviceId);
 
             if (string.Equals(methodName, "X_BrowseByLetter", StringComparison.OrdinalIgnoreCase))
-                return HandleX_BrowseByLetter(methodParams, user, deviceId).Result;
+                return HandleX_BrowseByLetter(methodParams, user, deviceId);
 
             throw new ResourceNotFoundException("Unexpected control request name: " + methodName);
         }
@@ -202,7 +204,7 @@ namespace Emby.Dlna.ContentDirectory
             return defaultValue;
         }
 
-        private async Task<IEnumerable<KeyValuePair<string, string>>> HandleBrowse(IDictionary<string, string> sparams, User user, string deviceId)
+        private IEnumerable<KeyValuePair<string, string>> HandleBrowse(IDictionary<string, string> sparams, User user, string deviceId)
         {
             var id = sparams["ObjectID"];
             var flag = sparams["BrowseFlag"];
@@ -262,7 +264,7 @@ namespace Emby.Dlna.ContentDirectory
 
                     if (item.IsDisplayedAsFolder || serverItem.StubType.HasValue)
                     {
-                        var childrenResult = (await GetUserItems(item, serverItem.StubType, user, sortCriteria, start, requestedCount).ConfigureAwait(false));
+                        var childrenResult = (GetUserItems(item, serverItem.StubType, user, sortCriteria, start, requestedCount));
 
                         _didlBuilder.WriteFolderElement(writer, item, serverItem.StubType, null, childrenResult.TotalRecordCount, filter, id);
                     }
@@ -275,7 +277,7 @@ namespace Emby.Dlna.ContentDirectory
                 }
                 else
                 {
-                    var childrenResult = (await GetUserItems(item, serverItem.StubType, user, sortCriteria, start, requestedCount).ConfigureAwait(false));
+                    var childrenResult = (GetUserItems(item, serverItem.StubType, user, sortCriteria, start, requestedCount));
                     totalCount = childrenResult.TotalRecordCount;
 
                     provided = childrenResult.Items.Length;
@@ -287,7 +289,7 @@ namespace Emby.Dlna.ContentDirectory
 
                         if (childItem.IsDisplayedAsFolder || displayStubType.HasValue)
                         {
-                            var childCount = (await GetUserItems(childItem, displayStubType, user, sortCriteria, null, 0).ConfigureAwait(false))
+                            var childCount = (GetUserItems(childItem, displayStubType, user, sortCriteria, null, 0))
                                 .TotalRecordCount;
 
                             _didlBuilder.WriteFolderElement(writer, childItem, displayStubType, item, childCount, filter);
@@ -313,13 +315,13 @@ namespace Emby.Dlna.ContentDirectory
                 };
         }
 
-        private Task<IEnumerable<KeyValuePair<string, string>>> HandleX_BrowseByLetter(IDictionary<string, string> sparams, User user, string deviceId)
+        private IEnumerable<KeyValuePair<string, string>> HandleX_BrowseByLetter(IDictionary<string, string> sparams, User user, string deviceId)
         {
             // TODO: Implement this method
             return HandleSearch(sparams, user, deviceId);
         }
 
-        private async Task<IEnumerable<KeyValuePair<string, string>>> HandleSearch(IDictionary<string, string> sparams, User user, string deviceId)
+        private IEnumerable<KeyValuePair<string, string>> HandleSearch(IDictionary<string, string> sparams, User user, string deviceId)
         {
             var searchCriteria = new SearchCriteria(GetValueOrDefault(sparams, "SearchCriteria", ""));
             var sortCriteria = new SortCriteria(GetValueOrDefault(sparams, "SortCriteria", ""));
@@ -373,7 +375,7 @@ namespace Emby.Dlna.ContentDirectory
 
                 var item = serverItem.Item;
 
-                var childrenResult = (await GetChildrenSorted(item, user, searchCriteria, sortCriteria, start, requestedCount).ConfigureAwait(false));
+                var childrenResult = (GetChildrenSorted(item, user, searchCriteria, sortCriteria, start, requestedCount));
 
                 totalCount = childrenResult.TotalRecordCount;
 
@@ -383,7 +385,7 @@ namespace Emby.Dlna.ContentDirectory
                 {
                     if (i.IsDisplayedAsFolder)
                     {
-                        var childCount = (await GetChildrenSorted(i, user, searchCriteria, sortCriteria, null, 0).ConfigureAwait(false))
+                        var childCount = (GetChildrenSorted(i, user, searchCriteria, sortCriteria, null, 0))
                             .TotalRecordCount;
 
                         _didlBuilder.WriteFolderElement(writer, i, null, item, childCount, filter);
@@ -409,7 +411,7 @@ namespace Emby.Dlna.ContentDirectory
                 };
         }
 
-        private Task<QueryResult<BaseItem>> GetChildrenSorted(BaseItem item, User user, SearchCriteria search, SortCriteria sort, int? startIndex, int? limit)
+        private QueryResult<BaseItem> GetChildrenSorted(BaseItem item, User user, SearchCriteria search, SortCriteria sort, int? startIndex, int? limit)
         {
             var folder = (Folder)item;
 
@@ -459,11 +461,17 @@ namespace Emby.Dlna.ContentDirectory
                 IsMissing = false,
                 ExcludeItemTypes = new[] { typeof(Game).Name, typeof(Book).Name },
                 IsFolder = isFolder,
-                MediaTypes = mediaTypes.ToArray()
+                MediaTypes = mediaTypes.ToArray(),
+                DtoOptions = GetDtoOptions()
             });
         }
 
-        private async Task<QueryResult<ServerItem>> GetUserItems(BaseItem item, StubType? stubType, User user, SortCriteria sort, int? startIndex, int? limit)
+        private DtoOptions GetDtoOptions()
+        {
+            return new DtoOptions(true);
+        }
+
+        private QueryResult<ServerItem> GetUserItems(BaseItem item, StubType? stubType, User user, SortCriteria sort, int? startIndex, int? limit)
         {
             if (item is MusicGenre)
             {
@@ -473,6 +481,12 @@ namespace Emby.Dlna.ContentDirectory
             if (item is MusicArtist)
             {
                 return GetMusicArtistItems(item, null, user, sort, startIndex, limit);
+            }
+
+            var collectionFolder = item as ICollectionFolder;
+            if (collectionFolder != null && string.Equals(CollectionType.Music, collectionFolder.CollectionType, StringComparison.OrdinalIgnoreCase))
+            {
+                return GetMusicFolders(item, user, stubType, sort, startIndex, limit);
             }
 
             if (stubType.HasValue)
@@ -511,16 +525,289 @@ namespace Emby.Dlna.ContentDirectory
                 StartIndex = startIndex,
                 User = user,
                 IsMissing = false,
-                PresetViews = new[] {CollectionType.Movies, CollectionType.TvShows, CollectionType.Music},
-                ExcludeItemTypes = new[] {typeof (Game).Name, typeof (Book).Name},
-                IsPlaceHolder = false
+                PresetViews = new[] { CollectionType.Movies, CollectionType.TvShows },
+                ExcludeItemTypes = new[] { typeof(Game).Name, typeof(Book).Name },
+                IsPlaceHolder = false,
+                DtoOptions = GetDtoOptions()
             };
 
             SetSorting(query, sort, folder.IsPreSorted);
 
-            var queryResult = await folder.GetItems(query).ConfigureAwait(false);
+            var queryResult = folder.GetItems(query);
 
             return ToResult(queryResult);
+        }
+
+        private QueryResult<ServerItem> GetMusicFolders(BaseItem item, User user, StubType? stubType, SortCriteria sort, int? startIndex, int? limit)
+        {
+            var query = new InternalItemsQuery(user)
+            {
+                StartIndex = startIndex,
+                Limit = limit
+            };
+            SetSorting(query, sort, false);
+
+            if (stubType.HasValue && stubType.Value == StubType.Latest)
+            {
+                return GetMusicLatest(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.Playlists)
+            {
+                return GetMusicPlaylists(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.Albums)
+            {
+                return GetMusicAlbums(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.Artists)
+            {
+                return GetMusicArtists(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.AlbumArtists)
+            {
+                return GetMusicAlbumArtists(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.FavoriteAlbums)
+            {
+                return GetFavoriteAlbums(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.FavoriteArtists)
+            {
+                return GetFavoriteArtists(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.FavoriteSongs)
+            {
+                return GetFavoriteSongs(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.Songs)
+            {
+                return GetMusicSongs(item, user, query);
+            }
+
+            if (stubType.HasValue && stubType.Value == StubType.Genres)
+            {
+                return GetMusicGenres(item, user, query);
+            }
+
+            var list = new List<ServerItem>();
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Latest
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Playlists
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Albums
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.AlbumArtists
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Artists
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Songs
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.Genres
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.FavoriteArtists
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.FavoriteAlbums
+            });
+
+            list.Add(new ServerItem(item)
+            {
+                StubType = StubType.FavoriteSongs
+            });
+
+            return new QueryResult<ServerItem>
+            {
+                Items = list.ToArray(),
+                TotalRecordCount = list.Count
+            };
+        }
+
+        private QueryResult<ServerItem> GetMusicAlbums(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.Recursive = true;
+            query.Parent = parent;
+            query.SetUser(user);
+
+            query.IncludeItemTypes = new[] { typeof(MusicAlbum).Name };
+
+            var result = _libraryManager.GetItemsResult(query);
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicSongs(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.Recursive = true;
+            query.Parent = parent;
+            query.SetUser(user);
+
+            query.IncludeItemTypes = new[] { typeof(Audio).Name };
+
+            var result = _libraryManager.GetItemsResult(query);
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetFavoriteSongs(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.Recursive = true;
+            query.Parent = parent;
+            query.SetUser(user);
+            query.IsFavorite = true;
+            query.IncludeItemTypes = new[] { typeof(Audio).Name };
+
+            var result = _libraryManager.GetItemsResult(query);
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetFavoriteAlbums(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.Recursive = true;
+            query.Parent = parent;
+            query.SetUser(user);
+            query.IsFavorite = true;
+            query.IncludeItemTypes = new[] { typeof(MusicAlbum).Name };
+
+            var result = _libraryManager.GetItemsResult(query);
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicGenres(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            var genresResult = _libraryManager.GetMusicGenres(new InternalItemsQuery(user)
+            {
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
+
+            var result = new QueryResult<BaseItem>
+            {
+                TotalRecordCount = genresResult.TotalRecordCount,
+                Items = genresResult.Items.Select(i => i.Item1).ToArray()
+            };
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicAlbumArtists(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            var artists = _libraryManager.GetAlbumArtists(new InternalItemsQuery(user)
+            {
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
+
+            var result = new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicArtists(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            var artists = _libraryManager.GetArtists(new InternalItemsQuery(user)
+            {
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
+
+            var result = new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetFavoriteArtists(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            var artists = _libraryManager.GetArtists(new InternalItemsQuery(user)
+            {
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit,
+                IsFavorite = true
+            });
+
+            var result = new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicPlaylists(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.Parent = null;
+            query.IncludeItemTypes = new[] { typeof(Playlist).Name };
+            query.SetUser(user);
+            query.Recursive = true;
+
+            var result = _libraryManager.GetItemsResult(query);
+
+            return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> GetMusicLatest(BaseItem parent, User user, InternalItemsQuery query)
+        {
+            query.SortBy = new string[] { };
+
+            var items = _userViewManager.GetLatestItems(new LatestItemsQuery
+            {
+                UserId = user.Id.ToString("N"),
+                Limit = 50,
+                IncludeItemTypes = new[] { typeof(Audio).Name },
+                ParentId = parent == null ? null : parent.Id.ToString("N"),
+                GroupItems = true
+
+            }, query.DtoOptions).Select(i => i.Item1 ?? i.Item2.FirstOrDefault()).Where(i => i != null).ToList();
+
+            return ToResult(items);
         }
 
         private QueryResult<ServerItem> GetMusicArtistItems(BaseItem item, Guid? parentId, User user, SortCriteria sort, int? startIndex, int? limit)
@@ -532,7 +819,8 @@ namespace Emby.Dlna.ContentDirectory
                 ArtistIds = new[] { item.Id.ToString("N") },
                 IncludeItemTypes = new[] { typeof(MusicAlbum).Name },
                 Limit = limit,
-                StartIndex = startIndex
+                StartIndex = startIndex,
+                DtoOptions = GetDtoOptions()
             };
 
             SetSorting(query, sort, false);
@@ -548,10 +836,11 @@ namespace Emby.Dlna.ContentDirectory
             {
                 Recursive = true,
                 ParentId = parentId,
-                GenreIds = new[] {item.Id.ToString("N")},
-                IncludeItemTypes = new[] {typeof (MusicAlbum).Name},
+                GenreIds = new[] { item.Id.ToString("N") },
+                IncludeItemTypes = new[] { typeof(MusicAlbum).Name },
                 Limit = limit,
-                StartIndex = startIndex
+                StartIndex = startIndex,
+                DtoOptions = GetDtoOptions()
             };
 
             SetSorting(query, sort, false);
@@ -559,6 +848,19 @@ namespace Emby.Dlna.ContentDirectory
             var result = _libraryManager.GetItemsResult(query);
 
             return ToResult(result);
+        }
+
+        private QueryResult<ServerItem> ToResult(List<BaseItem> result)
+        {
+            var serverItems = result
+                .Select(i => new ServerItem(i))
+                .ToArray();
+
+            return new QueryResult<ServerItem>
+            {
+                TotalRecordCount = result.Count,
+                Items = serverItems
+            };
         }
 
         private QueryResult<ServerItem> ToResult(QueryResult<BaseItem> result)
@@ -595,8 +897,8 @@ namespace Emby.Dlna.ContentDirectory
                 IncludeItemTypes = new[] { typeof(Movie).Name, typeof(Series).Name, typeof(Trailer).Name },
                 SortBy = new[] { ItemSortBy.SortName },
                 Limit = limit,
-                StartIndex = startIndex
-
+                StartIndex = startIndex,
+                DtoOptions = GetDtoOptions()
             });
 
             var serverItems = itemsResult.Items.Select(i => new ServerItem(i))
@@ -650,6 +952,56 @@ namespace Emby.Dlna.ContentDirectory
                 stubType = StubType.People;
                 id = id.Split(new[] { '_' }, 2)[1];
             }
+            else if (id.StartsWith("latest_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Latest;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("playlists_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Playlists;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("Albums_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Albums;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("AlbumArtists_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.AlbumArtists;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("Artists_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Artists;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("Genres_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Genres;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("Songs_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.Songs;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("FavoriteAlbums_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.FavoriteAlbums;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("FavoriteArtists_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.FavoriteArtists;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
+            else if (id.StartsWith("FavoriteSongs_", StringComparison.OrdinalIgnoreCase))
+            {
+                stubType = StubType.FavoriteSongs;
+                id = id.Split(new[] { '_' }, 2)[1];
+            }
 
             if (Guid.TryParse(id, out itemId))
             {
@@ -686,6 +1038,16 @@ namespace Emby.Dlna.ContentDirectory
     public enum StubType
     {
         Folder = 0,
-        People = 1
+        People = 1,
+        Latest = 2,
+        Playlists = 3,
+        Albums = 4,
+        AlbumArtists = 5,
+        Artists = 6,
+        Songs = 7,
+        Genres = 8,
+        FavoriteSongs = 9,
+        FavoriteArtists = 10,
+        FavoriteAlbums = 11
     }
 }

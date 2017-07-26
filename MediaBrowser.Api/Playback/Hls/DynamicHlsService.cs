@@ -18,6 +18,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Services;
 using MimeTypes = MediaBrowser.Model.Net.MimeTypes;
 
@@ -423,7 +424,7 @@ namespace MediaBrowser.Api.Playback.Hls
             return Path.Combine(folder, filename + index.ToString(UsCulture) + GetSegmentFileExtension(state.Request));
         }
 
-        private async Task<object> GetSegmentResult(StreamState state, 
+        private async Task<object> GetSegmentResult(StreamState state,
             string playlistPath,
             string segmentPath,
             string segmentExtension,
@@ -456,26 +457,20 @@ namespace MediaBrowser.Api.Playback.Hls
             {
                 try
                 {
-                    using (var fileStream = GetPlaylistFileStream(playlistPath))
-                    {
-                        using (var reader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize))
-                        {
-                            var text = await reader.ReadToEndAsync().ConfigureAwait(false);
+                    var text = FileSystem.ReadAllText(playlistPath, Encoding.UTF8);
 
-                            // If it appears in the playlist, it's done
-                            if (text.IndexOf(segmentFilename, StringComparison.OrdinalIgnoreCase) != -1)
-                            {
-                                if (!segmentFileExists)
-                                {
-                                    segmentFileExists = FileSystem.FileExists(segmentPath);
-                                }
-                                if (segmentFileExists)
-                                {
-                                    return await GetSegmentResult(state, segmentPath, segmentIndex, transcodingJob).ConfigureAwait(false);
-                                }
-                                //break;
-                            }
+                    // If it appears in the playlist, it's done
+                    if (text.IndexOf(segmentFilename, StringComparison.OrdinalIgnoreCase) != -1)
+                    {
+                        if (!segmentFileExists)
+                        {
+                            segmentFileExists = FileSystem.FileExists(segmentPath);
                         }
+                        if (segmentFileExists)
+                        {
+                            return await GetSegmentResult(state, segmentPath, segmentIndex, transcodingJob).ConfigureAwait(false);
+                        }
+                        //break;
                     }
                 }
                 catch (IOException)
@@ -541,6 +536,17 @@ namespace MediaBrowser.Api.Playback.Hls
 
             var queryStringIndex = Request.RawUrl.IndexOf('?');
             var queryString = queryStringIndex == -1 ? string.Empty : Request.RawUrl.Substring(queryStringIndex);
+
+            // from universal audio service
+            if (queryString.IndexOf("SegmentContainer", StringComparison.OrdinalIgnoreCase) == -1 && !string.IsNullOrWhiteSpace(state.Request.SegmentContainer))
+            {
+                queryString += "&SegmentContainer=" + state.Request.SegmentContainer;
+            }
+            // from universal audio service
+            if (!string.IsNullOrWhiteSpace(state.Request.TranscodeReasons) && queryString.IndexOf("TranscodeReasons=", StringComparison.OrdinalIgnoreCase) == -1)
+            {
+                queryString += "&TranscodeReasons=" + state.Request.TranscodeReasons;
+            }
 
             // Main stream
             var playlistUrl = isLiveStream ? "live.m3u8" : "main.m3u8";
@@ -772,20 +778,20 @@ namespace MediaBrowser.Api.Playback.Hls
             return ResultFactory.GetResult(playlistText, MimeTypes.GetMimeType("playlist.m3u8"), new Dictionary<string, string>());
         }
 
-        protected override string GetAudioArguments(StreamState state)
+        protected override string GetAudioArguments(StreamState state, EncodingOptions encodingOptions)
         {
-            var codec = EncodingHelper.GetAudioEncoder(state);
+            var audioCodec = EncodingHelper.GetAudioEncoder(state);
 
             if (!state.IsOutputVideo)
             {
-                if (string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(audioCodec, "copy", StringComparison.OrdinalIgnoreCase))
                 {
                     return "-acodec copy";
                 }
 
                 var audioTranscodeParams = new List<string>();
 
-                audioTranscodeParams.Add("-acodec " + codec);
+                audioTranscodeParams.Add("-acodec " + audioCodec);
 
                 if (state.OutputAudioBitrate.HasValue)
                 {
@@ -806,12 +812,19 @@ namespace MediaBrowser.Api.Playback.Hls
                 return string.Join(" ", audioTranscodeParams.ToArray());
             }
 
-            if (string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(audioCodec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                return "-codec:a:0 copy -copypriorss:a:0 0";
+                var videoCodec = EncodingHelper.GetVideoEncoder(state, encodingOptions);
+
+                if (string.Equals(videoCodec, "copy", StringComparison.OrdinalIgnoreCase) && state.EnableBreakOnNonKeyFrames(videoCodec))
+                {
+                    return "-codec:a:0 copy -copypriorss:a:0 0";
+                }
+
+                return "-codec:a:0 copy";
             }
 
-            var args = "-codec:a:0 " + codec;
+            var args = "-codec:a:0 " + audioCodec;
 
             var channels = state.OutputAudioChannels;
 
@@ -832,19 +845,19 @@ namespace MediaBrowser.Api.Playback.Hls
                 args += " -ar " + state.OutputAudioSampleRate.Value.ToString(UsCulture);
             }
 
-            args += " " + EncodingHelper.GetAudioFilterParam(state, ApiEntryPoint.Instance.GetEncodingOptions(), true);
+            args += " " + EncodingHelper.GetAudioFilterParam(state, encodingOptions, true);
 
             return args;
         }
 
-        protected override string GetVideoArguments(StreamState state)
+        protected override string GetVideoArguments(StreamState state, EncodingOptions encodingOptions)
         {
             if (!state.IsOutputVideo)
             {
                 return string.Empty;
             }
 
-            var codec = EncodingHelper.GetVideoEncoder(state, ApiEntryPoint.Instance.GetEncodingOptions());
+            var codec = EncodingHelper.GetVideoEncoder(state, encodingOptions);
 
             var args = "-codec:v:0 " + codec;
 
@@ -870,8 +883,6 @@ namespace MediaBrowser.Api.Playback.Hls
 
                 var hasGraphicalSubs = state.SubtitleStream != null && !state.SubtitleStream.IsTextSubtitleStream && state.SubtitleDeliveryMethod == SubtitleDeliveryMethod.Encode;
 
-                var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
-
                 args += " " + EncodingHelper.GetVideoQualityParam(state, codec, encodingOptions, GetDefaultH264Preset()) + keyFrameArg;
 
                 //args += " -mixed-refs 0 -refs 3 -x264opts b_pyramid=0:weightb=0:weightp=0";
@@ -879,7 +890,7 @@ namespace MediaBrowser.Api.Playback.Hls
                 // Add resolution params, if specified
                 if (!hasGraphicalSubs)
                 {
-                    args += EncodingHelper.GetOutputSizeParam(state, codec, EnableCopyTs(state));
+                    args += EncodingHelper.GetOutputSizeParam(state, codec, true);
                 }
 
                 // This is for internal graphical subs
@@ -891,7 +902,7 @@ namespace MediaBrowser.Api.Playback.Hls
                 //args += " -flags -global_header";
             }
 
-            if (EnableCopyTs(state) && args.IndexOf("-copyts", StringComparison.OrdinalIgnoreCase) == -1)
+            if (args.IndexOf("-copyts", StringComparison.OrdinalIgnoreCase) == -1)
             {
                 args += " -copyts";
             }
@@ -901,18 +912,13 @@ namespace MediaBrowser.Api.Playback.Hls
                 args += " -vsync " + state.OutputVideoSync;
             }
 
+            args += EncodingHelper.GetOutputFFlags(state);
+
             return args;
         }
 
-        private bool EnableCopyTs(StreamState state)
+        protected override string GetCommandLineArguments(string outputPath, EncodingOptions encodingOptions, StreamState state, bool isEncoding)
         {
-            //return state.SubtitleStream != null && state.SubtitleStream.IsTextSubtitleStream && state.VideoRequest.SubtitleMethod == SubtitleDeliveryMethod.Encode;
-            return true;
-        }
-
-        protected override string GetCommandLineArguments(string outputPath, StreamState state, bool isEncoding)
-        {
-            var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
             var threads = EncodingHelper.GetNumberOfThreads(state, encodingOptions, false);
 
             var inputModifier = EncodingHelper.GetInputModifier(state, encodingOptions);
@@ -922,60 +928,43 @@ namespace MediaBrowser.Api.Playback.Hls
             var startNumberParam = isEncoding ? startNumber.ToString(UsCulture) : "0";
 
             var mapArgs = state.IsOutputVideo ? EncodingHelper.GetMapArgs(state) : string.Empty;
-            var useGenericSegmenter = true;
 
-            if (useGenericSegmenter)
+            var outputTsArg = Path.Combine(FileSystem.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath)) + "%d" + GetSegmentFileExtension(state.Request);
+
+            var timeDeltaParam = String.Empty;
+
+            if (isEncoding && startNumber > 0)
             {
-                var outputTsArg = Path.Combine(FileSystem.GetDirectoryName(outputPath), Path.GetFileNameWithoutExtension(outputPath)) + "%d" + GetSegmentFileExtension(state.Request);
-
-                var timeDeltaParam = String.Empty;
-
-                if (isEncoding && startNumber > 0)
-                {
-                    var startTime = state.SegmentLength * startNumber;
-                    timeDeltaParam = string.Format("-segment_time_delta -{0}", startTime);
-                }
-
-                var segmentFormat = GetSegmentFileExtension(state.Request).TrimStart('.');
-                if (string.Equals(segmentFormat, "ts", StringComparison.OrdinalIgnoreCase))
-                {
-                    segmentFormat = "mpegts";
-                }
-
-                var videoCodec = EncodingHelper.GetVideoEncoder(state, ApiEntryPoint.Instance.GetEncodingOptions());
-                var breakOnNonKeyFrames = state.EnableBreakOnNonKeyFrames(videoCodec);
-
-                var breakOnNonKeyFramesArg = breakOnNonKeyFrames ? " -break_non_keyframes 1" : "";
-
-                return string.Format("{0} {1} -map_metadata -1 -map_chapters -1 -threads {2} {3} {4} {5} -f segment -max_delay 5000000 -avoid_negative_ts disabled -start_at_zero -segment_time {6} {10} -individual_header_trailer 0{12} -segment_format {11} -segment_list_type m3u8 -segment_start_number {7} -segment_list \"{8}\" -y \"{9}\"",
-                    inputModifier,
-                    EncodingHelper.GetInputArgument(state, encodingOptions),
-                    threads,
-                    mapArgs,
-                    GetVideoArguments(state),
-                    GetAudioArguments(state),
-                    state.SegmentLength.ToString(UsCulture),
-                    startNumberParam,
-                    outputPath,
-                    outputTsArg,
-                    timeDeltaParam,
-                    segmentFormat,
-                    breakOnNonKeyFramesArg
-                ).Trim();
+                var startTime = state.SegmentLength * startNumber;
+                timeDeltaParam = string.Format("-segment_time_delta -{0}", startTime);
             }
 
-            return string.Format("{0} {1} -map_metadata -1 -map_chapters -1 -threads {2} {3} {4} {5} -max_delay 5000000 -avoid_negative_ts disabled -start_at_zero -hls_time {6} -individual_header_trailer 0 -start_number {7} -hls_list_size {8} -y \"{9}\"",
-                            inputModifier,
-                            EncodingHelper.GetInputArgument(state, encodingOptions),
-                            threads,
-                            mapArgs,
-                            GetVideoArguments(state),
-                            GetAudioArguments(state),
-                            state.SegmentLength.ToString(UsCulture),
-                            startNumberParam,
-                            state.HlsListSize.ToString(UsCulture),
-                            outputPath
-                            ).Trim();
+            var segmentFormat = GetSegmentFileExtension(state.Request).TrimStart('.');
+            if (string.Equals(segmentFormat, "ts", StringComparison.OrdinalIgnoreCase))
+            {
+                segmentFormat = "mpegts";
+            }
+
+            var videoCodec = EncodingHelper.GetVideoEncoder(state, encodingOptions);
+            var breakOnNonKeyFrames = state.EnableBreakOnNonKeyFrames(videoCodec);
+
+            var breakOnNonKeyFramesArg = breakOnNonKeyFrames ? " -break_non_keyframes 1" : "";
+
+            return string.Format("{0} {1} -map_metadata -1 -map_chapters -1 -threads {2} {3} {4} {5} -f segment -max_delay 5000000 -avoid_negative_ts disabled -start_at_zero -segment_time {6} {10} -individual_header_trailer 0{12} -segment_format {11} -segment_list_type m3u8 -segment_start_number {7} -segment_list \"{8}\" -y \"{9}\"",
+                inputModifier,
+                EncodingHelper.GetInputArgument(state, encodingOptions),
+                threads,
+                mapArgs,
+                GetVideoArguments(state, encodingOptions),
+                GetAudioArguments(state, encodingOptions),
+                state.SegmentLength.ToString(UsCulture),
+                startNumberParam,
+                outputPath,
+                outputTsArg,
+                timeDeltaParam,
+                segmentFormat,
+                breakOnNonKeyFramesArg
+            ).Trim();
         }
     }
 }

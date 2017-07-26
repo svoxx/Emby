@@ -21,7 +21,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Controller.Sorting;
@@ -53,7 +54,6 @@ namespace MediaBrowser.Controller.Entities
             ImageInfos = new List<ItemImageInfo>();
             InheritedTags = new List<string>();
             ProductionLocations = new List<string>();
-            SourceType = SourceType.Library;
         }
 
         public static readonly char[] SlugReplaceChars = { '?', '/', '&' };
@@ -273,7 +273,18 @@ namespace MediaBrowser.Controller.Entities
         public virtual string Path { get; set; }
 
         [IgnoreDataMember]
-        public virtual SourceType SourceType { get; set; }
+        public virtual SourceType SourceType
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(ChannelId))
+                {
+                    return SourceType.Channel;
+                }
+
+                return SourceType.Library;
+            }
+        }
 
         /// <summary>
         /// Returns the folder containing the item.
@@ -888,13 +899,6 @@ namespace MediaBrowser.Controller.Entities
         public float? CommunityRating { get; set; }
 
         /// <summary>
-        /// Gets or sets the community rating vote count.
-        /// </summary>
-        /// <value>The community rating vote count.</value>
-        [IgnoreDataMember]
-        public int? VoteCount { get; set; }
-
-        /// <summary>
         /// Gets or sets the run time ticks.
         /// </summary>
         /// <value>The run time ticks.</value>
@@ -1054,6 +1058,16 @@ namespace MediaBrowser.Controller.Entities
             return RefreshMetadata(new MetadataRefreshOptions(new DirectoryService(Logger, FileSystem)), cancellationToken);
         }
 
+        protected virtual void TriggerOnRefreshStart()
+        {
+
+        }
+
+        protected virtual void TriggerOnRefreshComplete()
+        {
+
+        }
+
         /// <summary>
         /// Overrides the base implementation to refresh metadata for local trailers
         /// </summary>
@@ -1062,6 +1076,8 @@ namespace MediaBrowser.Controller.Entities
         /// <returns>true if a provider reports we changed</returns>
         public async Task<ItemUpdateType> RefreshMetadata(MetadataRefreshOptions options, CancellationToken cancellationToken)
         {
+            TriggerOnRefreshStart();
+
             var locationType = LocationType;
 
             var requiresSave = false;
@@ -1087,14 +1103,21 @@ namespace MediaBrowser.Controller.Entities
                 }
             }
 
-            var refreshOptions = requiresSave
-                ? new MetadataRefreshOptions(options)
-                {
-                    ForceSave = true
-                }
-                : options;
+            try
+            {
+                var refreshOptions = requiresSave
+                    ? new MetadataRefreshOptions(options)
+                    {
+                        ForceSave = true
+                    }
+                    : options;
 
-            return await ProviderManager.RefreshSingleItem(this, refreshOptions, cancellationToken).ConfigureAwait(false);
+                return await ProviderManager.RefreshSingleItem(this, refreshOptions, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                TriggerOnRefreshComplete();
+            }
         }
 
         [IgnoreDataMember]
@@ -1680,7 +1703,7 @@ namespace MediaBrowser.Controller.Entities
 
         private BaseItem FindLinkedChild(LinkedChild info)
         {
-            if (!string.IsNullOrEmpty(info.Path))
+            if (!string.IsNullOrWhiteSpace(info.Path))
             {
                 var itemByPath = LibraryManager.FindByPath(info.Path, null);
 
@@ -1809,10 +1832,13 @@ namespace MediaBrowser.Controller.Entities
         /// Do whatever refreshing is necessary when the filesystem pertaining to this item has changed.
         /// </summary>
         /// <returns>Task.</returns>
-        public virtual Task ChangedExternally()
+        public virtual void ChangedExternally()
         {
-            ProviderManager.QueueRefresh(Id, new MetadataRefreshOptions(FileSystem), RefreshPriority.High);
-            return Task.FromResult(true);
+            ProviderManager.QueueRefresh(Id, new MetadataRefreshOptions(FileSystem)
+            {
+                ValidateChildren = true,
+
+            }, RefreshPriority.High);
         }
 
         /// <summary>
@@ -2210,7 +2236,7 @@ namespace MediaBrowser.Controller.Entities
             return path;
         }
 
-        public virtual Task FillUserDataDtoValues(UserItemDataDto dto, UserItemData userData, BaseItemDto itemDto, User user, List<ItemFields> itemFields)
+        public virtual void FillUserDataDtoValues(UserItemDataDto dto, UserItemData userData, BaseItemDto itemDto, User user, List<ItemFields> fields)
         {
             if (RunTimeTicks.HasValue)
             {
@@ -2226,8 +2252,6 @@ namespace MediaBrowser.Controller.Entities
                     }
                 }
             }
-
-            return Task.FromResult(true);
         }
 
         protected Task RefreshMetadataForOwnedItem(BaseItem ownedItem, bool copyTitleMetadata, MetadataRefreshOptions options, CancellationToken cancellationToken)
@@ -2415,6 +2439,11 @@ namespace MediaBrowser.Controller.Entities
         public virtual List<ExternalUrl> GetRelatedUrls()
         {
             return new List<ExternalUrl>();
+        }
+
+        public virtual double? GetRefreshProgress()
+        {
+            return null;
         }
     }
 }

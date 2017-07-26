@@ -42,7 +42,6 @@ namespace MediaBrowser.Controller.LiveTv
         public override SourceType SourceType
         {
             get { return SourceType.LiveTV; }
-            set { }
         }
 
         [IgnoreDataMember]
@@ -107,6 +106,24 @@ namespace MediaBrowser.Controller.LiveTv
         public override bool IsSaveLocalMetadataEnabled()
         {
             return false;
+        }
+
+        public override double? GetDefaultPrimaryImageAspectRatio()
+        {
+            if (IsMovie)
+            {
+                double value = 2;
+                value /= 3;
+
+                return value;
+            }
+            else
+            {
+                double value = 2;
+                value /= 3;
+
+                return value;
+            }
         }
 
         [IgnoreDataMember]

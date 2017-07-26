@@ -19,7 +19,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.LiveTv;
@@ -62,13 +62,6 @@ namespace MediaBrowser.Providers.Movies
 
         public bool Supports(IHasImages item)
         {
-            // Supports images for tv movies
-            var tvProgram = item as LiveTvProgram;
-            if (tvProgram != null && tvProgram.IsMovie)
-            {
-                return true;
-            }
-
             return item is Movie || item is BoxSet || item is MusicVideo;
         }
 

@@ -38,12 +38,21 @@ namespace MediaBrowser.Server.Implementations.Playlists
         }
 
         [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        [IgnoreDataMember]
         public override string CollectionType
         {
             get { return MediaBrowser.Model.Entities.CollectionType.Playlists; }
         }
 
-        protected override Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
+        protected override QueryResult<BaseItem> GetItemsInternal(InternalItemsQuery query)
         {
             query.Recursive = false;
             return base.GetItemsInternal(query);

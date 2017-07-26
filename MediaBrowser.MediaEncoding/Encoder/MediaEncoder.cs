@@ -80,11 +80,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
             int defaultImageExtractionTimeoutMs,
             bool enableEncoderFontFile, IEnvironmentInfo environmentInfo)
         {
-            if (jsonSerializer == null)
-            {
-                throw new ArgumentNullException("jsonSerializer");
-            }
-
             _logger = logger;
             _jsonSerializer = jsonSerializer;
             ConfigurationManager = configurationManager;
@@ -252,7 +247,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
         }
 
-        public async Task UpdateEncoderPath(string path, string pathType)
+        public void UpdateEncoderPath(string path, string pathType)
         {
             if (_hasExternalEncoder)
             {
@@ -330,7 +325,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
 
             var newPaths = GetEncoderPaths(appPath);
-            if (string.IsNullOrWhiteSpace(newPaths.Item1) || string.IsNullOrWhiteSpace(newPaths.Item2))
+            if (string.IsNullOrWhiteSpace(newPaths.Item1) || string.IsNullOrWhiteSpace(newPaths.Item2) || IsSystemInstalledPath(appPath))
             {
                 newPaths = TestForInstalledVersions();
             }
@@ -738,9 +733,9 @@ namespace MediaBrowser.MediaEncoding.Encoder
             var mapArg = imageStreamIndex.HasValue ? (" -map 0:v:" + imageStreamIndex.Value.ToString(CultureInfo.InvariantCulture)) : string.Empty;
 
             var enableThumbnail = !new List<string> { "wtv" }.Contains(container ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+            // Use ffmpeg to sample 100 (we can drop this if required using thumbnail=50 for 50 frames) frames and pick the best thumbnail. Have a fall back just in case.
             var thumbnail = enableThumbnail ? ",thumbnail=24" : string.Empty;
 
-            // Use ffmpeg to sample 100 (we can drop this if required using thumbnail=50 for 50 frames) frames and pick the best thumbnail. Have a fall back just in case.
             var args = useIFrame ? string.Format("-i {0}{3} -threads 0 -v quiet -vframes 1 -vf \"{2}{4}\" -f image2 \"{1}\"", inputPath, tempExtractPath, vf, mapArg, thumbnail) :
                 string.Format("-i {0}{3} -threads 0 -v quiet -vframes 1 -vf \"{2}\" -f image2 \"{1}\"", inputPath, tempExtractPath, vf, mapArg);
 
@@ -786,7 +781,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
                     timeoutMs = DefaultImageExtractionTimeoutMs;
                 }
 
-                ranToCompletion = process.WaitForExit(timeoutMs);
+                ranToCompletion = await process.WaitForExitAsync(timeoutMs).ConfigureAwait(false);
 
                 if (!ranToCompletion)
                 {
@@ -892,7 +887,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
                     while (isResponsive)
                     {
-                        if (process.WaitForExit(30000))
+                        if (await process.WaitForExitAsync(30000).ConfigureAwait(false))
                         {
                             ranToCompletion = true;
                             break;

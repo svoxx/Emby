@@ -246,7 +246,7 @@ namespace Emby.Server.Implementations.Updates
                 {
                     Url = "https://www.mb3admin.com/admin/service/MB3Packages.json",
                     CancellationToken = cancellationToken,
-                    Progress = new Progress<Double>()
+                    Progress = new SimpleProgress<Double>()
 
                 }).ConfigureAwait(false);
 
@@ -513,8 +513,6 @@ namespace Emby.Server.Implementations.Updates
                     CurrentInstallations.Remove(tuple);
                 }
 
-                progress.Report(100);
-
                 CompletedInstallationsInternal.Add(installationInfo);
 
                 EventHelper.FireEventIfNotNull(PackageInstallationCompleted, this, installationEventArgs, _logger);
@@ -664,9 +662,19 @@ namespace Emby.Server.Implementations.Updates
             // Remove it the quick way for now
             _applicationHost.RemovePlugin(plugin);
 
-            _logger.Info("Deleting plugin file {0}", plugin.AssemblyFilePath);
+            var path = plugin.AssemblyFilePath;
+            _logger.Info("Deleting plugin file {0}", path);
 
-            _fileSystem.DeleteFile(plugin.AssemblyFilePath);
+            // Make this case-insensitive to account for possible incorrect assembly naming
+            var file = _fileSystem.GetFilePaths(_fileSystem.GetDirectoryName(path))
+                .FirstOrDefault(i => string.Equals(i, path, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(file))
+            {
+                path = file;
+            }
+
+            _fileSystem.DeleteFile(path);
 
             OnPluginUninstalled(plugin);
 

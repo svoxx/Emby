@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Net;
+using MediaBrowser.Model.Configuration;
 
 namespace MediaBrowser.Api.Playback.Hls
 {
@@ -25,15 +26,12 @@ namespace MediaBrowser.Api.Playback.Hls
         /// <summary>
         /// Gets the audio arguments.
         /// </summary>
-        /// <param name="state">The state.</param>
-        /// <returns>System.String.</returns>
-        protected abstract string GetAudioArguments(StreamState state);
+        protected abstract string GetAudioArguments(StreamState state, EncodingOptions encodingOptions);
+
         /// <summary>
         /// Gets the video arguments.
         /// </summary>
-        /// <param name="state">The state.</param>
-        /// <returns>System.String.</returns>
-        protected abstract string GetVideoArguments(StreamState state);
+        protected abstract string GetVideoArguments(StreamState state, EncodingOptions encodingOptions);
 
         /// <summary>
         /// Gets the segment file extension.
@@ -202,7 +200,7 @@ namespace MediaBrowser.Api.Playback.Hls
 
                             while (!reader.EndOfStream)
                             {
-                                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                                var line =  reader.ReadLine();
 
                                 if (line.IndexOf("#EXTINF:", StringComparison.OrdinalIgnoreCase) != -1)
                                 {
@@ -234,18 +232,16 @@ namespace MediaBrowser.Api.Playback.Hls
 
             try
             {
-                return FileSystem.GetFileStream(tmpPath, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true);
+                return FileSystem.GetFileStream(tmpPath, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, FileOpenOptions.SequentialScan);
             }
             catch (IOException)
             {
-                return FileSystem.GetFileStream(path, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true);
+                return FileSystem.GetFileStream(path, FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, FileOpenOptions.SequentialScan);
             }
         }
 
-        protected override string GetCommandLineArguments(string outputPath, StreamState state, bool isEncoding)
+        protected override string GetCommandLineArguments(string outputPath, EncodingOptions encodingOptions, StreamState state, bool isEncoding)
         {
-            var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
-
             var itsOffsetMs = 0;
 
             var itsOffset = itsOffsetMs == 0 ? string.Empty : string.Format("-itsoffset {0} ", TimeSpan.FromMilliseconds(itsOffsetMs).TotalSeconds.ToString(UsCulture));
@@ -285,8 +281,8 @@ namespace MediaBrowser.Api.Playback.Hls
                     EncodingHelper.GetInputArgument(state, encodingOptions),
                     threads,
                     EncodingHelper.GetMapArgs(state),
-                    GetVideoArguments(state),
-                    GetAudioArguments(state),
+                    GetVideoArguments(state, encodingOptions),
+                    GetAudioArguments(state, encodingOptions),
                     state.SegmentLength.ToString(UsCulture),
                     startNumberParam,
                     outputPath,
@@ -306,8 +302,8 @@ namespace MediaBrowser.Api.Playback.Hls
                 EncodingHelper.GetInputArgument(state, encodingOptions),
                 threads,
                 EncodingHelper.GetMapArgs(state),
-                GetVideoArguments(state),
-                GetAudioArguments(state),
+                GetVideoArguments(state, encodingOptions),
+                GetAudioArguments(state, encodingOptions),
                 state.SegmentLength.ToString(UsCulture),
                 startNumberParam,
                 state.HlsListSize.ToString(UsCulture),

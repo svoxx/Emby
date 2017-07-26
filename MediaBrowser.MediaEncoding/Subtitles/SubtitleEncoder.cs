@@ -61,7 +61,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
         }
 
-        private async Task<Stream> ConvertSubtitles(Stream stream,
+        private Stream ConvertSubtitles(Stream stream,
             string inputFormat,
             string outputFormat,
             long startTimeTicks,
@@ -166,7 +166,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
             using (var stream = subtitle.Item1)
             {
-                return await ConvertSubtitles(stream, inputFormat, outputFormat, startTimeTicks, endTimeTicks, preserveOriginalTimestamps, cancellationToken).ConfigureAwait(false);
+                return  ConvertSubtitles(stream, inputFormat, outputFormat, startTimeTicks, endTimeTicks, preserveOriginalTimestamps, cancellationToken);
             }
         }
 
@@ -198,7 +198,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 var bytes = await GetBytes(path, protocol, cancellationToken).ConfigureAwait(false);
 
-                var charset = _textEncoding.GetDetectedEncodingName(bytes, language);
+                var charset = _textEncoding.GetDetectedEncodingName(bytes, language, true);
                 _logger.Debug("charset {0} detected for {1}", charset ?? "null", path);
 
                 if (!string.IsNullOrEmpty(charset))
@@ -445,7 +445,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 throw;
             }
 
-            var ranToCompletion = process.WaitForExit(60000);
+            var ranToCompletion = await process.WaitForExitAsync(300000).ConfigureAwait(false);
 
             if (!ranToCompletion)
             {
@@ -575,7 +575,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 throw;
             }
 
-            var ranToCompletion = process.WaitForExit(300000);
+            var ranToCompletion = await process.WaitForExitAsync(300000).ConfigureAwait(false);
 
             if (!ranToCompletion)
             {
@@ -705,7 +705,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         {
             var bytes = await GetBytes(path, protocol, cancellationToken).ConfigureAwait(false);
 
-            var charset = _textEncoding.GetDetectedEncodingName(bytes, language);
+            var charset = _textEncoding.GetDetectedEncodingName(bytes, language, true);
 
             _logger.Debug("charset {0} detected for {1}", charset ?? "null", path);
 

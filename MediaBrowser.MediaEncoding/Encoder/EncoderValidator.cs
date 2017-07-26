@@ -50,10 +50,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 return false;
             }
 
-            if (logOutput)
-            {
-                _logger.Info("ffmpeg info: {0}", output);
-            }
+            _logger.Info("ffmpeg info: {0}", output);
 
             if (output.IndexOf("Libav developers", StringComparison.OrdinalIgnoreCase) != -1)
             {
@@ -93,7 +90,15 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 "h264_qsv",
                 "hevc_qsv",
                 "mpeg2_qsv",
-                "vc1_qsv"
+                "vc1_qsv",
+                "h264_cuvid",
+                "hevc_cuvid",
+                "dts",
+                "ac3",
+                "aac",
+                "mp3",
+                "h264",
+                "hevc"
             };
 
             foreach (var codec in required)

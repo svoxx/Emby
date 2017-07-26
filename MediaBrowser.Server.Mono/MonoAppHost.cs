@@ -42,11 +42,6 @@ namespace MediaBrowser.Server.Mono
             return new SyncManager();
         }
 
-        public override PackageVersionClass SystemUpdateLevel
-        {
-            get { return UpdateLevelHelper.GetSystemUpdateLevel(ConfigurationManager); }
-        }
-
         protected override void RestartInternal()
         {
             MainClass.Restart(StartupOptions);
@@ -67,9 +62,9 @@ namespace MediaBrowser.Server.Mono
             var list = new List<Assembly>();
 
             list.Add(typeof(DefaultIntroProvider).Assembly);
-            list.Add(typeof(LinuxIsoManager).Assembly);
             list.Add(typeof(ConnectManager).Assembly);
             list.Add(typeof(SyncManager).Assembly);
+            list.Add(typeof(LinuxIsoManager).Assembly);
 
             return list;
         }

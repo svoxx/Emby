@@ -42,6 +42,11 @@ namespace MediaBrowser.Controller.MediaEncoding
             {
                 var hwType = encodingOptions.HardwareAccelerationType;
 
+                if (!encodingOptions.EnableHardwareEncoding)
+                {
+                    hwType = null;
+                }
+
                 if (string.Equals(hwType, "qsv", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(hwType, "h264_qsv", StringComparison.OrdinalIgnoreCase))
                 {
@@ -196,6 +201,10 @@ namespace MediaBrowser.Controller.MediaEncoding
             {
                 return null;
             }
+            if (string.Equals(container, "tp", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
 
             // Seeing reported failures here, not sure yet if this is related to specfying input format
             if (string.Equals(container, "m4v", StringComparison.OrdinalIgnoreCase))
@@ -228,7 +237,12 @@ namespace MediaBrowser.Controller.MediaEncoding
                 return null;
             }
 
-            return codec;
+            if (_mediaEncoder.SupportsDecoder(codec))
+            {
+                return codec;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -968,7 +982,7 @@ namespace MediaBrowser.Controller.MediaEncoding
                 {
                     if (bitrate.HasValue && videoStream.BitRate.HasValue)
                     {
-                        bitrate = Math.Min(bitrate.Value, videoStream.BitRate.Value);
+                        bitrate = GetMinBitrate(bitrate.Value, videoStream.BitRate.Value);
                     }
                 }
             }
@@ -981,9 +995,25 @@ namespace MediaBrowser.Controller.MediaEncoding
                 // If a max bitrate was requested, don't let the scaled bitrate exceed it
                 if (request.VideoBitRate.HasValue)
                 {
-                    bitrate = Math.Min(bitrate.Value, request.VideoBitRate.Value);
+                    bitrate = GetMinBitrate(bitrate.Value, request.VideoBitRate.Value);
                 }
             }
+
+            return bitrate;
+        }
+
+        private int GetMinBitrate(int sourceBitrate, int requestedBitrate)
+        {
+            if (sourceBitrate <= 2000000)
+            {
+                sourceBitrate *= 2;
+            }
+            else if (sourceBitrate <= 3000000)
+            {
+                sourceBitrate = Convert.ToInt32(sourceBitrate * 1.5);
+            }
+
+            var bitrate = Math.Min(sourceBitrate, requestedBitrate);
 
             return bitrate;
         }
@@ -1306,7 +1336,8 @@ namespace MediaBrowser.Controller.MediaEncoding
                 filters.Add("format=nv12|vaapi");
                 filters.Add("hwupload");
             }
-            else if (state.DeInterlace && !string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
+
+            if (state.DeInterlace && !string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
             {
                 filters.Add("yadif=0:-1:0");
             }
@@ -1533,13 +1564,25 @@ namespace MediaBrowser.Controller.MediaEncoding
             }
 
             var flags = new List<string>();
-            if (state.IgnoreDts)
+            if (state.IgnoreInputDts)
             {
                 flags.Add("+igndts");
             }
-            if (state.IgnoreIndex)
+            if (state.IgnoreInputIndex)
             {
                 flags.Add("+ignidx");
+            }
+            if (state.GenPtsInput)
+            {
+                flags.Add("+genpts");
+            }
+            if (state.DiscardCorruptFramesInput)
+            {
+                flags.Add("+discardcorrupt");
+            }
+            if (state.EnableFastSeekInput)
+            {
+                flags.Add("+fastseek");
             }
 
             if (flags.Count > 0)
@@ -1575,7 +1618,7 @@ namespace MediaBrowser.Controller.MediaEncoding
                 }
 
                 // Only do this for video files due to sometimes unpredictable codec names coming from BDInfo
-                if (state.RunTimeTicks.HasValue && state.VideoType == VideoType.VideoFile && string.IsNullOrWhiteSpace(encodingOptions.HardwareAccelerationType))
+                if (state.VideoType == VideoType.VideoFile && state.RunTimeTicks.HasValue && string.IsNullOrWhiteSpace(encodingOptions.HardwareAccelerationType))
                 {
                     foreach (var stream in state.MediaSource.MediaStreams)
                     {
@@ -1732,13 +1775,11 @@ namespace MediaBrowser.Controller.MediaEncoding
                 return null;
             }
 
-            if (state.VideoStream != null && !string.IsNullOrWhiteSpace(state.VideoStream.Codec))
+            if (state.VideoStream != null && 
+                !string.IsNullOrWhiteSpace(state.VideoStream.Codec) && 
+                !string.IsNullOrWhiteSpace(encodingOptions.HardwareAccelerationType) &&
+                encodingOptions.EnableHardwareDecoding)
             {
-                if (!string.IsNullOrWhiteSpace(encodingOptions.HardwareAccelerationType))
-                {
-                    return "-hwaccel auto";
-                }
-
                 if (string.Equals(encodingOptions.HardwareAccelerationType, "qsv", StringComparison.OrdinalIgnoreCase))
                 {
                     switch (state.MediaSource.VideoStream.Codec.ToLower())
@@ -1772,6 +1813,27 @@ namespace MediaBrowser.Controller.MediaEncoding
                             if (_mediaEncoder.SupportsDecoder("vc1_qsv"))
                             {
                                 return "-c:v vc1_qsv ";
+                            }
+                            break;
+                    }
+                }
+
+                else if (string.Equals(encodingOptions.HardwareAccelerationType, "nvenc", StringComparison.OrdinalIgnoreCase))
+                {
+                    switch (state.MediaSource.VideoStream.Codec.ToLower())
+                    {
+                        case "avc":
+                        case "h264":
+                            if (_mediaEncoder.SupportsDecoder("h264_cuvid"))
+                            {
+                                return "-c:v h264_cuvid ";
+                            }
+                            break;
+                        case "hevc":
+                        case "h265":
+                            if (_mediaEncoder.SupportsDecoder("hevc_cuvid"))
+                            {
+                                return "-c:v hevc_cuvid ";
                             }
                             break;
                     }
@@ -1864,6 +1926,22 @@ namespace MediaBrowser.Controller.MediaEncoding
                 ).Trim();
         }
 
+        public string GetOutputFFlags(EncodingJobInfo state)
+        {
+            var flags = new List<string>();
+            if (state.GenPtsOutput)
+            {
+                flags.Add("+genpts");
+            }
+
+            if (flags.Count > 0)
+            {
+                return " -fflags " + string.Join("", flags.ToArray());
+            }
+
+            return string.Empty;
+        }
+
         public string GetProgressiveVideoArguments(EncodingJobInfo state, EncodingOptions encodingOptions, string videoCodec, string defaultH264Preset)
         {
             var args = "-codec:v:0 " + videoCodec;
@@ -1942,6 +2020,8 @@ namespace MediaBrowser.Controller.MediaEncoding
             {
                 args += " -vsync " + state.OutputVideoSync;
             }
+
+            args += GetOutputFFlags(state);
 
             return args;
         }

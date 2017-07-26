@@ -17,7 +17,7 @@ using MediaBrowser.Model.Tasks;
 
 namespace Emby.Server.Implementations.Data
 {
-    public class CleanDatabaseScheduledTask : IScheduledTask
+    public class CleanDatabaseScheduledTask : ILibraryPostScanTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IItemRepository _itemRepo;
@@ -49,31 +49,16 @@ namespace Emby.Server.Implementations.Data
             get { return "Library"; }
         }
 
-        public async Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
+        public async Task Run(IProgress<double> progress, CancellationToken cancellationToken)
         {
             // Ensure these objects are lazy loaded.
             // Without this there is a deadlock that will need to be investigated
             var rootChildren = _libraryManager.RootFolder.Children.ToList();
             rootChildren = _libraryManager.GetUserRootFolder().Children.ToList();
 
-            var innerProgress = new ActionableProgress<double>();
-            innerProgress.RegisterAction(p =>
-            {
-                double newPercentCommplete = .45 * p;
-                progress.Report(newPercentCommplete);
-            });
-            await CleanDeadItems(cancellationToken, innerProgress).ConfigureAwait(false);
-            progress.Report(45);
+            await CleanDeadItems(cancellationToken, progress).ConfigureAwait(false);
 
-            innerProgress = new ActionableProgress<double>();
-            innerProgress.RegisterAction(p =>
-            {
-                double newPercentCommplete = 45 + .55 * p;
-                progress.Report(newPercentCommplete);
-            });
-
-            await _itemRepo.UpdateInheritedValues(cancellationToken).ConfigureAwait(false);
-            progress.Report(100);
+            //await _itemRepo.UpdateInheritedValues(cancellationToken).ConfigureAwait(false);
         }
 
         private async Task CleanDeadItems(CancellationToken cancellationToken, IProgress<double> progress)

@@ -21,12 +21,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Services;
+using MediaBrowser.Common.Extensions;
+using MediaBrowser.Common.Progress;
 
 namespace MediaBrowser.Api.Library
 {
@@ -427,7 +429,11 @@ namespace MediaBrowser.Api.Library
         {
             var series = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { typeof(Series).Name }
+                IncludeItemTypes = new[] { typeof(Series).Name },
+                DtoOptions = new DtoOptions(false)
+                {
+                    EnableImages = false
+                }
 
             }).Where(i => string.Equals(request.TvdbId, i.GetProviderId(MetadataProviders.Tvdb), StringComparison.OrdinalIgnoreCase)).ToArray();
 
@@ -440,7 +446,7 @@ namespace MediaBrowser.Api.Library
             }
             else
             {
-                Task.Run(() => _libraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None));
+                Task.Run(() => _libraryManager.ValidateMediaLibrary(new SimpleProgress<double>(), CancellationToken.None));
             }
         }
 
@@ -448,7 +454,11 @@ namespace MediaBrowser.Api.Library
         {
             var movies = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { typeof(Movie).Name }
+                IncludeItemTypes = new[] { typeof(Movie).Name },
+                DtoOptions = new DtoOptions(false)
+                {
+                    EnableImages = false
+                }
 
             }).ToArray();
 
@@ -474,7 +484,7 @@ namespace MediaBrowser.Api.Library
             }
             else
             {
-                Task.Run(() => _libraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None));
+                Task.Run(() => _libraryManager.ValidateMediaLibrary(new SimpleProgress<double>(), CancellationToken.None));
             }
         }
 
@@ -501,10 +511,6 @@ namespace MediaBrowser.Api.Library
             }
 
             var headers = new Dictionary<string, string>();
-
-            // Quotes are valid in linux. They'll possibly cause issues here
-            var filename = Path.GetFileName(item.Path).Replace("\"", string.Empty);
-            headers["Content-Disposition"] = string.Format("attachment; filename=\"{0}\"", filename);
 
             if (user != null)
             {
@@ -667,8 +673,11 @@ namespace MediaBrowser.Api.Library
                 Limit = 0,
                 Recursive = true,
                 IsVirtualItem = false,
-                SourceTypes = new[] { SourceType.Library },
-                IsFavorite = request.IsFavorite
+                IsFavorite = request.IsFavorite,
+                DtoOptions = new DtoOptions(false)
+                {
+                    EnableImages = false
+                }
             };
 
             return _libraryManager.GetItemsResult(query).TotalRecordCount;
@@ -684,7 +693,7 @@ namespace MediaBrowser.Api.Library
             {
                 try
                 {
-                    _libraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None);
+                    _libraryManager.ValidateMediaLibrary(new SimpleProgress<double>(), CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -819,6 +828,11 @@ namespace MediaBrowser.Api.Library
                                   : (Folder)_libraryManager.RootFolder)
                            : _libraryManager.GetItemById(request.Id);
 
+            if (item == null)
+            {
+                throw new ResourceNotFoundException("Item not found.");
+            }
+
             while (item.ThemeSongIds.Count == 0 && request.InheritFromParent && item.GetParent() != null)
             {
                 item = item.GetParent();
@@ -863,6 +877,11 @@ namespace MediaBrowser.Api.Library
                                   : (Folder)_libraryManager.RootFolder)
                            : _libraryManager.GetItemById(request.Id);
 
+            if (item == null)
+            {
+                throw new ResourceNotFoundException("Item not found.");
+            }
+
             while (item.ThemeVideoIds.Count == 0 && request.InheritFromParent && item.GetParent() != null)
             {
                 item = item.GetParent();
@@ -898,7 +917,11 @@ namespace MediaBrowser.Api.Library
             var query = new InternalItemsQuery(user)
             {
                 IncludeItemTypes = includeTypes,
-                Recursive = true
+                Recursive = true,
+                DtoOptions = new DtoOptions(false)
+                {
+                    EnableImages = false
+                }
             };
 
             var items = _libraryManager.GetItemList(query);

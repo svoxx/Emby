@@ -9,7 +9,6 @@ using System.Collections.Specialized;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Services;
 using MediaBrowser.Model.Text;
@@ -137,7 +136,7 @@ namespace Emby.Server.Implementations.ServerManager
                 return;
             }
 
-            var charset = _textEncoding.GetDetectedEncodingName(bytes, null);
+            var charset = _textEncoding.GetDetectedEncodingName(bytes, null, false);
 
             if (string.Equals(charset, "utf-8", StringComparison.OrdinalIgnoreCase))
             {

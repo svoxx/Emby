@@ -14,8 +14,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.IO;
+using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Services;
 
@@ -325,7 +327,7 @@ namespace MediaBrowser.Api.Images
                         var fileInfo = _fileSystem.GetFileInfo(info.Path);
                         length = fileInfo.Length;
 
-                        var size = _imageProcessor.GetImageSize(info);
+                        var size = _imageProcessor.GetImageSize(info, true);
 
                         width = Convert.ToInt32(size.Width);
                         height = Convert.ToInt32(size.Height);
@@ -406,7 +408,7 @@ namespace MediaBrowser.Api.Images
         {
             var type = GetPathValue(0);
 
-            var item = GetItemByName(request.Name, type, _libraryManager);
+            var item = GetItemByName(request.Name, type, _libraryManager, new DtoOptions(false));
 
             return GetImage(request, item, false);
         }
@@ -415,7 +417,7 @@ namespace MediaBrowser.Api.Images
         {
             var type = GetPathValue(0);
 
-            var item = GetItemByName(request.Name, type, _libraryManager);
+            var item = GetItemByName(request.Name, type, _libraryManager, new DtoOptions(false));
 
             return GetImage(request, item, true);
         }
@@ -566,7 +568,9 @@ namespace MediaBrowser.Api.Images
 
             }).ToList() : new List<IImageEnhancer>();
 
-            var cropwhitespace = request.Type == ImageType.Logo || request.Type == ImageType.Art;
+            var cropwhitespace = request.Type == ImageType.Logo || 
+                request.Type == ImageType.Art
+                || (request.Type == ImageType.Primary && item is LiveTvChannel);
 
             if (request.CropWhitespace.HasValue)
             {
@@ -617,6 +621,8 @@ namespace MediaBrowser.Api.Images
                 ImageIndex = request.Index ?? 0,
                 Image = image,
                 Item = item,
+                ItemId = item.Id.ToString("N"),
+                ItemType = item.GetType().Name,
                 MaxHeight = request.MaxHeight,
                 MaxWidth = request.MaxWidth,
                 Quality = request.Quality ?? 100,

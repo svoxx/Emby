@@ -1,7 +1,4 @@
-﻿using MediaBrowser.Model.Configuration;
-using MediaBrowser.Model.Users;
-using System.Linq;
-using MediaBrowser.Model.Serialization;
+﻿using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -25,9 +22,13 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        protected override bool GetBlockUnratedValue(UserPolicy config)
+        [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
         {
-            return config.BlockUnratedItems.Contains(UnratedItem.Other);
+            get
+            {
+                return false;
+            }
         }
     }
 }

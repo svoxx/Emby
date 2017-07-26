@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using MediaBrowser.Model.Serialization;
 using System.Threading.Tasks;
 using System.Linq;
+using MediaBrowser.Controller.Dto;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -40,6 +41,15 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        [IgnoreDataMember]
         public override bool SupportsPlayedStatus
         {
             get
@@ -53,7 +63,7 @@ namespace MediaBrowser.Controller.Entities
             return GetChildren(user, true).Count();
         }
 
-        protected override Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
+        protected override QueryResult<BaseItem> GetItemsInternal(InternalItemsQuery query)
         {
             var parent = this as Folder;
 
@@ -67,7 +77,7 @@ namespace MediaBrowser.Controller.Entities
             }
 
             return new UserViewBuilder(UserViewManager, LiveTvManager, ChannelManager, LibraryManager, Logger, UserDataManager, TVSeriesManager, ConfigurationManager, PlaylistManager)
-                .GetUserItems(parent, this, ViewType, query);
+                .GetUserItems(parent, this, ViewType, query).Result;
         }
 
         public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
@@ -75,9 +85,10 @@ namespace MediaBrowser.Controller.Entities
             var result = GetItems(new InternalItemsQuery
             {
                 User = user,
-                EnableTotalRecordCount = false
+                EnableTotalRecordCount = false,
+                DtoOptions = new DtoOptions(true)
 
-            }).Result;
+            });
 
             return result.Items;
         }
@@ -100,9 +111,11 @@ namespace MediaBrowser.Controller.Entities
                 Recursive = true,
                 EnableTotalRecordCount = false,
 
-                ForceDirect = true
+                ForceDirect = true,
 
-            }).Result;
+                DtoOptions = query.DtoOptions
+
+            });
 
             return result.Items.Where(i => UserViewBuilder.FilterItem(i, query));
         }

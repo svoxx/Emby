@@ -4,6 +4,7 @@ using MediaBrowser.Model.MediaInfo;
 using System.Collections.Generic;
 using System.Linq;
 using MediaBrowser.Model.Serialization;
+using MediaBrowser.Model.Session;
 
 namespace MediaBrowser.Model.Dto
 {
@@ -31,6 +32,7 @@ namespace MediaBrowser.Model.Dto
         public bool ReadAtNativeFramerate { get; set; }
         public bool IgnoreDts { get; set; }
         public bool IgnoreIndex { get; set; }
+        public bool GenPtsInput { get; set; }
         public bool SupportsTranscoding { get; set; }
         public bool SupportsDirectStream { get; set; }
         public bool SupportsDirectPlay { get; set; }
@@ -108,6 +110,9 @@ namespace MediaBrowser.Model.Dto
                 Bitrate = bitrate;
             }
         }
+
+        [IgnoreDataMember]
+        public List<TranscodeReason> TranscodeReasons { get; set; }
 
         public int? DefaultAudioStreamIndex { get; set; }
         public int? DefaultSubtitleStreamIndex { get; set; }

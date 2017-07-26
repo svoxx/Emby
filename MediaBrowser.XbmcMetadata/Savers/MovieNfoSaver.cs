@@ -10,7 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Xml;
@@ -51,6 +51,11 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 //}
 
                 list.Add(Path.ChangeExtension(item.Path, ".nfo"));
+
+                if (!item.IsInMixedFolder)
+                {
+                    list.Add(Path.Combine(item.ContainingFolderPath, "movie.nfo"));
+                }
             }
 
             return list;

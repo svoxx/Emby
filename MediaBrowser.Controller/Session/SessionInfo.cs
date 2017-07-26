@@ -1,4 +1,4 @@
-﻿using MediaBrowser.Model.Entities;
+﻿using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
 using System;
 using System.Collections.Generic;
@@ -100,13 +100,13 @@ namespace MediaBrowser.Controller.Session
         /// Gets or sets the name of the now viewing item.
         /// </summary>
         /// <value>The name of the now viewing item.</value>
-        public BaseItemInfo NowViewingItem { get; set; }
+        public BaseItemDto NowViewingItem { get; set; }
 
         /// <summary>
         /// Gets or sets the now playing item.
         /// </summary>
         /// <value>The now playing item.</value>
-        public BaseItemInfo NowPlayingItem { get; set; }
+        public BaseItemDto NowPlayingItem { get; set; }
 
         public BaseItem FullNowPlayingItem { get; set; }
 
@@ -203,6 +203,11 @@ namespace MediaBrowser.Controller.Session
 
         public void StartAutomaticProgress(ITimerFactory timerFactory, PlaybackProgressInfo progressInfo)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             lock (_progressLock)
             {
                 _lastProgressInfo = progressInfo;
@@ -223,6 +228,11 @@ namespace MediaBrowser.Controller.Session
 
         private async void OnProgressTimerCallback(object state)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             var progressInfo = _lastProgressInfo;
             if (progressInfo == null)
             {
@@ -274,8 +284,12 @@ namespace MediaBrowser.Controller.Session
             }
         }
 
+        private bool _disposed = false;
+
         public void Dispose()
         {
+            _disposed = true;
+
             StopAutomaticProgress();
             _sessionManager = null;
         }

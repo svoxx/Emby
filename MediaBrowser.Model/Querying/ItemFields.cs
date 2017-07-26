@@ -16,11 +16,6 @@
         AlternateEpisodeNumbers,
 
         /// <summary>
-        /// The awards summary
-        /// </summary>
-        AwardSummary,
-
-        /// <summary>
         /// The can delete
         /// </summary>
         CanDelete,
@@ -93,11 +88,6 @@
         HomePageUrl,
 
         /// <summary>
-        /// The fields that the server supports indexing on
-        /// </summary>
-        IndexOptions,
-
-        /// <summary>
         /// The item counts
         /// </summary>
         ItemCounts,
@@ -159,11 +149,6 @@
         RecursiveItemCount,
 
         /// <summary>
-        /// The season name
-        /// </summary>
-        SeasonName,
-
-        /// <summary>
         /// The settings
         /// </summary>
         Settings,
@@ -217,11 +202,6 @@
         Tags,
 
         /// <summary>
-        /// The vote count
-        /// </summary>
-        VoteCount,
-
-        /// <summary>
         /// The trailer url of the item
         /// </summary>
         RemoteTrailers,
@@ -241,6 +221,14 @@
         /// </summary>
         ServiceName,
         ThemeSongIds,
-        ThemeVideoIds
+        ThemeVideoIds,
+        ExternalEtag,
+        PresentationUniqueKey,
+        InheritedParentalRatingValue,
+        ExternalSeriesId,
+        SeriesPresentationUniqueKey,
+        DateLastRefreshed,
+        DateLastSaved,
+        RefreshState
     }
 }

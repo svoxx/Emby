@@ -11,7 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -55,10 +55,6 @@ namespace Emby.Server.Implementations.Library.Validators
         /// <returns>Task.</returns>
         public async Task ValidatePeople(CancellationToken cancellationToken, IProgress<double> progress)
         {
-            var innerProgress = new ActionableProgress<double>();
-
-            innerProgress.RegisterAction(pct => progress.Report(pct * .15));
-
             var people = _libraryManager.GetPeople(new InternalPeopleQuery());
 
             var dict = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);

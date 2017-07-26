@@ -29,11 +29,21 @@ namespace MediaBrowser.Controller.Entities.Movies
             Shares = new List<Share>();
         }
 
+        [IgnoreDataMember]
         protected override bool FilterLinkedChildrenPerUser
         {
             get
             {
                 return true;
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
             }
         }
 
@@ -79,7 +89,7 @@ namespace MediaBrowser.Controller.Entities.Movies
             return new List<BaseItem>();
         }
 
-        protected override IEnumerable<BaseItem> LoadChildren()
+        protected override List<BaseItem> LoadChildren()
         {
             if (IsLegacyBoxSet)
             {
@@ -118,6 +128,11 @@ namespace MediaBrowser.Controller.Entities.Movies
         {
             get
             {
+                if (string.IsNullOrWhiteSpace(Path))
+                {
+                    return false;
+                }
+
                 return !FileSystem.ContainsSubPath(ConfigurationManager.ApplicationPaths.DataPath, Path);
             }
         }
@@ -152,7 +167,7 @@ namespace MediaBrowser.Controller.Entities.Movies
             var currentOfficialRating = OfficialRating;
 
             // Gather all possible ratings
-            var ratings = GetRecursiveChildren(i => i is Movie || i is Series || i is MusicAlbum || i is Game)
+            var ratings = GetLinkedChildren()
                 .Select(i => i.OfficialRating)
                 .Where(i => !string.IsNullOrEmpty(i))
                 .Distinct(StringComparer.OrdinalIgnoreCase)

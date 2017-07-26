@@ -16,9 +16,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
-using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Model.Extensions;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Xml;
@@ -63,7 +64,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     "releasedate",
                     "outline",
                     "id",
-                    "votes",
                     "credits",
                     "originaltitle",
                     "watched",
@@ -81,7 +81,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     "country",
                     "audiodbalbumid",
                     "audiodbartistid",
-                    "awardsummary",
                     "enddate",
                     "lockedfields",
                     "zap2itid",
@@ -220,14 +219,9 @@ namespace MediaBrowser.XbmcMetadata.Savers
             {
                 if (file.IsHidden)
                 {
-                    FileSystem.SetHidden(path, false);
-
                     wasHidden = true;
                 }
-                if (file.IsReadOnly)
-                {
-                    FileSystem.SetReadOnly(path, false);
-                }
+                FileSystem.SetAttributes(path, false, false);
             }
 
             using (var filestream = FileSystem.GetFileStream(path, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read))
@@ -360,7 +354,8 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
                 if (!string.IsNullOrEmpty(stream.Language))
                 {
-                    writer.WriteElementString("language", stream.Language);
+                    // https://emby.media/community/index.php?/topic/49071-nfo-not-generated-on-actualize-or-rescan-or-identify
+                    writer.WriteElementString("language", RemoveInvalidXMLChars(stream.Language));
                 }
 
                 var scanType = stream.IsInterlaced ? "interlaced" : "progressive";
@@ -427,6 +422,19 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             writer.WriteEndElement();
             writer.WriteEndElement();
+        }
+
+        // filters control characters but allows only properly-formed surrogate sequences
+        private static Regex _invalidXMLChars = new Regex(
+            @"(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFEFF\uFFFE\uFFFF]");
+
+        /// <summary>
+        /// removes any unusual unicode characters that can't be encoded into XML
+        /// </summary>
+        public static string RemoveInvalidXMLChars(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return _invalidXMLChars.Replace(text, string.Empty);
         }
 
         public const string DateAddedFormat = "yyyy-MM-dd HH:mm:ss";
@@ -544,9 +552,10 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writer.WriteElementString("year", item.ProductionYear.Value.ToString(UsCulture));
             }
 
-            if (!string.IsNullOrEmpty(item.ForcedSortName))
+            var forcedSortName = item.ForcedSortName;
+            if (!string.IsNullOrEmpty(forcedSortName))
             {
-                writer.WriteElementString("sorttitle", item.ForcedSortName);
+                writer.WriteElementString("sorttitle", forcedSortName);
             }
 
             if (!string.IsNullOrEmpty(item.OfficialRating))
@@ -664,11 +673,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 }
             }
 
-            if (item.VoteCount.HasValue)
-            {
-                writer.WriteElementString("votes", item.VoteCount.Value.ToString(UsCulture));
-            }
-
             // Use original runtime here, actual file runtime later in MediaInfo
             var runTimeTicks = item.RunTimeTicks;
 
@@ -714,12 +718,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
             foreach (var tag in item.Keywords)
             {
                 writer.WriteElementString("plotkeyword", tag);
-            }
-
-            var hasAwards = item as IHasAwards;
-            if (hasAwards != null && !string.IsNullOrEmpty(hasAwards.AwardSummary))
-            {
-                writer.WriteElementString("awardsummary", hasAwards.AwardSummary);
             }
 
             var externalId = item.GetProviderId(MetadataProviders.AudioDbArtist);

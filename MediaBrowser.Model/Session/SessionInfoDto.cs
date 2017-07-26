@@ -1,4 +1,4 @@
-﻿using MediaBrowser.Model.Entities;
+﻿using MediaBrowser.Model.Dto;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,6 +25,8 @@ namespace MediaBrowser.Model.Session
         /// </summary>
         /// <value>The id.</value>
         public string Id { get; set; }
+
+        public string ServerId { get; set; }
 
         /// <summary>
         /// Gets or sets the user id.
@@ -72,7 +74,7 @@ namespace MediaBrowser.Model.Session
         /// Gets or sets the now viewing item.
         /// </summary>
         /// <value>The now viewing item.</value>
-        public BaseItemInfo NowViewingItem { get; set; }
+        public BaseItemDto NowViewingItem { get; set; }
         
         /// <summary>
         /// Gets or sets the name of the device.
@@ -84,7 +86,7 @@ namespace MediaBrowser.Model.Session
         /// Gets or sets the now playing item.
         /// </summary>
         /// <value>The now playing item.</value>
-        public BaseItemInfo NowPlayingItem { get; set; }
+        public BaseItemDto NowPlayingItem { get; set; }
 
         /// <summary>
         /// Gets or sets the device id.

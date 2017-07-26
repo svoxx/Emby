@@ -588,9 +588,7 @@ namespace Emby.Dlna
                 new DishHopperJoeyProfile(),
                 new DefaultProfile(),
                 new PopcornHourProfile(),
-                new VlcProfile(),
-                new BubbleUpnpProfile(),
-                new KodiProfile(),
+                new MarantzProfile()
             };
 
             foreach (var item in list)

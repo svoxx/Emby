@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -120,9 +120,13 @@ namespace MediaBrowser.Controller.Providers
             {
                 file = _fileSystem.GetFileInfo(path);
 
-                if (file != null)
+                if (file != null && file.Exists)
                 {
                     _fileCache.TryAdd(path, file);
+                }
+                else
+                {
+                    return null;
                 }
             }
 

@@ -33,6 +33,8 @@ namespace MediaBrowser.Controller.Drawing
         /// <returns>ImageSize.</returns>
         ImageSize GetImageSize(ItemImageInfo info);
 
+        ImageSize GetImageSize(ItemImageInfo info, bool allowSlowMethods);
+
         /// <summary>
         /// Gets the size of the image.
         /// </summary>
@@ -105,12 +107,16 @@ namespace MediaBrowser.Controller.Drawing
         /// Creates the image collage.
         /// </summary>
         /// <param name="options">The options.</param>
-        Task CreateImageCollage(ImageCollageOptions options);
+        void CreateImageCollage(ImageCollageOptions options);
 
         /// <summary>
         /// Gets a value indicating whether [supports image collage creation].
         /// </summary>
         /// <value><c>true</c> if [supports image collage creation]; otherwise, <c>false</c>.</value>
         bool SupportsImageCollageCreation { get; }
+
+        IImageEncoder ImageEncoder { get; set; }
+
+        void SaveImageSize(string path, DateTime imageDateModified, ImageSize size);
     }
 }

@@ -187,7 +187,7 @@ namespace Emby.Server.Core
         /// <value>The HTTP server.</value>
         private IHttpServer HttpServer { get; set; }
         private IDtoService DtoService { get; set; }
-        private IImageProcessor ImageProcessor { get; set; }
+        public IImageProcessor ImageProcessor { get; set; }
 
         /// <summary>
         /// Gets or sets the media encoder.
@@ -492,7 +492,6 @@ namespace Emby.Server.Core
         {
             var migrations = new List<IVersionMigration>
             {
-                new UpdateLevelMigration(ServerConfigurationManager, this, HttpClient, JsonSerializer, _releaseAssetFilename, Logger)
             };
 
             foreach (var task in migrations)
@@ -512,8 +511,6 @@ namespace Emby.Server.Core
         {
             var migrations = new List<IVersionMigration>
             {
-                new LibraryScanMigration(ServerConfigurationManager, TaskManager),
-                new GuideMigration(ServerConfigurationManager, TaskManager)
             };
 
             foreach (var task in migrations)
@@ -564,7 +561,7 @@ namespace Emby.Server.Core
             StringExtensions.LocalizationManager = LocalizationManager;
             RegisterSingleInstance(LocalizationManager);
 
-            ITextEncoding textEncoding = new TextEncoding(FileSystemManager, LogManager.GetLogger("TextEncoding"));
+            ITextEncoding textEncoding = new TextEncoding(FileSystemManager, LogManager.GetLogger("TextEncoding"), JsonSerializer);
             RegisterSingleInstance(textEncoding);
             Utilities.EncodingHelper = textEncoding;
             RegisterSingleInstance<IBlurayExaminer>(() => new BdInfoExaminer(FileSystemManager, textEncoding));
@@ -589,7 +586,7 @@ namespace Emby.Server.Core
             FileOrganizationRepository = GetFileOrganizationRepository();
             RegisterSingleInstance(FileOrganizationRepository);
 
-            AuthenticationRepository = await GetAuthenticationRepository().ConfigureAwait(false);
+            AuthenticationRepository = GetAuthenticationRepository();
             RegisterSingleInstance(AuthenticationRepository);
 
             UserManager = new UserManager(LogManager.GetLogger("UserManager"), ServerConfigurationManager, UserRepository, XmlSerializer, NetworkManager, () => ImageProcessor, () => DtoService, () => ConnectManager, this, JsonSerializer, FileSystemManager, CryptographyProvider, _defaultUserNameFactory());
@@ -761,7 +758,10 @@ namespace Emby.Server.Core
                     return null;
                 }
 
-                X509Certificate2 localCert = new X509Certificate2(certificateLocation, info.Password);
+                // Don't use an empty string password
+                var password = string.IsNullOrWhiteSpace(info.Password) ? null : info.Password;
+
+                X509Certificate2 localCert = new X509Certificate2(certificateLocation, password);
                 //localCert.PrivateKey = PrivateKey.CreateFromFile(pvk_file).RSA;
                 if (!localCert.HasPrivateKey)
                 {
@@ -780,14 +780,7 @@ namespace Emby.Server.Core
 
         private IImageProcessor GetImageProcessor()
         {
-            var maxConcurrentImageProcesses = Math.Max(Environment.ProcessorCount, 4);
-
-            if (StartupOptions.ContainsOption("-imagethreads"))
-            {
-                int.TryParse(StartupOptions.GetOption("-imagethreads"), NumberStyles.Any, CultureInfo.InvariantCulture, out maxConcurrentImageProcesses);
-            }
-
-            return new ImageProcessor(LogManager.GetLogger("ImageProcessor"), ServerConfigurationManager.ApplicationPaths, FileSystemManager, JsonSerializer, ImageEncoder, maxConcurrentImageProcesses, () => LibraryManager, TimerFactory);
+            return new ImageProcessor(LogManager.GetLogger("ImageProcessor"), ServerConfigurationManager.ApplicationPaths, FileSystemManager, JsonSerializer, ImageEncoder, () => LibraryManager, TimerFactory);
         }
 
         protected virtual FFMpegInstallInfo GetFfmpegInstallInfo()
@@ -952,7 +945,7 @@ namespace Emby.Server.Core
             return repo;
         }
 
-        private async Task<IAuthenticationRepository> GetAuthenticationRepository()
+        private IAuthenticationRepository GetAuthenticationRepository()
         {
             var repo = new AuthenticationRepository(LogManager.GetLogger("AuthenticationRepository"), ServerConfigurationManager.ApplicationPaths);
 
@@ -1132,7 +1125,8 @@ namespace Emby.Server.Core
                 // Custom cert
                 return new CertificateInfo
                 {
-                    Path = ServerConfigurationManager.Configuration.CertificatePath
+                    Path = ServerConfigurationManager.Configuration.CertificatePath,
+                    Password = ServerConfigurationManager.Configuration.CertificatePassword
                 };
             }
 
@@ -1280,9 +1274,6 @@ namespace Emby.Server.Core
 
             // Emby.Server implementations
             list.Add(GetAssembly(typeof(InstallationManager)));
-
-            // Emby.Server.Core
-            list.Add(GetAssembly(typeof(ApplicationHost)));
 
             // MediaEncoding
             list.Add(GetAssembly(typeof(MediaEncoder)));

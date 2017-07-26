@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Emby.Server.Implementations.HttpServer;
 using Emby.Server.Implementations.HttpServer.SocketSharp;
@@ -103,6 +104,7 @@ namespace Emby.Server.Implementations.HttpServer
         readonly Dictionary<Type, int> _mapExceptionToStatusCode = new Dictionary<Type, int>
             {
                 {typeof (ResourceNotFoundException), 404},
+                {typeof (RemoteServiceUnavailableException), 502},
                 {typeof (FileNotFoundException), 404},
                 //{typeof (DirectoryNotFoundException), 404},
                 {typeof (SecurityException), 401},
@@ -228,7 +230,8 @@ namespace Emby.Server.Implementations.HttpServer
                 _streamFactory,
                 _enableDualModeSockets,
                 GetRequest,
-                _fileSystem);
+                _fileSystem,
+                _environment);
         }
 
         private IHttpRequest GetRequest(HttpListenerContext httpContext)
@@ -266,6 +269,29 @@ namespace Emby.Server.Implementations.HttpServer
             }
         }
 
+        private Exception GetActualException(Exception ex)
+        {
+            var agg = ex as AggregateException;
+            if (agg != null)
+            {
+                var inner = agg.InnerException;
+                if (inner != null)
+                {
+                    return GetActualException(inner);
+                }
+                else
+                {
+                    var inners = agg.InnerExceptions;
+                    if (inners != null && inners.Count > 0)
+                    {
+                        return GetActualException(inners[0]);
+                    }
+                }
+            }
+
+            return ex;
+        }
+
         private int GetStatusCode(Exception ex)
         {
             if (ex is ArgumentException)
@@ -278,7 +304,7 @@ namespace Emby.Server.Implementations.HttpServer
             int statusCode;
             if (!_mapExceptionToStatusCode.TryGetValue(exceptionType, out statusCode))
             {
-                if (string.Equals(exceptionType.Name, "DirectoryNotFoundException", StringComparison.OrdinalIgnoreCase))
+                if (ex is DirectoryNotFoundException)
                 {
                     statusCode = 404;
                 }
@@ -295,6 +321,8 @@ namespace Emby.Server.Implementations.HttpServer
         {
             try
             {
+                ex = GetActualException(ex);
+
                 if (logException)
                 {
                     _logger.ErrorException("Error processing request", ex);
@@ -444,14 +472,12 @@ namespace Emby.Server.Implementations.HttpServer
         /// <summary>
         /// Overridable method that can be used to implement a custom hnandler
         /// </summary>
-        /// <param name="httpReq">The HTTP req.</param>
-        /// <param name="url">The URL.</param>
-        /// <returns>Task.</returns>
-        protected async Task RequestHandler(IHttpRequest httpReq, Uri url)
+        protected async Task RequestHandler(IHttpRequest httpReq, Uri url, CancellationToken cancellationToken)
         {
             var date = DateTime.Now;
             var httpRes = httpReq.Response;
             bool enableLog = false;
+            bool logHeaders = false;
             string urlToLog = null;
             string remoteIp = null;
 
@@ -490,13 +516,14 @@ namespace Emby.Server.Implementations.HttpServer
                 var urlString = url.OriginalString;
                 enableLog = EnableLogging(urlString, localPath);
                 urlToLog = urlString;
+                 logHeaders = enableLog && urlToLog.IndexOf("/videos/", StringComparison.OrdinalIgnoreCase) != -1;
 
                 if (enableLog)
                 {
                     urlToLog = GetUrlToLog(urlString);
                     remoteIp = httpReq.RemoteIp;
 
-                    LoggerUtils.LogRequest(_logger, urlToLog, httpReq.HttpMethod, httpReq.UserAgent);
+                    LoggerUtils.LogRequest(_logger, urlToLog, httpReq.HttpMethod, httpReq.UserAgent, logHeaders ? httpReq.Headers : null);
                 }
 
                 if (string.Equals(localPath, "/emby/", StringComparison.OrdinalIgnoreCase) ||
@@ -586,7 +613,7 @@ namespace Emby.Server.Implementations.HttpServer
 
                 if (handler != null)
                 {
-                    await handler.ProcessRequestAsync(this, httpReq, httpRes, Logger, operationName).ConfigureAwait(false);
+                    await handler.ProcessRequestAsync(this, httpReq, httpRes, Logger, operationName, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -597,9 +624,10 @@ namespace Emby.Server.Implementations.HttpServer
             {
                 ErrorHandler(ex, httpReq, false);
             }
+
             catch (Exception ex)
             {
-                ErrorHandler(ex, httpReq);
+                ErrorHandler(ex, httpReq, !string.Equals(ex.GetType().Name, "SocketException", StringComparison.OrdinalIgnoreCase));
             }
             finally
             {
@@ -611,7 +639,7 @@ namespace Emby.Server.Implementations.HttpServer
 
                     var duration = DateTime.Now - date;
 
-                    LoggerUtils.LogResponse(_logger, statusCode, urlToLog, remoteIp, duration);
+                    LoggerUtils.LogResponse(_logger, statusCode, urlToLog, remoteIp, duration, logHeaders ? httpRes.Headers : null);
                 }
             }
         }

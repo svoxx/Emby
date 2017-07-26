@@ -55,7 +55,6 @@ namespace MediaBrowser.Controller.LiveTv
         public override SourceType SourceType
         {
             get { return SourceType.LiveTV; }
-            set { }
         }
 
         [IgnoreDataMember]
@@ -101,7 +100,7 @@ namespace MediaBrowser.Controller.LiveTv
                 }
             }
 
-            return Number + "-" + (Name ?? string.Empty);
+            return (Number ?? string.Empty) + "-" + (Name ?? string.Empty);
         }
 
         [IgnoreDataMember]

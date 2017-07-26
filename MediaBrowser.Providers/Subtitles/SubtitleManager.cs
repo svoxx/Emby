@@ -16,7 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -133,7 +133,8 @@ namespace MediaBrowser.Providers.Subtitles
                     {
                         //var isText = MediaStream.IsTextFormat(response.Format);
 
-                        using (var fs = _fileSystem.GetFileStream(savePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
+                        using (var fs = _fileSystem.GetFileStream(savePath, FileOpenMode.Create, FileAccessMode.Write,
+                                FileShareMode.Read, true))
                         {
                             await stream.CopyToAsync(fs).ConfigureAwait(false);
                         }
@@ -154,6 +155,10 @@ namespace MediaBrowser.Providers.Subtitles
                     }
                 }
             }
+            catch (RateLimitExceededException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 EventHelper.FireEventIfNotNull(SubtitleDownloadFailure, this, new SubtitleDownloadFailureEventArgs
@@ -163,12 +168,12 @@ namespace MediaBrowser.Providers.Subtitles
                     Provider = provider.Name
 
                 }, _logger);
-                
+
                 throw;
             }
         }
 
-        public Task<IEnumerable<RemoteSubtitleInfo>> SearchSubtitles(Video video, string language, CancellationToken cancellationToken)
+        public Task<IEnumerable<RemoteSubtitleInfo>> SearchSubtitles(Video video, string language, bool? isPerfectMatch, CancellationToken cancellationToken)
         {
             if (video.LocationType != LocationType.FileSystem ||
                 video.VideoType != VideoType.VideoFile)
@@ -202,7 +207,8 @@ namespace MediaBrowser.Providers.Subtitles
                 ParentIndexNumber = video.ParentIndexNumber,
                 ProductionYear = video.ProductionYear,
                 ProviderIds = video.ProviderIds,
-                RuntimeTicks = video.RunTimeTicks
+                RuntimeTicks = video.RunTimeTicks,
+                IsPerfectMatch = isPerfectMatch ?? false
             };
 
             var episode = video as Episode;
@@ -256,7 +262,7 @@ namespace MediaBrowser.Providers.Subtitles
                 _monitor.ReportFileSystemChangeComplete(path, false);
             }
 
-            return _libraryManager.GetItemById(itemId).ChangedExternally();
+            return _libraryManager.GetItemById(itemId).RefreshMetadata(CancellationToken.None);
         }
 
         public Task<SubtitleResponse> GetRemoteSubtitles(string id, CancellationToken cancellationToken)

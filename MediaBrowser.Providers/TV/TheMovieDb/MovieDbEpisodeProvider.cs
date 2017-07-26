@@ -16,7 +16,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.Globalization;
 
@@ -122,7 +122,7 @@ namespace MediaBrowser.Providers.TV
                 item.Overview = response.overview;
 
                 item.CommunityRating = (float)response.vote_average;
-                item.VoteCount = response.vote_count;
+                //item.VoteCount = response.vote_count;
 
                 if (response.videos != null && response.videos.results != null)
                 {
@@ -196,8 +196,6 @@ namespace MediaBrowser.Providers.TV
             }
             catch (HttpException ex)
             {
-                Logger.Error("No metadata found for {0}", seasonNumber.Value);
-
                 if (ex.StatusCode.HasValue && ex.StatusCode.Value == HttpStatusCode.NotFound)
                 {
                     return result;

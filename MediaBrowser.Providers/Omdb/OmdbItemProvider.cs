@@ -22,7 +22,7 @@ using System.Threading.Tasks;
 namespace MediaBrowser.Providers.Omdb
 {
     public class OmdbItemProvider : IRemoteMetadataProvider<Series, SeriesInfo>,
-        IRemoteMetadataProvider<Movie, MovieInfo>, IRemoteMetadataProvider<Trailer, TrailerInfo>, IRemoteMetadataProvider<LiveTvProgram, LiveTvProgramLookupInfo>
+        IRemoteMetadataProvider<Movie, MovieInfo>, IRemoteMetadataProvider<Trailer, TrailerInfo>
     {
         private readonly IJsonSerializer _jsonSerializer;
         private readonly IHttpClient _httpClient;
@@ -51,16 +51,6 @@ namespace MediaBrowser.Providers.Omdb
             return GetSearchResults(searchInfo, "movie", cancellationToken);
         }
 
-        public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(LiveTvProgramLookupInfo searchInfo, CancellationToken cancellationToken)
-        {
-            if (!searchInfo.IsMovie)
-            {
-                return Task.FromResult<IEnumerable<RemoteSearchResult>>(new List<RemoteSearchResult>());
-            }
-
-            return GetSearchResults(searchInfo, "movie", cancellationToken);
-        }
-
         public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(ItemLookupInfo searchInfo, string type, CancellationToken cancellationToken)
         {
             return GetSearchResultsInternal(searchInfo, type, true, cancellationToken);
@@ -72,8 +62,7 @@ namespace MediaBrowser.Providers.Omdb
 
             var imdbId = searchInfo.GetProviderId(MetadataProviders.Imdb);
 
-            var baseUrl = await OmdbProvider.GetOmdbBaseUrl(cancellationToken).ConfigureAwait(false);
-            var url = baseUrl + "/?plot=full&r=json";
+            var urlQuery = "plot=full&r=json";
             if (type == "episode" && episodeSearchInfo != null)
             {
                 episodeSearchInfo.SeriesProviderIds.TryGetValue(MetadataProviders.Imdb.ToString(), out imdbId);
@@ -94,23 +83,23 @@ namespace MediaBrowser.Providers.Omdb
             {
                 if (year.HasValue)
                 {
-                    url += "&y=" + year.Value.ToString(CultureInfo.InvariantCulture);
+                    urlQuery += "&y=" + year.Value.ToString(CultureInfo.InvariantCulture);
                 }
 
                 // &s means search and returns a list of results as opposed to t
                 if (isSearch)
                 {
-                    url += "&s=" + WebUtility.UrlEncode(name);
+                    urlQuery += "&s=" + WebUtility.UrlEncode(name);
                 }
                 else
                 {
-                    url += "&t=" + WebUtility.UrlEncode(name);
+                    urlQuery += "&t=" + WebUtility.UrlEncode(name);
                 }
-                url += "&type=" + type;
+                urlQuery += "&type=" + type;
             }
             else
             {
-                url += "&i=" + imdbId;
+                urlQuery += "&i=" + imdbId;
                 isSearch = false;
             }
 
@@ -118,13 +107,15 @@ namespace MediaBrowser.Providers.Omdb
             {
                 if (searchInfo.IndexNumber.HasValue)
                 {
-                    url += string.Format(CultureInfo.InvariantCulture, "&Episode={0}", searchInfo.IndexNumber);
+                    urlQuery += string.Format(CultureInfo.InvariantCulture, "&Episode={0}", searchInfo.IndexNumber);
                 }
                 if (searchInfo.ParentIndexNumber.HasValue)
                 {
-                    url += string.Format(CultureInfo.InvariantCulture, "&Season={0}", searchInfo.ParentIndexNumber);
+                    urlQuery += string.Format(CultureInfo.InvariantCulture, "&Season={0}", searchInfo.ParentIndexNumber);
                 }
             }
+
+            var url =  OmdbProvider.GetOmdbUrl(urlQuery, cancellationToken);
 
             using (var stream = await OmdbProvider.GetOmdbResponse(_httpClient, url, cancellationToken).ConfigureAwait(false))
             {
@@ -227,15 +218,6 @@ namespace MediaBrowser.Providers.Omdb
             }
 
             return result;
-        }
-
-        public Task<MetadataResult<LiveTvProgram>> GetMetadata(LiveTvProgramLookupInfo info, CancellationToken cancellationToken)
-        {
-            if (!info.IsMovie)
-            {
-                return Task.FromResult(new MetadataResult<LiveTvProgram>());
-            }
-            return GetMovieResult<LiveTvProgram>(info, cancellationToken);
         }
 
         public Task<MetadataResult<Movie>> GetMetadata(MovieInfo info, CancellationToken cancellationToken)
