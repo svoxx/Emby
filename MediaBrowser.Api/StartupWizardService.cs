@@ -95,7 +95,6 @@ namespace MediaBrowser.Api
             config.EnableStandaloneMusicKeys = true;
             config.EnableCaseSensitiveItemIds = true;
             config.SkipDeserializationForBasicTypes = true;
-            config.SkipDeserializationForAudio = true;
             config.EnableLocalizedGuids = true;
             config.EnableSimpleArtistDetection = true;
             config.EnableNormalizedItemByNameIds = true;
@@ -126,7 +125,7 @@ namespace MediaBrowser.Api
             var user = _userManager.Users.First();
 
             user.Name = request.Name;
-            await _userManager.UpdateUser(user).ConfigureAwait(false);
+            _userManager.UpdateUser(user);
 
             var result = new UpdateStartupUserResult();
 

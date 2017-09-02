@@ -162,7 +162,6 @@ namespace MediaBrowser.Model.Configuration
 
         public bool EnableAutomaticRestart { get; set; }
         public bool SkipDeserializationForBasicTypes { get; set; }
-        public bool SkipDeserializationForAudio { get; set; }
 
         public string ServerName { get; set; }
         public string WanDdns { get; set; }
@@ -218,6 +217,7 @@ namespace MediaBrowser.Model.Configuration
             EnableHttps = false;
             EnableDashboardResponseCaching = true;
             EnableAnonymousUsageReporting = true;
+            EnableCaseSensitiveItemIds = true;
 
             EnableAutomaticRestart = true;
 
@@ -349,7 +349,9 @@ namespace MediaBrowser.Model.Configuration
                             Limit = 1,
                             Type = ImageType.Logo
                         }
-                    }
+                    },
+
+                    DisabledImageFetchers = new [] {"FanArt"}
                 },
 
                 new MetadataOptions(1, 1280)
@@ -539,7 +541,8 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Thumb
                         }
                     },
-                    DisabledMetadataFetchers = new []{ "TheMovieDb" }
+                    DisabledMetadataFetchers = new []{ "TheMovieDb" },
+                    DisabledImageFetchers = new [] { "FanArt" }
                 },
 
                 new MetadataOptions(0, 1280)

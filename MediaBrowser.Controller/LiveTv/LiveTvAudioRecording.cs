@@ -6,7 +6,6 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Model.Serialization;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
@@ -151,9 +150,9 @@ namespace MediaBrowser.Controller.LiveTv
             return user.Policy.EnableLiveTvManagement;
         }
 
-        public override IEnumerable<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
+        public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
         {
-            var list = base.GetMediaSources(enablePathSubstitution).ToList();
+            var list = base.GetMediaSources(enablePathSubstitution);
 
             foreach (var mediaSource in list)
             {

@@ -29,9 +29,9 @@ namespace MediaBrowser.Providers.Music
                             Recursive = true,
                             IsFolder = false
                         }) :
-                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder).ToList();
+                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder);
 
-                    var currentList = item.Genres.ToList();
+                    var currentList = item.Genres;
 
                     item.Genres = taggedItems.SelectMany(i => i.Genres)
                         .DistinctNames()
@@ -47,7 +47,7 @@ namespace MediaBrowser.Providers.Music
             return updateType;
         }
 
-        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
         }

@@ -159,7 +159,7 @@ namespace Emby.Server.Implementations.Channels
                 all = all.Take(query.Limit.Value).ToList();
             }
 
-            var returnItems = all.ToArray();
+            var returnItems = all.ToArray(all.Count);
 
             var result = new QueryResult<Channel>
             {
@@ -182,8 +182,8 @@ namespace Emby.Server.Implementations.Channels
             {
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -429,7 +429,7 @@ namespace Emby.Server.Implementations.Channels
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
             }
             else if (forceUpdate)
             {
@@ -462,14 +462,14 @@ namespace Emby.Server.Implementations.Channels
             return _libraryManager.GetItemById(id) as Channel;
         }
 
-        public IEnumerable<ChannelFeatures> GetAllChannelFeatures()
+        public ChannelFeatures[] GetAllChannelFeatures()
         {
             return _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { typeof(Channel).Name },
                 SortBy = new[] { ItemSortBy.SortName }
 
-            }).Select(i => GetChannelFeatures(i.ToString("N")));
+            }).Select(i => GetChannelFeatures(i.ToString("N"))).ToArray();
         }
 
         public ChannelFeatures GetChannelFeatures(string id)
@@ -509,10 +509,10 @@ namespace Emby.Server.Implementations.Channels
             {
                 CanFilter = !features.MaxPageSize.HasValue,
                 CanSearch = provider is ISearchableChannel,
-                ContentTypes = features.ContentTypes,
-                DefaultSortFields = features.DefaultSortFields,
+                ContentTypes = features.ContentTypes.ToArray(),
+                DefaultSortFields = features.DefaultSortFields.ToArray(),
                 MaxPageSize = features.MaxPageSize,
-                MediaTypes = features.MediaTypes,
+                MediaTypes = features.MediaTypes.ToArray(),
                 SupportsSortOrderToggle = features.SupportsSortOrderToggle,
                 SupportsLatestMedia = supportsLatest,
                 Name = channel.Name,
@@ -564,11 +564,10 @@ namespace Emby.Server.Implementations.Channels
 
             var dtoOptions = new DtoOptions()
             {
-                Fields = query.Fields.ToList()
+                Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(items, dtoOptions, user).ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -676,12 +675,10 @@ namespace Emby.Server.Implementations.Channels
                 internalItems = internalItems.Take(query.Limit.Value).ToArray();
             }
 
-            var returnItemArray = internalItems.ToArray();
-
             return new QueryResult<BaseItem>
             {
                 TotalRecordCount = totalCount,
-                Items = returnItemArray
+                Items = internalItems
             };
         }
 
@@ -813,12 +810,10 @@ namespace Emby.Server.Implementations.Channels
 
             var internalItems = await Task.WhenAll(itemTasks).ConfigureAwait(false);
 
-            var returnItemArray = internalItems.ToArray();
-
             return new QueryResult<BaseItem>
             {
                 TotalRecordCount = totalCount,
-                Items = returnItemArray
+                Items = internalItems
             };
         }
 
@@ -834,11 +829,11 @@ namespace Emby.Server.Implementations.Channels
 
             var dtoOptions = new DtoOptions()
             {
-                Fields = query.Fields.ToList()
+                Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -986,11 +981,11 @@ namespace Emby.Server.Implementations.Channels
 
             var dtoOptions = new DtoOptions()
             {
-                Fields = query.Fields.ToList()
+                Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -1191,7 +1186,7 @@ namespace Emby.Server.Implementations.Channels
                 }
             }
 
-            var returnItemArray = all.ToArray();
+            var returnItemArray = all.ToArray(all.Count);
             RefreshIfNeeded(returnItemArray);
 
             return new QueryResult<BaseItem>
@@ -1309,7 +1304,7 @@ namespace Emby.Server.Implementations.Channels
             {
                 item.Name = info.Name;
                 item.Genres = info.Genres;
-                item.Studios = info.Studios;
+                item.Studios = info.Studios.ToArray(info.Studios.Count);
                 item.CommunityRating = info.CommunityRating;
                 item.Overview = info.Overview;
                 item.IndexNumber = info.IndexNumber;
@@ -1319,7 +1314,7 @@ namespace Emby.Server.Implementations.Channels
                 item.ProviderIds = info.ProviderIds;
                 item.OfficialRating = info.OfficialRating;
                 item.DateCreated = info.DateCreated ?? DateTime.UtcNow;
-                item.Tags = info.Tags;
+                item.Tags = info.Tags.ToArray(info.Tags.Count);
                 item.HomePageUrl = info.HomePageUrl;
             }
             else if (info.Type == ChannelItemType.Folder && info.FolderType == ChannelFolderType.Container)
@@ -1335,13 +1330,13 @@ namespace Emby.Server.Implementations.Channels
             var hasArtists = item as IHasArtist;
             if (hasArtists != null)
             {
-                hasArtists.Artists = info.Artists;
+                hasArtists.Artists = info.Artists.ToArray();
             }
 
             var hasAlbumArtists = item as IHasAlbumArtist;
             if (hasAlbumArtists != null)
             {
-                hasAlbumArtists.AlbumArtists = info.AlbumArtists;
+                hasAlbumArtists.AlbumArtists = info.AlbumArtists.ToArray(info.AlbumArtists.Count);
             }
 
             var trailer = item as Trailer;
@@ -1393,11 +1388,11 @@ namespace Emby.Server.Implementations.Channels
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
 
                 if (info.People != null && info.People.Count > 0)
                 {
-                    await _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>()).ConfigureAwait(false);
+                    _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>());
                 }
             }
             else if (forceUpdate)

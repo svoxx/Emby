@@ -1,13 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using Emby.Server.Implementations.Data;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Social;
 using SQLitePCL.pretty;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.Social
 {
@@ -41,7 +40,7 @@ namespace Emby.Server.Implementations.Social
             }
         }
 
-        public async Task CreateShare(SocialShareInfo info)
+        public void CreateShare(SocialShareInfo info)
         {
             if (info == null)
             {
@@ -86,7 +85,7 @@ namespace Emby.Server.Implementations.Social
                     var paramList = new List<object>();
                     paramList.Add(id.ToGuidBlob());
 
-                    foreach (var row in connection.Query(commandText, paramList.ToArray()))
+                    foreach (var row in connection.Query(commandText, paramList.ToArray(paramList.Count)))
                     {
                         return GetSocialShareInfo(row);
                     }
@@ -108,7 +107,7 @@ namespace Emby.Server.Implementations.Social
             return info;
         }
 
-        public async Task DeleteShare(string id)
+        public void DeleteShare(string id)
         {
 
         }

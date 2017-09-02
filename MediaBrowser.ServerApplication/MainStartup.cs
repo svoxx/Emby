@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Model.Logging;
-using MediaBrowser.Server.Implementations;
 using MediaBrowser.Server.Startup.Common;
 using MediaBrowser.ServerApplication.Native;
 using MediaBrowser.ServerApplication.Splash;
@@ -17,21 +16,17 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Emby.Common.Implementations.EnvironmentInfo;
-using Emby.Common.Implementations.IO;
-using Emby.Common.Implementations.Logging;
-using Emby.Common.Implementations.Networking;
 using Emby.Server.Core.Cryptography;
 using Emby.Drawing;
 using Emby.Server.Core;
-using Emby.Server.Core.IO;
-using Emby.Server.Core.Logging;
 using Emby.Server.Implementations;
 using Emby.Server.Implementations.Browser;
+using Emby.Server.Implementations.EnvironmentInfo;
 using Emby.Server.Implementations.IO;
 using Emby.Server.Implementations.Logging;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Model.IO;
+using SystemEvents = Emby.Server.Implementations.SystemEvents;
 
 namespace MediaBrowser.ServerApplication
 {
@@ -77,7 +72,7 @@ namespace MediaBrowser.ServerApplication
 
             var appPaths = CreateApplicationPaths(ApplicationPath, IsRunningAsService);
 
-            var logManager = new NlogManager(appPaths.LogDirectoryPath, "server");
+            var logManager = new SimpleLogManager(appPaths.LogDirectoryPath, "server");
             logManager.ReloadLogger(LogSeverity.Debug);
             logManager.AddConsoleOutput();
 
@@ -241,18 +236,16 @@ namespace MediaBrowser.ServerApplication
 
             var resourcesPath = Path.GetDirectoryName(applicationPath);
 
-            Action<string> createDirectoryFn = s => Directory.CreateDirectory(s);
-
             if (runAsService)
             {
                 var systemPath = Path.GetDirectoryName(applicationPath);
 
                 var programDataPath = Path.GetDirectoryName(systemPath);
 
-                return new ServerApplicationPaths(programDataPath, appFolderPath, resourcesPath, createDirectoryFn);
+                return new ServerApplicationPaths(programDataPath, appFolderPath, resourcesPath);
             }
 
-            return new ServerApplicationPaths(ApplicationPathHelper.GetProgramDataPath(applicationPath), appFolderPath, resourcesPath, createDirectoryFn);
+            return new ServerApplicationPaths(ApplicationPathHelper.GetProgramDataPath(applicationPath), appFolderPath, resourcesPath);
         }
 
         /// <summary>
@@ -320,11 +313,8 @@ namespace MediaBrowser.ServerApplication
                 "emby.windows.zip",
                 environmentInfo,
                 new NullImageEncoder(),
-                new Server.Startup.Common.SystemEvents(logManager.GetLogger("SystemEvents")),
-                new RecyclableMemoryStreamProvider(),
-                new Networking.NetworkManager(logManager.GetLogger("NetworkManager")),
-                GenerateCertificate,
-                () => Environment.UserDomainName);
+                new SystemEvents(logManager.GetLogger("SystemEvents")),
+                new Networking.NetworkManager(logManager.GetLogger("NetworkManager")));
 
             var initProgress = new Progress<double>();
 
@@ -369,11 +359,6 @@ namespace MediaBrowser.ServerApplication
 
                 ShowTrayIcon();
             }
-        }
-
-        private static void GenerateCertificate(string certPath, string certHost, string certPassword)
-        {
-            CertificateGenerator.CreateSelfSignCertificatePfx(certPath, certHost, certPassword, _logger);
         }
 
         private static ServerNotifyIcon _serverNotifyIcon;

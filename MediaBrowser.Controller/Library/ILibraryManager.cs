@@ -185,13 +185,6 @@ namespace MediaBrowser.Controller.Library
                                    SortOrder sortOrder);
 
         /// <summary>
-        /// Ensure supplied item has only one instance throughout
-        /// </summary>
-        /// <param name="item">The item.</param>
-        /// <returns>The proper instance to the item</returns>
-        BaseItem GetOrAddByReferenceItem(BaseItem item);
-
-        /// <summary>
         /// Gets the user root folder.
         /// </summary>
         /// <returns>UserRootFolder.</returns>
@@ -202,16 +195,14 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task CreateItem(BaseItem item, CancellationToken cancellationToken);
+        void CreateItem(BaseItem item, CancellationToken cancellationToken);
 
         /// <summary>
         /// Creates the items.
         /// </summary>
         /// <param name="items">The items.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task CreateItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken);
+        void CreateItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken);
 
         /// <summary>
         /// Updates the item.
@@ -284,7 +275,7 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="paths">The paths.</param>
         /// <returns>IEnumerable{System.String}.</returns>
-        IEnumerable<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths);
+        List<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths);
 
         /// <summary>
         /// Registers the item.
@@ -310,7 +301,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetNamedView(User user,
+        UserView GetNamedView(User user,
             string name,
             string parentId,
             string viewType,
@@ -326,7 +317,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetNamedView(User user,
+        UserView GetNamedView(User user,
             string name,
             string viewType,
             string sortName,
@@ -370,7 +361,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetShadowView(BaseItem parent,
+        UserView GetShadowView(BaseItem parent,
           string viewType,
           string sortName,
           CancellationToken cancellationToken);
@@ -478,8 +469,7 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="people">The people.</param>
-        /// <returns>Task.</returns>
-        Task UpdatePeople(BaseItem item, List<PersonInfo> people);
+        void UpdatePeople(BaseItem item, List<PersonInfo> people);
 
         /// <summary>
         /// Gets the item ids.
@@ -520,21 +510,21 @@ namespace MediaBrowser.Controller.Library
         /// <param name="image">The image.</param>
         /// <param name="imageIndex">Index of the image.</param>
         /// <returns>Task.</returns>
-        Task<ItemImageInfo> ConvertImageToLocal(IHasImages item, ItemImageInfo image, int imageIndex);
+        Task<ItemImageInfo> ConvertImageToLocal(IHasMetadata item, ItemImageInfo image, int imageIndex);
 
         /// <summary>
         /// Gets the items.
         /// </summary>
         /// <param name="query">The query.</param>
         /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
-        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query);
+        List<BaseItem> GetItemList(InternalItemsQuery query);
 
-        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query, bool allowExternalContent);
+        List<BaseItem> GetItemList(InternalItemsQuery query, bool allowExternalContent);
 
         /// <summary>
         /// Gets the items.
         /// </summary>
-        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query, List<BaseItem> parents);
+        List<BaseItem> GetItemList(InternalItemsQuery query, List<BaseItem> parents);
 
         /// <summary>
         /// Gets the items result.

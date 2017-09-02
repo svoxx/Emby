@@ -533,7 +533,7 @@ namespace MediaBrowser.Controller.Entities
             return ConvertToResult(_libraryManager.GetItemList(query));
         }
 
-        private QueryResult<BaseItem> ConvertToResult(IEnumerable<BaseItem> items)
+        private QueryResult<BaseItem> ConvertToResult(List<BaseItem> items)
         {
             var arr = items.ToArray();
             return new QueryResult<BaseItem>
@@ -779,7 +779,6 @@ namespace MediaBrowser.Controller.Entities
 
             items = FilterVirtualEpisodes(items,
                 query.IsMissing,
-                query.IsVirtualUnaired,
                 query.IsUnaired);
 
             if (collapseBoxSetItems && user != null)
@@ -790,7 +789,7 @@ namespace MediaBrowser.Controller.Entities
             // This must be the last filter
             if (!string.IsNullOrEmpty(query.AdjacentTo))
             {
-                items = FilterForAdjacency(items, query.AdjacentTo);
+                items = FilterForAdjacency(items.ToList(), query.AdjacentTo);
             }
 
             return SortAndPage(items, totalRecordLimit, query, libraryManager, enableSorting);
@@ -1065,7 +1064,6 @@ namespace MediaBrowser.Controller.Entities
         private static IEnumerable<BaseItem> FilterVirtualEpisodes(
             IEnumerable<BaseItem> items,
             bool? isMissing,
-            bool? isVirtualUnaired,
             bool? isUnaired)
         {
             if (isMissing.HasValue)
@@ -1091,20 +1089,6 @@ namespace MediaBrowser.Controller.Entities
                     if (e != null)
                     {
                         return e.IsUnaired == val;
-                    }
-                    return true;
-                });
-            }
-
-            if (isVirtualUnaired.HasValue)
-            {
-                var val = isVirtualUnaired.Value;
-                items = items.Where(i =>
-                {
-                    var e = i as Episode;
-                    if (e != null)
-                    {
-                        return e.IsVirtualUnaired == val;
                     }
                     return true;
                 });
@@ -1387,8 +1371,8 @@ namespace MediaBrowser.Controller.Entities
                 if (movie != null)
                 {
                     var ok = filterValue
-                        ? movie.SpecialFeatureIds.Count > 0
-                        : movie.SpecialFeatureIds.Count == 0;
+                        ? movie.SpecialFeatureIds.Length > 0
+                        : movie.SpecialFeatureIds.Length == 0;
 
                     if (!ok)
                     {
@@ -1463,7 +1447,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 var filterValue = query.HasThemeSong.Value;
 
-                var themeCount = item.ThemeSongIds.Count;
+                var themeCount = item.ThemeSongIds.Length;
                 var ok = filterValue ? themeCount > 0 : themeCount == 0;
 
                 if (!ok)
@@ -1476,7 +1460,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 var filterValue = query.HasThemeVideo.Value;
 
-                var themeCount = item.ThemeVideoIds.Count;
+                var themeCount = item.ThemeVideoIds.Length;
                 var ok = filterValue ? themeCount > 0 : themeCount == 0;
 
                 if (!ok)
@@ -1674,15 +1658,6 @@ namespace MediaBrowser.Controller.Entities
                 }
             }
 
-            if (query.AirDays.Length > 0)
-            {
-                var ok = new[] { item }.OfType<Series>().Any(p => p.AirDays != null && query.AirDays.Any(d => p.AirDays.Contains(d)));
-                if (!ok)
-                {
-                    return false;
-                }
-            }
-
             if (query.SeriesStatuses.Length > 0)
             {
                 var ok = new[] { item }.OfType<Series>().Any(p => p.Status.HasValue && query.SeriesStatuses.Contains(p.Status.Value));
@@ -1788,10 +1763,8 @@ namespace MediaBrowser.Controller.Entities
             return _userViewManager.GetUserSubView(parent.Id.ToString("N"), type, sortName, CancellationToken.None);
         }
 
-        public static IEnumerable<BaseItem> FilterForAdjacency(IEnumerable<BaseItem> items, string adjacentToId)
+        public static IEnumerable<BaseItem> FilterForAdjacency(List<BaseItem> list, string adjacentToId)
         {
-            var list = items.ToList();
-
             var adjacentToIdGuid = new Guid(adjacentToId);
             var adjacentToItem = list.FirstOrDefault(i => i.Id == adjacentToIdGuid);
 

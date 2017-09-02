@@ -279,13 +279,16 @@ namespace MediaBrowser.Api.Images
 
             var itemImages = item.ImageInfos;
 
-            foreach (var image in itemImages.Where(i => !item.AllowsMultipleImages(i.Type)))
+            foreach (var image in itemImages)
             {
-                var info = GetImageInfo(item, image, null);
-
-                if (info != null)
+                if (!item.AllowsMultipleImages(image.Type))
                 {
-                    list.Add(info);
+                    var info = GetImageInfo(item, image, null);
+
+                    if (info != null)
+                    {
+                        list.Add(info);
+                    }
                 }
             }
 
@@ -312,7 +315,7 @@ namespace MediaBrowser.Api.Images
             return list;
         }
 
-        private ImageInfo GetImageInfo(IHasImages item, ItemImageInfo info, int? imageIndex)
+        private ImageInfo GetImageInfo(IHasMetadata item, ItemImageInfo info, int? imageIndex)
         {
             try
             {
@@ -507,7 +510,7 @@ namespace MediaBrowser.Api.Images
         /// <param name="currentIndex">Index of the current.</param>
         /// <param name="newIndex">The new index.</param>
         /// <returns>Task.</returns>
-        private Task UpdateItemIndex(IHasImages item, ImageType type, int currentIndex, int newIndex)
+        private Task UpdateItemIndex(IHasMetadata item, ImageType type, int currentIndex, int newIndex)
         {
             return item.SwapImages(type, currentIndex, newIndex);
         }
@@ -520,7 +523,7 @@ namespace MediaBrowser.Api.Images
         /// <param name="isHeadRequest">if set to <c>true</c> [is head request].</param>
         /// <returns>System.Object.</returns>
         /// <exception cref="ResourceNotFoundException"></exception>
-        public Task<object> GetImage(ImageRequest request, IHasImages item, bool isHeadRequest)
+        public Task<object> GetImage(ImageRequest request, IHasMetadata item, bool isHeadRequest)
         {
             if (request.PercentPlayed.HasValue)
             {
@@ -553,20 +556,7 @@ namespace MediaBrowser.Api.Images
                 throw new ResourceNotFoundException(string.Format("{0} does not have an image of type {1}", item.Name, request.Type));
             }
 
-            var supportedImageEnhancers = request.EnableImageEnhancers ? _imageProcessor.ImageEnhancers.Where(i =>
-            {
-                try
-                {
-                    return i.Supports(item, request.Type);
-                }
-                catch (Exception ex)
-                {
-                    Logger.ErrorException("Error in image enhancer: {0}", ex, i.GetType().Name);
-
-                    return false;
-                }
-
-            }).ToList() : new List<IImageEnhancer>();
+            var supportedImageEnhancers = request.EnableImageEnhancers ? _imageProcessor.GetSupportedEnhancers(item, request.Type) : new List<IImageEnhancer>();
 
             var cropwhitespace = request.Type == ImageType.Logo || 
                 request.Type == ImageType.Art
@@ -603,7 +593,7 @@ namespace MediaBrowser.Api.Images
                 isHeadRequest);
         }
 
-        private async Task<object> GetImageResult(IHasImages item,
+        private async Task<object> GetImageResult(IHasMetadata item,
             ImageRequest request,
             ItemImageInfo image,
             bool cropwhitespace,
@@ -749,7 +739,7 @@ namespace MediaBrowser.Api.Images
         /// <param name="request">The request.</param>
         /// <param name="item">The item.</param>
         /// <returns>System.String.</returns>
-        private ItemImageInfo GetImageInfo(ImageRequest request, IHasImages item)
+        private ItemImageInfo GetImageInfo(ImageRequest request, IHasMetadata item)
         {
             var index = request.Index ?? 0;
 

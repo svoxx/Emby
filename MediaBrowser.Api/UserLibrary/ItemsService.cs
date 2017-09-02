@@ -10,8 +10,10 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.Audio;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Services;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -20,7 +22,7 @@ namespace MediaBrowser.Api.UserLibrary
     /// </summary>
     [Route("/Items", "GET", Summary = "Gets items based on a query.")]
     [Route("/Users/{UserId}/Items", "GET", Summary = "Gets items based on a query.")]
-    public class GetItems : BaseItemsRequest, IReturn<ItemsResult>
+    public class GetItems : BaseItemsRequest, IReturn<QueryResult<BaseItemDto>>
     {
     }
 
@@ -99,7 +101,7 @@ namespace MediaBrowser.Api.UserLibrary
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>Task{ItemsResult}.</returns>
-        private async Task<ItemsResult> GetItems(GetItems request)
+        private async Task<QueryResult<BaseItemDto>> GetItems(GetItems request)
         {
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
 
@@ -124,10 +126,10 @@ namespace MediaBrowser.Api.UserLibrary
                 throw new InvalidOperationException("GetBaseItemDtos returned null");
             }
 
-            return new ItemsResult
+            return new QueryResult<BaseItemDto>
             {
                 TotalRecordCount = result.TotalRecordCount,
-                Items = dtoList.ToArray()
+                Items = dtoList
             };
         }
 
@@ -179,9 +181,7 @@ namespace MediaBrowser.Api.UserLibrary
                 return folder.GetItems(GetItemsQuery(request, dtoOptions, user));
             }
 
-            IEnumerable<BaseItem> items = folder.GetChildren(user, true);
-
-            var itemsArray = items.ToArray();
+            var itemsArray = folder.GetChildren(user, true).ToArray();
 
             return new QueryResult<BaseItem>
             {
@@ -206,7 +206,6 @@ namespace MediaBrowser.Api.UserLibrary
                 Limit = request.Limit,
                 StartIndex = request.StartIndex,
                 IsMissing = request.IsMissing,
-                IsVirtualUnaired = request.IsVirtualUnaired,
                 IsUnaired = request.IsUnaired,
                 CollapseBoxSetItems = request.CollapseBoxSetItems,
                 NameLessThan = request.NameLessThan,
@@ -238,8 +237,8 @@ namespace MediaBrowser.Api.UserLibrary
                 PersonIds = request.GetPersonIds(),
                 PersonTypes = request.GetPersonTypes(),
                 Years = request.GetYears(),
-                ImageTypes = request.GetImageTypes().ToArray(),
-                VideoTypes = request.GetVideoTypes().ToArray(),
+                ImageTypes = request.GetImageTypes(),
+                VideoTypes = request.GetVideoTypes(),
                 AdjacentTo = request.AdjacentTo,
                 ItemIds = request.GetItemIds(),
                 MinPlayers = request.MinPlayers,
@@ -319,12 +318,6 @@ namespace MediaBrowser.Api.UserLibrary
                 query.SeriesStatuses = request.SeriesStatus.Split(',').Select(d => (SeriesStatus)Enum.Parse(typeof(SeriesStatus), d, true)).ToArray();
             }
 
-            // Filter by Series AirDays
-            if (!string.IsNullOrEmpty(request.AirDays))
-            {
-                query.AirDays = request.AirDays.Split(',').Select(d => (DayOfWeek)Enum.Parse(typeof(DayOfWeek), d, true)).ToArray();
-            }
-
             // ExcludeLocationTypes
             if (!string.IsNullOrEmpty(request.ExcludeLocationTypes))
             {
@@ -338,13 +331,11 @@ namespace MediaBrowser.Api.UserLibrary
             if (!string.IsNullOrEmpty(request.LocationTypes))
             {
                 var requestedLocationTypes =
-                    request.LocationTypes.Split(',')
-                        .Select(d => (LocationType)Enum.Parse(typeof(LocationType), d, true))
-                        .ToList();
+                    request.LocationTypes.Split(',');
 
-                if (requestedLocationTypes.Count > 0 && requestedLocationTypes.Count < 4)
+                if (requestedLocationTypes.Length > 0 && requestedLocationTypes.Length < 4)
                 {
-                    query.IsVirtualItem = requestedLocationTypes.Contains(LocationType.Virtual);
+                    query.IsVirtualItem = requestedLocationTypes.Contains(LocationType.Virtual.ToString());
                 }
             }
 

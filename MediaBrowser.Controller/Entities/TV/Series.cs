@@ -22,12 +22,14 @@ namespace MediaBrowser.Controller.Entities.TV
     {
         public Series()
         {
-            AirDays = new List<DayOfWeek>();
-
-            RemoteTrailers = new List<MediaUrl>();
-            LocalTrailerIds = new List<Guid>();
-            RemoteTrailerIds = new List<Guid>();
+            RemoteTrailers = EmptyMediaUrlArray;
+            LocalTrailerIds = EmptyGuidArray;
+            RemoteTrailerIds = EmptyGuidArray;
+            AirDays = new DayOfWeek[] { };
         }
+
+        public DayOfWeek[] AirDays { get; set; }
+        public string AirTime { get; set; }
 
         [IgnoreDataMember]
         public override bool SupportsAddingToPlaylist
@@ -62,10 +64,10 @@ namespace MediaBrowser.Controller.Entities.TV
             }
         }
 
-        public List<Guid> LocalTrailerIds { get; set; }
-        public List<Guid> RemoteTrailerIds { get; set; }
+        public Guid[] LocalTrailerIds { get; set; }
+        public Guid[] RemoteTrailerIds { get; set; }
 
-        public List<MediaUrl> RemoteTrailers { get; set; }
+        public MediaUrl[] RemoteTrailers { get; set; }
 
         /// <summary>
         /// airdate, dvd or absolute
@@ -77,16 +79,6 @@ namespace MediaBrowser.Controller.Entities.TV
         /// </summary>
         /// <value>The status.</value>
         public SeriesStatus? Status { get; set; }
-        /// <summary>
-        /// Gets or sets the air days.
-        /// </summary>
-        /// <value>The air days.</value>
-        public List<DayOfWeek> AirDays { get; set; }
-        /// <summary>
-        /// Gets or sets the air time.
-        /// </summary>
-        /// <value>The air time.</value>
-        public string AirTime { get; set; }
 
         /// <summary>
         /// Gets or sets the date last episode added.
@@ -160,12 +152,8 @@ namespace MediaBrowser.Controller.Entities.TV
                 IncludeItemTypes = new[] { typeof(Season).Name },
                 IsVirtualItem = false,
                 Limit = 0,
-                DtoOptions = new Dto.DtoOptions
+                DtoOptions = new Dto.DtoOptions(false)
                 {
-                    Fields = new List<ItemFields>
-                    {
-
-                    },
                     EnableImages = false
                 }
             });
@@ -181,19 +169,15 @@ namespace MediaBrowser.Controller.Entities.TV
             {
                 AncestorWithPresentationUniqueKey = null,
                 SeriesPresentationUniqueKey = seriesKey,
-                DtoOptions = new Dto.DtoOptions
+                DtoOptions = new Dto.DtoOptions(false)
                 {
-                    Fields = new List<ItemFields>
-                    {
-                        
-                    },
                     EnableImages = false
                 }
             };
 
             if (query.IncludeItemTypes.Length == 0)
             {
-                query.IncludeItemTypes = new[] { typeof(Episode).Name, typeof(Season).Name };
+                query.IncludeItemTypes = new[] { typeof(Episode).Name };
             }
             query.IsVirtualItem = false;
             query.Limit = 0;
@@ -225,32 +209,29 @@ namespace MediaBrowser.Controller.Entities.TV
             return list;
         }
 
-        /// <summary>
-        /// Gets the trailer ids.
-        /// </summary>
-        /// <returns>List&lt;Guid&gt;.</returns>
-        public List<Guid> GetTrailerIds()
-        {
-            var list = LocalTrailerIds.ToList();
-            list.AddRange(RemoteTrailerIds);
-            return list;
-        }
-
         [IgnoreDataMember]
         public bool ContainsEpisodesWithoutSeasonFolders
         {
             get
             {
-                return Children.OfType<Video>().Any();
+                var children = Children;
+                foreach (var child in children)
+                {
+                    if (child is Video)
+                    {
+                        return true;
+                    }
+                }
+                return false;
             }
         }
 
-        public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
+        public override List<BaseItem> GetChildren(User user, bool includeLinkedChildren)
         {
             return GetSeasons(user, new DtoOptions(true));
         }
 
-        public IEnumerable<Season> GetSeasons(User user, DtoOptions options)
+        public List<BaseItem> GetSeasons(User user, DtoOptions options)
         {
             var query = new InternalItemsQuery(user)
             {
@@ -259,7 +240,7 @@ namespace MediaBrowser.Controller.Entities.TV
 
             SetSeasonQueryOptions(query, user);
 
-            return LibraryManager.GetItemList(query).Cast<Season>();
+            return LibraryManager.GetItemList(query);
         }
 
         private void SetSeasonQueryOptions(InternalItemsQuery query, User user)
@@ -273,17 +254,9 @@ namespace MediaBrowser.Controller.Entities.TV
             query.IncludeItemTypes = new[] { typeof(Season).Name };
             query.SortBy = new[] {ItemSortBy.SortName};
 
-            if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
-            {
-                query.IsVirtualItem = false;
-            }
-            else if (!config.DisplayMissingEpisodes)
+            if (!config.DisplayMissingEpisodes)
             {
                 query.IsMissing = false;
-            }
-            else if (!config.DisplayUnairedEpisodes)
-            {
-                query.IsVirtualUnaired = false;
             }
         }
 
@@ -319,7 +292,7 @@ namespace MediaBrowser.Controller.Entities.TV
             return LibraryManager.GetItemsResult(query);
         }
 
-        public IEnumerable<Episode> GetEpisodes(User user, DtoOptions options)
+        public IEnumerable<BaseItem> GetEpisodes(User user, DtoOptions options)
         {
             var seriesKey = GetUniqueSeriesKey(this);
 
@@ -332,27 +305,18 @@ namespace MediaBrowser.Controller.Entities.TV
                 DtoOptions = options
             };
             var config = user.Configuration;
-            if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
-            {
-                query.IsVirtualItem = false;
-            }
-            else if (!config.DisplayMissingEpisodes)
+            if (!config.DisplayMissingEpisodes)
             {
                 query.IsMissing = false;
             }
-            else if (!config.DisplayUnairedEpisodes)
-            {
-                query.IsVirtualUnaired = false;
-            }
 
-            var allItems = LibraryManager.GetItemList(query).ToList();
+            var allItems = LibraryManager.GetItemList(query);
 
             var allSeriesEpisodes = allItems.OfType<Episode>().ToList();
 
             var allEpisodes = allItems.OfType<Season>()
                 .SelectMany(i => i.GetEpisodes(this, user, allSeriesEpisodes, options))
-                .Reverse()
-                .ToList();
+                .Reverse();
 
             // Specials could appear twice based on above - once in season 0, once in the aired season
             // This depends on settings for that series
@@ -365,20 +329,22 @@ namespace MediaBrowser.Controller.Entities.TV
         {
             // Refresh bottom up, children first, then the boxset
             // By then hopefully the  movies within will have Tmdb collection values
-            var items = GetRecursiveChildren().ToList();
+            var items = GetRecursiveChildren();
 
-            var seasons = items.OfType<Season>().ToList();
-            var otherItems = items.Except(seasons).ToList();
-
-            var totalItems = seasons.Count + otherItems.Count;
+            var totalItems = items.Count;
             var numComplete = 0;
 
             // Refresh current item
             await RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
 
             // Refresh seasons
-            foreach (var item in seasons)
+            foreach (var item in items)
             {
+                if (!(item is Season))
+                {
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
@@ -390,8 +356,13 @@ namespace MediaBrowser.Controller.Entities.TV
             }
 
             // Refresh episodes and other children
-            foreach (var item in otherItems)
+            foreach (var item in items)
             {
+                if ((item is Season))
+                {
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var skipItem = false;
@@ -425,7 +396,7 @@ namespace MediaBrowser.Controller.Entities.TV
             await ProviderManager.RefreshSingleItem(this, refreshOptions, cancellationToken).ConfigureAwait(false);
         }
 
-        public IEnumerable<Episode> GetSeasonEpisodes(Season parentSeason, User user, DtoOptions options)
+        public List<BaseItem> GetSeasonEpisodes(Season parentSeason, User user, DtoOptions options)
         {
             var queryFromSeries = ConfigurationManager.Configuration.DisplaySpecialsWithinSeasons;
 
@@ -445,26 +416,18 @@ namespace MediaBrowser.Controller.Entities.TV
             if (user != null)
             {
                 var config = user.Configuration;
-                if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
-                {
-                    query.IsVirtualItem = false;
-                }
-                else if (!config.DisplayMissingEpisodes)
+                if (!config.DisplayMissingEpisodes)
                 {
                     query.IsMissing = false;
                 }
-                else if (!config.DisplayUnairedEpisodes)
-                {
-                    query.IsVirtualUnaired = false;
-                }
             }
 
-            var allItems = LibraryManager.GetItemList(query).OfType<Episode>();
+            var allItems = LibraryManager.GetItemList(query);
 
             return GetSeasonEpisodes(parentSeason, user, allItems, options);
         }
 
-        public IEnumerable<Episode> GetSeasonEpisodes(Season parentSeason, User user, IEnumerable<Episode> allSeriesEpisodes, DtoOptions options)
+        public List<BaseItem> GetSeasonEpisodes(Season parentSeason, User user, IEnumerable<BaseItem> allSeriesEpisodes, DtoOptions options)
         {
             if (allSeriesEpisodes == null)
             {
@@ -475,14 +438,13 @@ namespace MediaBrowser.Controller.Entities.TV
 
             var sortBy = (parentSeason.IndexNumber ?? -1) == 0 ? ItemSortBy.SortName : ItemSortBy.AiredEpisodeOrder;
 
-            return LibraryManager.Sort(episodes, user, new[] { sortBy }, SortOrder.Ascending)
-                .Cast<Episode>();
+            return LibraryManager.Sort(episodes, user, new[] { sortBy }, SortOrder.Ascending).ToList();
         }
 
         /// <summary>
         /// Filters the episodes by season.
         /// </summary>
-        public static IEnumerable<Episode> FilterEpisodesBySeason(IEnumerable<Episode> episodes, Season parentSeason, bool includeSpecials)
+        public static IEnumerable<BaseItem> FilterEpisodesBySeason(IEnumerable<BaseItem> episodes, Season parentSeason, bool includeSpecials)
         {
             var seasonNumber = parentSeason.IndexNumber;
             var seasonPresentationKey = GetUniqueSeriesKey(parentSeason);
@@ -491,7 +453,9 @@ namespace MediaBrowser.Controller.Entities.TV
 
             return episodes.Where(episode =>
             {
-                var currentSeasonNumber = supportSpecialsInSeason ? episode.AiredSeasonNumber : episode.ParentIndexNumber;
+                var episodeItem = (Episode) episode;
+
+                var currentSeasonNumber = supportSpecialsInSeason ? episodeItem.AiredSeasonNumber : episode.ParentIndexNumber;
                 if (currentSeasonNumber.HasValue && seasonNumber.HasValue && currentSeasonNumber.Value == seasonNumber.Value)
                 {
                     return true;
@@ -502,7 +466,7 @@ namespace MediaBrowser.Controller.Entities.TV
                     return true;
                 }
 
-                var season = episode.Season;
+                var season = episodeItem.Season;
                 return season != null && string.Equals(GetUniqueSeriesKey(season), seasonPresentationKey, StringComparison.OrdinalIgnoreCase);
             });
         }
