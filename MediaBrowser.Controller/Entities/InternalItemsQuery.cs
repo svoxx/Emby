@@ -38,12 +38,10 @@ namespace MediaBrowser.Controller.Entities
         public string[] ExcludeTags { get; set; }
         public string[] ExcludeInheritedTags { get; set; }
         public string[] Genres { get; set; }
-        public string[] Keywords { get; set; }
 
         public bool? IsSpecialSeason { get; set; }
         public bool? IsMissing { get; set; }
         public bool? IsUnaired { get; set; }
-        public bool? IsVirtualUnaired { get; set; }
         public bool? CollapseBoxSetItems { get; set; }
 
         public string NameStartsWithOrGreater { get; set; }
@@ -56,7 +54,6 @@ namespace MediaBrowser.Controller.Entities
         public string Path { get; set; }
         public string PathNotStartsWith { get; set; }
         public string Name { get; set; }
-        public string SlugName { get; set; }
 
         public string Person { get; set; }
         public string[] PersonIds { get; set; }
@@ -126,17 +123,32 @@ namespace MediaBrowser.Controller.Entities
         public bool? IsVirtualItem { get; set; }
 
         public Guid? ParentId { get; set; }
+        public string ParentType { get; set; }
         public string[] AncestorIds { get; set; }
         public string[] TopParentIds { get; set; }
 
-        public string[] PresetViews { get; set; }
-        public SourceType[] SourceTypes { get; set; }
-        public SourceType[] ExcludeSourceTypes { get; set; }
-        public TrailerType[] TrailerTypes { get; set; }
+        public BaseItem Parent
+        {
+            set
+            {
+                if (value == null)
+                {
+                    ParentId = null;
+                    ParentType = null;
+                }
+                else
+                {
+                    ParentId = value.Id;
+                    ParentType = value.GetType().Name;
+                }
+            }
+        }
 
-        public DayOfWeek[] AirDays { get; set; }
+        public string[] PresetViews { get; set; }
+        public TrailerType[] TrailerTypes { get; set; }
+        public SourceType[] SourceTypes { get; set; }
+
         public SeriesStatus[] SeriesStatuses { get; set; }
-        public string AlbumArtistStartsWithOrGreater { get; set; }
         public string ExternalSeriesId { get; set; }
         public string ExternalId { get; set; }
 
@@ -147,6 +159,7 @@ namespace MediaBrowser.Controller.Entities
         public string SeriesPresentationUniqueKey { get; set; }
 
         public bool GroupByPresentationUniqueKey { get; set; }
+        public bool GroupBySeriesPresentationUniqueKey { get; set; }
         public bool EnableTotalRecordCount { get; set; }
         public bool ForceDirect { get; set; }
         public Dictionary<string, string> ExcludeProviderIds { get; set; }
@@ -156,40 +169,10 @@ namespace MediaBrowser.Controller.Entities
 
         public DateTime? MinDateCreated { get; set; }
         public DateTime? MinDateLastSaved { get; set; }
+        public DateTime? MinDateLastSavedForUser { get; set; }
 
         public DtoOptions DtoOptions { get; set; }
         public int MinSimilarityScore { get; set; }
-
-        public bool HasField(ItemFields name)
-        {
-            var fields = DtoOptions.Fields;
-
-            switch (name)
-            {
-                case ItemFields.ThemeSongIds:
-                case ItemFields.ThemeVideoIds:
-                case ItemFields.ProductionLocations:
-                case ItemFields.Keywords:
-                case ItemFields.Taglines:
-                case ItemFields.CustomRating:
-                case ItemFields.DateCreated:
-                case ItemFields.SortName:
-                case ItemFields.Overview:
-                case ItemFields.HomePageUrl:
-                case ItemFields.VoteCount:
-                case ItemFields.DisplayMediaType:
-                //case ItemFields.ServiceName:
-                case ItemFields.Genres:
-                case ItemFields.Studios:
-                case ItemFields.Settings:
-                case ItemFields.OriginalTitle:
-                case ItemFields.Tags:
-                case ItemFields.DateLastMediaAdded:
-                    return fields.Count == 0 || fields.Contains(name);
-                default:
-                    return true;
-            }
-        }
 
         public InternalItemsQuery()
         {
@@ -209,7 +192,6 @@ namespace MediaBrowser.Controller.Entities
             OfficialRatings = new string[] { };
             SortBy = new string[] { };
             MediaTypes = new string[] { };
-            Keywords = new string[] { };
             IncludeItemTypes = new string[] { };
             ExcludeItemTypes = new string[] { };
             Genres = new string[] { };
@@ -228,10 +210,8 @@ namespace MediaBrowser.Controller.Entities
             ExcludeTags = new string[] { };
             ExcludeInheritedTags = new string[] { };
             PresetViews = new string[] { };
-            SourceTypes = new SourceType[] { };
-            ExcludeSourceTypes = new SourceType[] { };
             TrailerTypes = new TrailerType[] { };
-            AirDays = new DayOfWeek[] { };
+            SourceTypes = new SourceType[] { };
             SeriesStatuses = new SeriesStatus[] { };
             OrderBy = new List<Tuple<string, SortOrder>>();
         }

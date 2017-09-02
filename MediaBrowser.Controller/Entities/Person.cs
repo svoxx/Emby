@@ -1,7 +1,6 @@
 ﻿using MediaBrowser.Controller.Providers;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Model.Entities;
@@ -91,22 +90,6 @@ namespace MediaBrowser.Controller.Entities
             {
                 return false;
             }
-        }
-
-        public IEnumerable<BaseItem> GetTaggedItems(IEnumerable<BaseItem> inputItems)
-        {
-            var itemsWithPerson = LibraryManager.GetItemIds(new InternalItemsQuery
-            {
-                PersonIds = new[] { Id.ToString("N") }
-            });
-
-            return inputItems.Where(i => itemsWithPerson.Contains(i.Id));
-        }
-
-
-        public Func<BaseItem, bool> GetItemFilter()
-        {
-            return i => LibraryManager.GetPeople(i).Any(p => string.Equals(p.Name, Name, StringComparison.OrdinalIgnoreCase));
         }
 
         [IgnoreDataMember]

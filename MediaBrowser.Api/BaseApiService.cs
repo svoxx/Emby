@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using MediaBrowser.Model.Services;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Api
 {
@@ -54,6 +55,17 @@ namespace MediaBrowser.Api
             return Request.Headers[name];
         }
 
+        private static readonly string[] EmptyStringArray = new string[] { };
+        public static string[] SplitValue(string value, char delim)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return EmptyStringArray;
+            }
+
+            return value.Split(new[] { delim }, StringSplitOptions.RemoveEmptyEntries);
+        }
+        
         /// <summary>
         /// To the optimized result.
         /// </summary>
@@ -128,7 +140,7 @@ namespace MediaBrowser.Api
             var hasFields = request as IHasItemFields;
             if (hasFields != null)
             {
-                options.Fields = hasFields.GetItemFields().ToList();
+                options.Fields = hasFields.GetItemFields();
             }
 
             var client = authInfo.Client ?? string.Empty;
@@ -137,7 +149,9 @@ namespace MediaBrowser.Api
                 client.IndexOf("media center", StringComparison.OrdinalIgnoreCase) != -1 ||
                 client.IndexOf("classic", StringComparison.OrdinalIgnoreCase) != -1)
             {
-                options.Fields.Add(Model.Querying.ItemFields.RecursiveItemCount);
+                var list = options.Fields.ToList();
+                list.Add(Model.Querying.ItemFields.RecursiveItemCount);
+                options.Fields = list.ToArray(list.Count);
             }
 
             if (client.IndexOf("kodi", StringComparison.OrdinalIgnoreCase) != -1 ||
@@ -148,17 +162,9 @@ namespace MediaBrowser.Api
                client.IndexOf("samsung", StringComparison.OrdinalIgnoreCase) != -1 ||
                client.IndexOf("androidtv", StringComparison.OrdinalIgnoreCase) != -1)
             {
-                options.Fields.Add(Model.Querying.ItemFields.ChildCount);
-            }
-
-            if (client.IndexOf("web", StringComparison.OrdinalIgnoreCase) == -1 &&
-
-                // covers both emby mobile and emby for android mobile
-                client.IndexOf("mobile", StringComparison.OrdinalIgnoreCase) == -1 &&
-                client.IndexOf("ios", StringComparison.OrdinalIgnoreCase) == -1 &&
-                client.IndexOf("theater", StringComparison.OrdinalIgnoreCase) == -1)
-            {
-                options.Fields.Add(Model.Querying.ItemFields.ChildCount);
+                var list = options.Fields.ToList();
+                list.Add(Model.Querying.ItemFields.ChildCount);
+                options.Fields = list.ToArray(list.Count);
             }
 
             var hasDtoOptions = request as IHasDtoOptions;
@@ -177,23 +183,18 @@ namespace MediaBrowser.Api
 
                 if (!string.IsNullOrWhiteSpace(hasDtoOptions.EnableImageTypes))
                 {
-                    options.ImageTypes = (hasDtoOptions.EnableImageTypes ?? string.Empty).Split(',').Where(i => !string.IsNullOrWhiteSpace(i)).Select(v => (ImageType)Enum.Parse(typeof(ImageType), v, true)).ToList();
+                    options.ImageTypes = (hasDtoOptions.EnableImageTypes ?? string.Empty).Split(',').Where(i => !string.IsNullOrWhiteSpace(i)).Select(v => (ImageType)Enum.Parse(typeof(ImageType), v, true)).ToArray();
                 }
             }
 
             return options;
         }
 
-        protected MusicArtist GetArtist(string name, ILibraryManager libraryManager)
+        protected MusicArtist GetArtist(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(MusicArtist).Name }
-
-                }).OfType<MusicArtist>().FirstOrDefault();
+                var result = GetItemFromSlugName<MusicArtist>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -201,19 +202,14 @@ namespace MediaBrowser.Api
                 }
             }
 
-            return libraryManager.GetArtist(name);
+            return libraryManager.GetArtist(name, dtoOptions);
         }
 
-        protected Studio GetStudio(string name, ILibraryManager libraryManager)
+        protected Studio GetStudio(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(Studio).Name }
-
-                }).OfType<Studio>().FirstOrDefault();
+                var result = GetItemFromSlugName<Studio>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -224,16 +220,11 @@ namespace MediaBrowser.Api
             return libraryManager.GetStudio(name);
         }
 
-        protected Genre GetGenre(string name, ILibraryManager libraryManager)
+        protected Genre GetGenre(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(Genre).Name }
-
-                }).OfType<Genre>().FirstOrDefault();
+                var result = GetItemFromSlugName<Genre>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -244,16 +235,11 @@ namespace MediaBrowser.Api
             return libraryManager.GetGenre(name);
         }
 
-        protected MusicGenre GetMusicGenre(string name, ILibraryManager libraryManager)
+        protected MusicGenre GetMusicGenre(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(MusicGenre).Name }
-
-                }).OfType<MusicGenre>().FirstOrDefault();
+                var result = GetItemFromSlugName<MusicGenre>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -264,16 +250,11 @@ namespace MediaBrowser.Api
             return libraryManager.GetMusicGenre(name);
         }
 
-        protected GameGenre GetGameGenre(string name, ILibraryManager libraryManager)
+        protected GameGenre GetGameGenre(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(GameGenre).Name }
-
-                }).OfType<GameGenre>().FirstOrDefault();
+                var result = GetItemFromSlugName<GameGenre>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -284,16 +265,11 @@ namespace MediaBrowser.Api
             return libraryManager.GetGameGenre(name);
         }
 
-        protected Person GetPerson(string name, ILibraryManager libraryManager)
+        protected Person GetPerson(string name, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var result = libraryManager.GetItemList(new InternalItemsQuery
-                {
-                    SlugName = name,
-                    IncludeItemTypes = new[] { typeof(Person).Name }
-
-                }).OfType<Person>().FirstOrDefault();
+                var result = GetItemFromSlugName<Person>(libraryManager, name, dtoOptions);
 
                 if (result != null)
                 {
@@ -302,6 +278,42 @@ namespace MediaBrowser.Api
             }
 
             return libraryManager.GetPerson(name);
+        }
+
+        private T GetItemFromSlugName<T>(ILibraryManager libraryManager, string name, DtoOptions dtoOptions)
+            where T : BaseItem, new()
+        {
+            var result = libraryManager.GetItemList(new InternalItemsQuery
+            {
+                Name = name.Replace(BaseItem.SlugChar, '&'),
+                IncludeItemTypes = new[] { typeof(T).Name },
+                DtoOptions = dtoOptions
+
+            }).OfType<Person>().FirstOrDefault();
+
+            if (result == null)
+            {
+                result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    Name = name.Replace(BaseItem.SlugChar, '/'),
+                    IncludeItemTypes = new[] { typeof(T).Name },
+                    DtoOptions = dtoOptions
+
+                }).OfType<Person>().FirstOrDefault();
+            }
+
+            if (result == null)
+            {
+                result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    Name = name.Replace(BaseItem.SlugChar, '?'),
+                    IncludeItemTypes = new[] { typeof(T).Name },
+                    DtoOptions = dtoOptions
+
+                }).OfType<Person>().FirstOrDefault();
+            }
+
+            return result as T;
         }
 
         protected string GetPathValue(int index)
@@ -339,37 +351,33 @@ namespace MediaBrowser.Api
         /// <summary>
         /// Gets the name of the item by.
         /// </summary>
-        /// <param name="name">The name.</param>
-        /// <param name="type">The type.</param>
-        /// <param name="libraryManager">The library manager.</param>
-        /// <returns>Task{BaseItem}.</returns>
-        protected BaseItem GetItemByName(string name, string type, ILibraryManager libraryManager)
+        protected BaseItem GetItemByName(string name, string type, ILibraryManager libraryManager, DtoOptions dtoOptions)
         {
             BaseItem item;
 
             if (type.IndexOf("Person", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetPerson(name, libraryManager);
+                item = GetPerson(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("Artist", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetArtist(name, libraryManager);
+                item = GetArtist(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("Genre", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetGenre(name, libraryManager);
+                item = GetGenre(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("MusicGenre", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetMusicGenre(name, libraryManager);
+                item = GetMusicGenre(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("GameGenre", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetGameGenre(name, libraryManager);
+                item = GetGameGenre(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("Studio", StringComparison.OrdinalIgnoreCase) == 0)
             {
-                item = GetStudio(name, libraryManager);
+                item = GetStudio(name, libraryManager, dtoOptions);
             }
             else if (type.IndexOf("Year", StringComparison.OrdinalIgnoreCase) == 0)
             {

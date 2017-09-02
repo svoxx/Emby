@@ -10,7 +10,9 @@ namespace MediaBrowser.Controller.Drawing
 {
     public class ImageProcessingOptions
     {
-        public IHasImages Item { get; set; }
+        public string ItemId { get; set; }
+        public string ItemType { get; set; }
+        public IHasMetadata Item { get; set; }
 
         public ItemImageInfo Image { get; set; }
 

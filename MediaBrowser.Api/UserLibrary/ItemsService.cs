@@ -10,8 +10,10 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.Audio;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Services;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Api.UserLibrary
 {
@@ -20,7 +22,7 @@ namespace MediaBrowser.Api.UserLibrary
     /// </summary>
     [Route("/Items", "GET", Summary = "Gets items based on a query.")]
     [Route("/Users/{UserId}/Items", "GET", Summary = "Gets items based on a query.")]
-    public class GetItems : BaseItemsRequest, IReturn<ItemsResult>
+    public class GetItems : BaseItemsRequest, IReturn<QueryResult<BaseItemDto>>
     {
     }
 
@@ -99,13 +101,13 @@ namespace MediaBrowser.Api.UserLibrary
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>Task{ItemsResult}.</returns>
-        private async Task<ItemsResult> GetItems(GetItems request)
+        private async Task<QueryResult<BaseItemDto>> GetItems(GetItems request)
         {
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
 
             var dtoOptions = GetDtoOptions(_authContext, request);
 
-            var result = await GetQueryResult(request, dtoOptions, user).ConfigureAwait(false);
+            var result = GetQueryResult(request, dtoOptions, user);
 
             if (result == null)
             {
@@ -124,17 +126,17 @@ namespace MediaBrowser.Api.UserLibrary
                 throw new InvalidOperationException("GetBaseItemDtos returned null");
             }
 
-            return new ItemsResult
+            return new QueryResult<BaseItemDto>
             {
                 TotalRecordCount = result.TotalRecordCount,
-                Items = dtoList.ToArray()
+                Items = dtoList
             };
         }
 
         /// <summary>
         /// Gets the items to serialize.
         /// </summary>
-        private async Task<QueryResult<BaseItem>> GetQueryResult(GetItems request, DtoOptions dtoOptions, User user)
+        private QueryResult<BaseItem> GetQueryResult(GetItems request, DtoOptions dtoOptions, User user)
         {
             var item = string.IsNullOrEmpty(request.ParentId) ?
                 null :
@@ -169,19 +171,17 @@ namespace MediaBrowser.Api.UserLibrary
 
             if (request.Recursive || !string.IsNullOrEmpty(request.Ids) || user == null)
             {
-                return await folder.GetItems(GetItemsQuery(request, dtoOptions, user)).ConfigureAwait(false);
+                return folder.GetItems(GetItemsQuery(request, dtoOptions, user));
             }
 
             var userRoot = item as UserRootFolder;
 
             if (userRoot == null)
             {
-                return await folder.GetItems(GetItemsQuery(request, dtoOptions, user)).ConfigureAwait(false);
+                return folder.GetItems(GetItemsQuery(request, dtoOptions, user));
             }
 
-            IEnumerable<BaseItem> items = folder.GetChildren(user, true);
-
-            var itemsArray = items.ToArray();
+            var itemsArray = folder.GetChildren(user, true).ToArray();
 
             return new QueryResult<BaseItem>
             {
@@ -206,7 +206,6 @@ namespace MediaBrowser.Api.UserLibrary
                 Limit = request.Limit,
                 StartIndex = request.StartIndex,
                 IsMissing = request.IsMissing,
-                IsVirtualUnaired = request.IsVirtualUnaired,
                 IsUnaired = request.IsUnaired,
                 CollapseBoxSetItems = request.CollapseBoxSetItems,
                 NameLessThan = request.NameLessThan,
@@ -238,8 +237,8 @@ namespace MediaBrowser.Api.UserLibrary
                 PersonIds = request.GetPersonIds(),
                 PersonTypes = request.GetPersonTypes(),
                 Years = request.GetYears(),
-                ImageTypes = request.GetImageTypes().ToArray(),
-                VideoTypes = request.GetVideoTypes().ToArray(),
+                ImageTypes = request.GetImageTypes(),
+                VideoTypes = request.GetVideoTypes(),
                 AdjacentTo = request.AdjacentTo,
                 ItemIds = request.GetItemIds(),
                 MinPlayers = request.MinPlayers,
@@ -249,7 +248,6 @@ namespace MediaBrowser.Api.UserLibrary
                 ParentId = string.IsNullOrWhiteSpace(request.ParentId) ? (Guid?)null : new Guid(request.ParentId),
                 ParentIndexNumber = request.ParentIndexNumber,
                 AiredDuringSeason = request.AiredDuringSeason,
-                AlbumArtistStartsWithOrGreater = request.AlbumArtistStartsWithOrGreater,
                 EnableTotalRecordCount = request.EnableTotalRecordCount,
                 ExcludeItemIds = request.GetExcludeItemIds(),
                 DtoOptions = dtoOptions
@@ -294,6 +292,16 @@ namespace MediaBrowser.Api.UserLibrary
                 }
             }
 
+            if (!string.IsNullOrEmpty(request.MinDateLastSaved))
+            {
+                query.MinDateLastSaved = DateTime.Parse(request.MinDateLastSaved, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
+            }
+
+            if (!string.IsNullOrEmpty(request.MinDateLastSavedForUser))
+            {
+                query.MinDateLastSavedForUser = DateTime.Parse(request.MinDateLastSavedForUser, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
+            }
+
             if (!string.IsNullOrEmpty(request.MinPremiereDate))
             {
                 query.MinPremiereDate = DateTime.Parse(request.MinPremiereDate, null, DateTimeStyles.RoundtripKind).ToUniversalTime();
@@ -310,12 +318,6 @@ namespace MediaBrowser.Api.UserLibrary
                 query.SeriesStatuses = request.SeriesStatus.Split(',').Select(d => (SeriesStatus)Enum.Parse(typeof(SeriesStatus), d, true)).ToArray();
             }
 
-            // Filter by Series AirDays
-            if (!string.IsNullOrEmpty(request.AirDays))
-            {
-                query.AirDays = request.AirDays.Split(',').Select(d => (DayOfWeek)Enum.Parse(typeof(DayOfWeek), d, true)).ToArray();
-            }
-
             // ExcludeLocationTypes
             if (!string.IsNullOrEmpty(request.ExcludeLocationTypes))
             {
@@ -329,13 +331,11 @@ namespace MediaBrowser.Api.UserLibrary
             if (!string.IsNullOrEmpty(request.LocationTypes))
             {
                 var requestedLocationTypes =
-                    request.LocationTypes.Split(',')
-                        .Select(d => (LocationType) Enum.Parse(typeof (LocationType), d, true))
-                        .ToList();
+                    request.LocationTypes.Split(',');
 
-                if (requestedLocationTypes.Count > 0 && requestedLocationTypes.Count < 4)
+                if (requestedLocationTypes.Length > 0 && requestedLocationTypes.Length < 4)
                 {
-                    query.IsVirtualItem = requestedLocationTypes.Contains(LocationType.Virtual);
+                    query.IsVirtualItem = requestedLocationTypes.Contains(LocationType.Virtual.ToString());
                 }
             }
 
@@ -358,7 +358,7 @@ namespace MediaBrowser.Api.UserLibrary
                 {
                     try
                     {
-                        return _libraryManager.GetArtist(i);
+                        return _libraryManager.GetArtist(i, new DtoOptions(false));
                     }
                     catch
                     {
@@ -381,15 +381,15 @@ namespace MediaBrowser.Api.UserLibrary
             // Albums
             if (!string.IsNullOrEmpty(request.Albums))
             {
-                query.AlbumIds = request.Albums.Split('|').Select(i =>
+                query.AlbumIds = request.Albums.Split('|').SelectMany(i =>
                 {
-                    return _libraryManager.GetItemList(new InternalItemsQuery
+                    return _libraryManager.GetItemIds(new InternalItemsQuery
                     {
                         IncludeItemTypes = new[] { typeof(MusicAlbum).Name },
                         Name = i,
                         Limit = 1
 
-                    }).Select(album => album.Id.ToString("N")).FirstOrDefault();
+                    }).Select(albumId => albumId.ToString("N"));
 
                 }).ToArray();
             }

@@ -174,6 +174,9 @@ namespace MediaBrowser.WebDashboard.Api
             IPlugin plugin = null;
             Stream stream = null;
 
+            var isJs = false;
+            var isTemplate = false;
+
             var page = ServerEntryPoint.Instance.PluginConfigurationPages.FirstOrDefault(p => string.Equals(p.Name, request.Name, StringComparison.OrdinalIgnoreCase));
             if (page != null)
             {
@@ -188,11 +191,23 @@ namespace MediaBrowser.WebDashboard.Api
                 {
                     plugin = altPage.Item2;
                     stream = _assemblyInfo.GetManifestResourceStream(plugin.GetType(), altPage.Item1.EmbeddedResourcePath);
+
+                    isJs = string.Equals(Path.GetExtension(altPage.Item1.EmbeddedResourcePath), ".js", StringComparison.OrdinalIgnoreCase);
+                    isTemplate = altPage.Item1.EmbeddedResourcePath.EndsWith(".template.html");
                 }
             }
 
             if (plugin != null && stream != null)
             {
+                if (isJs)
+                {
+                    return _resultFactory.GetStaticResult(Request, plugin.Version.ToString().GetMD5(), null, null, MimeTypes.GetMimeType("page.js"), () => Task.FromResult(stream));
+                }
+                if (isTemplate)
+                {
+                    return _resultFactory.GetStaticResult(Request, plugin.Version.ToString().GetMD5(), null, null, MimeTypes.GetMimeType("page.html"), () => Task.FromResult(stream));
+                }
+
                 return _resultFactory.GetStaticResult(Request, plugin.Version.ToString().GetMD5(), null, null, MimeTypes.GetMimeType("page.html"), () => GetPackageCreator(DashboardUIPath).ModifyHtml("dummy.html", stream, null, _appHost.ApplicationVersion.ToString(), null));
             }
 
@@ -305,8 +320,6 @@ namespace MediaBrowser.WebDashboard.Api
                 }
             }
 
-            path = path.Replace("scripts/jquery.mobile-1.4.5.min.map", "thirdparty/jquerymobile-1.4.5/jquery.mobile-1.4.5.min.map", StringComparison.OrdinalIgnoreCase);
-
             var localizationCulture = GetLocalizationCulture();
 
             // Don't cache if not configured to do so
@@ -330,7 +343,13 @@ namespace MediaBrowser.WebDashboard.Api
 
             var cacheKey = (_appHost.ApplicationVersion + (localizationCulture ?? string.Empty) + path).GetMD5();
 
-            return await _resultFactory.GetStaticResult(Request, cacheKey, null, cacheDuration, contentType, () => GetResourceStream(basePath, path, localizationCulture)).ConfigureAwait(false);
+            // html gets modified on the fly
+            if (contentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+            {
+                return await _resultFactory.GetStaticResult(Request, cacheKey, null, cacheDuration, contentType, () => GetResourceStream(basePath, path, localizationCulture)).ConfigureAwait(false);
+            }
+
+            return await _resultFactory.GetStaticFileResult(Request, GetPackageCreator(basePath).GetResourcePath(path));
         }
 
         private string GetLocalizationCulture()

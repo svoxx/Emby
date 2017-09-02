@@ -13,18 +13,18 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Providers;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Progress;
 using MediaBrowser.Model.IO;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.IO;
-using MediaBrowser.Model.IO;
+using MediaBrowser.Controller.Dto;
+using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Serialization;
 using Priority_Queue;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Manager
 {
@@ -68,6 +68,11 @@ namespace MediaBrowser.Providers.Manager
 
         private readonly Func<ILibraryManager> _libraryManagerFactory;
         private readonly IMemoryStreamFactory _memoryStreamProvider;
+        private CancellationTokenSource _disposeCancellationTokenSource = new CancellationTokenSource();
+
+        public event EventHandler<GenericEventArgs<BaseItem>> RefreshStarted;
+        public event EventHandler<GenericEventArgs<BaseItem>> RefreshCompleted;
+        public event EventHandler<GenericEventArgs<Tuple<BaseItem, double>>> RefreshProgress;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ProviderManager" /> class.
@@ -124,7 +129,7 @@ namespace MediaBrowser.Providers.Manager
             return Task.FromResult(ItemUpdateType.None);
         }
 
-        public async Task SaveImage(IHasImages item, string url, ImageType type, int? imageIndex, CancellationToken cancellationToken)
+        public async Task SaveImage(IHasMetadata item, string url, ImageType type, int? imageIndex, CancellationToken cancellationToken)
         {
             var response = await _httpClient.GetResponse(new HttpRequestOptions
             {
@@ -138,12 +143,12 @@ namespace MediaBrowser.Providers.Manager
                     .ConfigureAwait(false);
         }
 
-        public Task SaveImage(IHasImages item, Stream source, string mimeType, ImageType type, int? imageIndex, CancellationToken cancellationToken)
+        public Task SaveImage(IHasMetadata item, Stream source, string mimeType, ImageType type, int? imageIndex, CancellationToken cancellationToken)
         {
             return new ImageSaver(ConfigurationManager, _libraryMonitor, _fileSystem, _logger, _memoryStreamProvider).SaveImage(item, source, mimeType, type, imageIndex, cancellationToken);
         }
 
-        public Task SaveImage(IHasImages item, string source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken)
+        public Task SaveImage(IHasMetadata item, string source, string mimeType, ImageType type, int? imageIndex, bool? saveLocallyWithMedia, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -155,7 +160,7 @@ namespace MediaBrowser.Providers.Manager
             return new ImageSaver(ConfigurationManager, _libraryMonitor, _fileSystem, _logger, _memoryStreamProvider).SaveImage(item, fileStream, mimeType, type, imageIndex, saveLocallyWithMedia, cancellationToken);
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetAvailableRemoteImages(IHasImages item, RemoteImageQuery query, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetAvailableRemoteImages(IHasMetadata item, RemoteImageQuery query, CancellationToken cancellationToken)
         {
             var providers = GetRemoteImageProviders(item, query.IncludeDisabledProviders);
 
@@ -178,9 +183,7 @@ namespace MediaBrowser.Providers.Manager
 
             var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
-            var images = results.SelectMany(i => i.ToList());
-
-            return images;
+            return results.SelectMany(i => i.ToList());
         }
 
         /// <summary>
@@ -192,7 +195,7 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="preferredLanguages">The preferred languages.</param>
         /// <param name="type">The type.</param>
         /// <returns>Task{IEnumerable{RemoteImageInfo}}.</returns>
-        private async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasImages item, CancellationToken cancellationToken, IRemoteImageProvider provider, List<string> preferredLanguages, ImageType? type = null)
+        private async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken, IRemoteImageProvider provider, List<string> preferredLanguages, ImageType? type = null)
         {
             try
             {
@@ -228,21 +231,21 @@ namespace MediaBrowser.Providers.Manager
         /// </summary>
         /// <param name="item">The item.</param>
         /// <returns>IEnumerable{IImageProvider}.</returns>
-        public IEnumerable<ImageProviderInfo> GetRemoteImageProviderInfo(IHasImages item)
+        public IEnumerable<ImageProviderInfo> GetRemoteImageProviderInfo(IHasMetadata item)
         {
             return GetRemoteImageProviders(item, true).Select(i => new ImageProviderInfo
             {
                 Name = i.Name,
-                SupportedImages = i.GetSupportedImages(item).ToList()
+                SupportedImages = i.GetSupportedImages(item).ToArray()
             });
         }
 
-        public IEnumerable<IImageProvider> GetImageProviders(IHasImages item, ImageRefreshOptions refreshOptions)
+        public IEnumerable<IImageProvider> GetImageProviders(IHasMetadata item, ImageRefreshOptions refreshOptions)
         {
             return GetImageProviders(item, GetMetadataOptions(item), refreshOptions, false);
         }
 
-        private IEnumerable<IImageProvider> GetImageProviders(IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
+        private IEnumerable<IImageProvider> GetImageProviders(IHasMetadata item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             // Avoid implicitly captured closure
             var currentOptions = options;
@@ -287,7 +290,7 @@ namespace MediaBrowser.Providers.Manager
                 .ThenBy(GetDefaultOrder);
         }
 
-        private IEnumerable<IRemoteImageProvider> GetRemoteImageProviders(IHasImages item, bool includeDisabled)
+        private IEnumerable<IRemoteImageProvider> GetRemoteImageProviders(IHasMetadata item, bool includeDisabled)
         {
             var options = GetMetadataOptions(item);
 
@@ -335,7 +338,7 @@ namespace MediaBrowser.Providers.Manager
             return true;
         }
 
-        private bool CanRefresh(IImageProvider provider, IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
+        private bool CanRefresh(IImageProvider provider, IHasMetadata item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             if (!includeDisabled)
             {
@@ -433,9 +436,9 @@ namespace MediaBrowser.Providers.Manager
             return 0;
         }
 
-        public IEnumerable<MetadataPluginSummary> GetAllMetadataPlugins()
+        public MetadataPluginSummary[] GetAllMetadataPlugins()
         {
-            var list = new List<MetadataPluginSummary>
+            return new MetadataPluginSummary[]
             {
                 GetPluginSummary<Game>(),
                 GetPluginSummary<GameSystem>(),
@@ -460,8 +463,6 @@ namespace MediaBrowser.Providers.Manager
                 GetPluginSummary<LiveTvVideoRecording>(),
                 GetPluginSummary<LiveTvAudioRecording>()
             };
-
-            return list;
         }
 
         private MetadataPluginSummary GetPluginSummary<T>()
@@ -483,8 +484,12 @@ namespace MediaBrowser.Providers.Manager
 
             var imageProviders = GetImageProviders(dummy, options, new ImageRefreshOptions(new DirectoryService(_logger, _fileSystem)), true).ToList();
 
-            AddMetadataPlugins(summary.Plugins, dummy, options);
-            AddImagePlugins(summary.Plugins, dummy, imageProviders);
+            var pluginList = summary.Plugins.ToList();
+
+            AddMetadataPlugins(pluginList, dummy, options);
+            AddImagePlugins(pluginList, dummy, imageProviders);
+
+            summary.Plugins = pluginList.ToArray(pluginList.Count);
 
             var supportedImageTypes = imageProviders.OfType<IRemoteImageProvider>()
                 .SelectMany(i => i.GetSupportedImages(dummy))
@@ -493,7 +498,7 @@ namespace MediaBrowser.Providers.Manager
             supportedImageTypes.AddRange(imageProviders.OfType<IDynamicImageProvider>()
                 .SelectMany(i => i.GetSupportedImages(dummy)));
 
-            summary.SupportedImageTypes = supportedImageTypes.Distinct().ToList();
+            summary.SupportedImageTypes = supportedImageTypes.Distinct().ToArray();
 
             return summary;
         }
@@ -526,7 +531,7 @@ namespace MediaBrowser.Providers.Manager
         }
 
         private void AddImagePlugins<T>(List<MetadataPlugin> list, T item, List<IImageProvider> imageProviders)
-            where T : IHasImages
+            where T : IHasMetadata
         {
 
             // Locals
@@ -546,7 +551,7 @@ namespace MediaBrowser.Providers.Manager
             }));
         }
 
-        public MetadataOptions GetMetadataOptions(IHasImages item)
+        public MetadataOptions GetMetadataOptions(IHasMetadata item)
         {
             var type = item.GetType().Name;
 
@@ -555,6 +560,7 @@ namespace MediaBrowser.Providers.Manager
                 new MetadataOptions();
         }
 
+        private Task _completedTask = Task.FromResult(true);
         /// <summary>
         /// Saves the metadata.
         /// </summary>
@@ -563,7 +569,8 @@ namespace MediaBrowser.Providers.Manager
         /// <returns>Task.</returns>
         public Task SaveMetadata(IHasMetadata item, ItemUpdateType updateType)
         {
-            return SaveMetadata(item, updateType, _savers);
+            SaveMetadata(item, updateType, _savers);
+            return _completedTask;
         }
 
         /// <summary>
@@ -575,7 +582,8 @@ namespace MediaBrowser.Providers.Manager
         /// <returns>Task.</returns>
         public Task SaveMetadata(IHasMetadata item, ItemUpdateType updateType, IEnumerable<string> savers)
         {
-            return SaveMetadata(item, updateType, _savers.Where(i => savers.Contains(i.Name, StringComparer.OrdinalIgnoreCase)));
+            SaveMetadata(item, updateType, _savers.Where(i => savers.Contains(i.Name, StringComparer.OrdinalIgnoreCase)));
+            return _completedTask;
         }
 
         /// <summary>
@@ -585,7 +593,7 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="updateType">Type of the update.</param>
         /// <param name="savers">The savers.</param>
         /// <returns>Task.</returns>
-        private async Task SaveMetadata(IHasMetadata item, ItemUpdateType updateType, IEnumerable<IMetadataSaver> savers)
+        private void SaveMetadata(IHasMetadata item, ItemUpdateType updateType, IEnumerable<IMetadataSaver> savers)
         {
             foreach (var saver in savers.Where(i => IsSaverEnabledForItem(i, item, updateType, false)))
             {
@@ -848,6 +856,89 @@ namespace MediaBrowser.Providers.Manager
                 });
         }
 
+        private Dictionary<Guid, double> _activeRefreshes = new Dictionary<Guid, double>();
+
+        public Dictionary<Guid, Guid> GetRefreshQueue()
+        {
+            lock (_refreshQueueLock)
+            {
+                var dict = new Dictionary<Guid, Guid>();
+
+                foreach (var item in _refreshQueue)
+                {
+                    dict[item.Item1] = item.Item1;
+                }
+                return dict;
+            }
+        }
+
+        public void OnRefreshStart(BaseItem item)
+        {
+            //_logger.Info("OnRefreshStart {0}", item.Id.ToString("N"));
+            var id = item.Id;
+
+            lock (_activeRefreshes)
+            {
+                _activeRefreshes[id] = 0;
+            }
+
+            if (RefreshStarted != null)
+            {
+                RefreshStarted(this, new GenericEventArgs<BaseItem>(item));
+            }
+        }
+
+        public void OnRefreshComplete(BaseItem item)
+        {
+            //_logger.Info("OnRefreshComplete {0}", item.Id.ToString("N"));
+            lock (_activeRefreshes)
+            {
+                _activeRefreshes.Remove(item.Id);
+            }
+
+            if (RefreshCompleted != null)
+            {
+                RefreshCompleted(this, new GenericEventArgs<BaseItem>(item));
+            }
+        }
+
+        public double? GetRefreshProgress(Guid id)
+        {
+            lock (_activeRefreshes)
+            {
+                double value;
+                if (_activeRefreshes.TryGetValue(id, out value))
+                {
+                    return value;
+                }
+
+                return null;
+            }
+        }
+
+        public void OnRefreshProgress(BaseItem item, double progress)
+        {
+            //_logger.Info("OnRefreshProgress {0} {1}", item.Id.ToString("N"), progress);
+            var id = item.Id;
+
+            lock (_activeRefreshes)
+            {
+                if (_activeRefreshes.ContainsKey(id))
+                {
+                    _activeRefreshes[id] = progress;
+
+                    if (RefreshProgress != null)
+                    {
+                        RefreshProgress(this, new GenericEventArgs<Tuple<BaseItem, double>>(new Tuple<BaseItem, double>(item, progress)));
+                    }
+                }
+                else
+                {
+                    throw new Exception(string.Format("Refresh for item {0} {1} is not in progress", item.GetType().Name, item.Id.ToString("N")));
+                }
+            }
+        }
+
         private readonly SimplePriorityQueue<Tuple<Guid, MetadataRefreshOptions>> _refreshQueue =
             new SimplePriorityQueue<Tuple<Guid, MetadataRefreshOptions>>();
 
@@ -868,7 +959,7 @@ namespace MediaBrowser.Providers.Manager
                 if (!_isProcessingRefreshQueue)
                 {
                     _isProcessingRefreshQueue = true;
-                    Task.Run(() => StartProcessingRefreshQueue());
+                    Task.Run(StartProcessingRefreshQueue);
                 }
             }
         }
@@ -877,6 +968,13 @@ namespace MediaBrowser.Providers.Manager
         {
             Tuple<Guid, MetadataRefreshOptions> refreshItem;
             var libraryManager = _libraryManagerFactory();
+
+            if (_disposed)
+            {
+                return;
+            }
+
+            var cancellationToken = _disposeCancellationTokenSource.Token;
 
             while (_refreshQueue.TryDequeue(out refreshItem))
             {
@@ -893,13 +991,26 @@ namespace MediaBrowser.Providers.Manager
                         // Try to throttle this a little bit.
                         await Task.Delay(100).ConfigureAwait(false);
 
+                        if (refreshItem.Item2.ValidateChildren)
+                        {
+                            var folder = item as Folder;
+                            if (folder != null)
+                            {
+                                await folder.ValidateChildren(new SimpleProgress<double>(), cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+
                         var artist = item as MusicArtist;
                         var task = artist == null
-                            ? RefreshItem(item, refreshItem.Item2, CancellationToken.None)
-                            : RefreshArtist(artist, refreshItem.Item2);
+                            ? RefreshItem(item, refreshItem.Item2, cancellationToken)
+                            : RefreshArtist(artist, refreshItem.Item2, cancellationToken);
 
                         await task.ConfigureAwait(false);
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -915,14 +1026,14 @@ namespace MediaBrowser.Providers.Manager
 
         private async Task RefreshItem(BaseItem item, MetadataRefreshOptions options, CancellationToken cancellationToken)
         {
-            await item.RefreshMetadata(options, CancellationToken.None).ConfigureAwait(false);
+            await item.RefreshMetadata(options, cancellationToken).ConfigureAwait(false);
 
             // Collection folders don't validate their children so we'll have to simulate that here
             var collectionFolder = item as CollectionFolder;
 
             if (collectionFolder != null)
             {
-                await RefreshCollectionFolderChildren(options, collectionFolder).ConfigureAwait(false);
+                await RefreshCollectionFolderChildren(options, collectionFolder, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -930,35 +1041,37 @@ namespace MediaBrowser.Providers.Manager
 
                 if (folder != null)
                 {
-                    await folder.ValidateChildren(new Progress<double>(), cancellationToken, options).ConfigureAwait(false);
+                    await folder.ValidateChildren(new SimpleProgress<double>(), cancellationToken, options).ConfigureAwait(false);
                 }
             }
         }
 
-        private async Task RefreshCollectionFolderChildren(MetadataRefreshOptions options, CollectionFolder collectionFolder)
+        private async Task RefreshCollectionFolderChildren(MetadataRefreshOptions options, CollectionFolder collectionFolder, CancellationToken cancellationToken)
         {
-            foreach (var child in collectionFolder.Children.ToList())
+            foreach (var child in collectionFolder.GetPhysicalFolders().ToList())
             {
-                await child.RefreshMetadata(options, CancellationToken.None).ConfigureAwait(false);
+                await child.RefreshMetadata(options, cancellationToken).ConfigureAwait(false);
 
                 if (child.IsFolder)
                 {
                     var folder = (Folder)child;
 
-                    await folder.ValidateChildren(new Progress<double>(), CancellationToken.None, options, true).ConfigureAwait(false);
+                    await folder.ValidateChildren(new SimpleProgress<double>(), cancellationToken, options, true).ConfigureAwait(false);
                 }
             }
         }
 
-        private async Task RefreshArtist(MusicArtist item, MetadataRefreshOptions options)
+        private async Task RefreshArtist(MusicArtist item, MetadataRefreshOptions options, CancellationToken cancellationToken)
         {
-            var cancellationToken = CancellationToken.None;
-
             var albums = _libraryManagerFactory()
                 .GetItemList(new InternalItemsQuery
                 {
                     IncludeItemTypes = new[] { typeof(MusicAlbum).Name },
-                    ArtistIds = new[] { item.Id.ToString("N") }
+                    ArtistIds = new[] { item.Id.ToString("N") },
+                    DtoOptions = new DtoOptions(false)
+                    {
+                        EnableImages = false
+                    }
                 })
                 .OfType<MusicAlbum>()
                 .ToList();
@@ -968,13 +1081,13 @@ namespace MediaBrowser.Providers.Manager
                 .Where(i => i != null)
                 .ToList();
 
-            var musicArtistRefreshTasks = musicArtists.Select(i => i.ValidateChildren(new Progress<double>(), cancellationToken, options, true));
+            var musicArtistRefreshTasks = musicArtists.Select(i => i.ValidateChildren(new SimpleProgress<double>(), cancellationToken, options, true));
 
             await Task.WhenAll(musicArtistRefreshTasks).ConfigureAwait(false);
 
             try
             {
-                await item.RefreshMetadata(options, CancellationToken.None).ConfigureAwait(false);
+                await item.RefreshMetadata(options, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -992,6 +1105,11 @@ namespace MediaBrowser.Providers.Manager
         public void Dispose()
         {
             _disposed = true;
+
+            if (!_disposeCancellationTokenSource.IsCancellationRequested)
+            {
+                _disposeCancellationTokenSource.Cancel();
+            }
         }
     }
 }

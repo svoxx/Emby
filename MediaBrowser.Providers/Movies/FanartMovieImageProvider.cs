@@ -19,7 +19,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.LiveTv;
@@ -60,19 +60,12 @@ namespace MediaBrowser.Providers.Movies
             get { return "FanArt"; }
         }
 
-        public bool Supports(IHasImages item)
+        public bool Supports(IHasMetadata item)
         {
-            // Supports images for tv movies
-            var tvProgram = item as LiveTvProgram;
-            if (tvProgram != null && tvProgram.IsMovie)
-            {
-                return true;
-            }
-
             return item is Movie || item is BoxSet || item is MusicVideo;
         }
 
-        public IEnumerable<ImageType> GetSupportedImages(IHasImages item)
+        public IEnumerable<ImageType> GetSupportedImages(IHasMetadata item)
         {
             return new List<ImageType>
             {
@@ -86,7 +79,7 @@ namespace MediaBrowser.Providers.Movies
             };
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasImages item, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken)
         {
             var baseItem = (BaseItem)item;
             var list = new List<RemoteImageInfo>();

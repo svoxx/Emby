@@ -1,7 +1,5 @@
 ﻿using System;
 using Emby.Drawing;
-using Emby.Drawing.Net;
-using Emby.Drawing.ImageMagick;
 using Emby.Drawing.Skia;
 using Emby.Server.Core;
 using Emby.Server.Implementations;
@@ -15,41 +13,20 @@ namespace MediaBrowser.Server.Startup.Common
 {
     public class ImageEncoderHelper
     {
-        public static IImageEncoder GetImageEncoder(ILogger logger, 
-            ILogManager logManager, 
-            IFileSystem fileSystem, 
-            StartupOptions startupOptions, 
+        public static IImageEncoder GetImageEncoder(ILogger logger,
+            ILogManager logManager,
+            IFileSystem fileSystem,
+            StartupOptions startupOptions,
             Func<IHttpClient> httpClient,
             IApplicationPaths appPaths)
         {
-            if (!startupOptions.ContainsOption("-enablegdi"))
-            {
-                try
-                {
-                    return new SkiaEncoder(logManager.GetLogger("Skia"), appPaths, httpClient, fileSystem);
-                }
-                catch
-                {
-                    logger.Error("Error loading Skia. Will revert to ImageMagick.");
-                }
-
-                try
-                {
-                    return new ImageMagickEncoder(logManager.GetLogger("ImageMagick"), appPaths, httpClient, fileSystem);
-                }
-                catch
-                {
-                    logger.Error("Error loading ImageMagick. Will revert to GDI.");
-                }
-            }
-
             try
             {
-                return new GDIImageEncoder(fileSystem, logManager.GetLogger("GDI"));
+                return new SkiaEncoder(logManager.GetLogger("Skia"), appPaths, httpClient, fileSystem);
             }
             catch
             {
-                logger.Error("Error loading GDI. Will revert to NullImageEncoder.");
+                logger.Error("Skia not available. Will try next image processor.");
             }
 
             return new NullImageEncoder();

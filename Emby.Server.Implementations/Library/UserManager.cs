@@ -71,9 +71,8 @@ namespace Emby.Server.Implementations.Library
         private readonly IServerApplicationHost _appHost;
         private readonly IFileSystem _fileSystem;
         private readonly ICryptoProvider _cryptographyProvider;
-        private readonly string _defaultUserName;
 
-        public UserManager(ILogger logger, IServerConfigurationManager configurationManager, IUserRepository userRepository, IXmlSerializer xmlSerializer, INetworkManager networkManager, Func<IImageProcessor> imageProcessorFactory, Func<IDtoService> dtoServiceFactory, Func<IConnectManager> connectFactory, IServerApplicationHost appHost, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ICryptoProvider cryptographyProvider, string defaultUserName)
+        public UserManager(ILogger logger, IServerConfigurationManager configurationManager, IUserRepository userRepository, IXmlSerializer xmlSerializer, INetworkManager networkManager, Func<IImageProcessor> imageProcessorFactory, Func<IDtoService> dtoServiceFactory, Func<IConnectManager> connectFactory, IServerApplicationHost appHost, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ICryptoProvider cryptographyProvider)
         {
             _logger = logger;
             UserRepository = userRepository;
@@ -86,7 +85,6 @@ namespace Emby.Server.Implementations.Library
             _jsonSerializer = jsonSerializer;
             _fileSystem = fileSystem;
             _cryptographyProvider = cryptographyProvider;
-            _defaultUserName = defaultUserName;
             ConfigurationManager = configurationManager;
             Users = new List<User>();
 
@@ -122,7 +120,7 @@ namespace Emby.Server.Implementations.Library
         /// <param name="user">The user.</param>
         private void OnUserDeleted(User user)
         {
-            EventHelper.QueueEventIfNotNull(UserDeleted, this, new GenericEventArgs<User> { Argument = user }, _logger);
+            EventHelper.FireEventIfNotNull(UserDeleted, this, new GenericEventArgs<User> { Argument = user }, _logger);
         }
         #endregion
 
@@ -162,9 +160,9 @@ namespace Emby.Server.Implementations.Library
             return Users.FirstOrDefault(u => string.Equals(u.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
-        public async Task Initialize()
+        public void Initialize()
         {
-            Users = await LoadUsers().ConfigureAwait(false);
+            Users = LoadUsers();
 
             var users = Users.ToList();
 
@@ -176,7 +174,7 @@ namespace Emby.Server.Implementations.Library
                     if (!user.ConnectLinkType.HasValue || user.ConnectLinkType.Value == UserLinkType.LinkedUser)
                     {
                         user.Policy.IsAdministrator = true;
-                        await UpdateUserPolicy(user, user.Policy, false).ConfigureAwait(false);
+                        UpdateUserPolicy(user, user.Policy, false);
                     }
                 }
             }
@@ -202,8 +200,7 @@ namespace Emby.Server.Implementations.Library
 
         private bool IsValidUsernameCharacter(char i)
         {
-            return char.IsLetterOrDigit(i) || char.Equals(i, '-') || char.Equals(i, '_') || char.Equals(i, '\'') ||
-                   char.Equals(i, '.');
+            return !char.Equals(i, '<') && !char.Equals(i, '>');
         }
 
         public string MakeValidUsername(string username)
@@ -297,12 +294,12 @@ namespace Emby.Server.Implementations.Library
             if (success)
             {
                 user.LastActivityDate = user.LastLoginDate = DateTime.UtcNow;
-                await UpdateUser(user).ConfigureAwait(false);
-                await UpdateInvalidLoginAttemptCount(user, 0).ConfigureAwait(false);
+                UpdateUser(user);
+                UpdateInvalidLoginAttemptCount(user, 0);
             }
             else
             {
-                await UpdateInvalidLoginAttemptCount(user, user.Policy.InvalidLoginAttemptCount + 1).ConfigureAwait(false);
+                UpdateInvalidLoginAttemptCount(user, user.Policy.InvalidLoginAttemptCount + 1);
             }
 
             _logger.Info("Authentication request for {0} {1}.", user.Name, success ? "has succeeded" : "has been denied");
@@ -310,7 +307,7 @@ namespace Emby.Server.Implementations.Library
             return success ? user : null;
         }
 
-        private async Task UpdateInvalidLoginAttemptCount(User user, int newValue)
+        private void UpdateInvalidLoginAttemptCount(User user, int newValue)
         {
             if (user.Policy.InvalidLoginAttemptCount != newValue || newValue > 0)
             {
@@ -330,7 +327,7 @@ namespace Emby.Server.Implementations.Library
                     //fireLockout = true;
                 }
 
-                await UpdateUserPolicy(user, user.Policy, false).ConfigureAwait(false);
+                UpdateUserPolicy(user, user.Policy, false);
 
                 if (fireLockout)
                 {
@@ -375,27 +372,27 @@ namespace Emby.Server.Implementations.Library
         /// Loads the users from the repository
         /// </summary>
         /// <returns>IEnumerable{User}.</returns>
-        private async Task<IEnumerable<User>> LoadUsers()
+        private List<User> LoadUsers()
         {
             var users = UserRepository.RetrieveAllUsers().ToList();
 
             // There always has to be at least one user.
             if (users.Count == 0)
             {
-                var name = MakeValidUsername(_defaultUserName);
+                var name = MakeValidUsername(Environment.UserName);
 
                 var user = InstantiateNewUser(name);
 
                 user.DateLastSaved = DateTime.UtcNow;
 
-                await UserRepository.SaveUser(user, CancellationToken.None).ConfigureAwait(false);
+                UserRepository.SaveUser(user, CancellationToken.None);
 
                 users.Add(user);
 
                 user.Policy.IsAdministrator = true;
                 user.Policy.EnableContentDeletion = true;
                 user.Policy.EnableRemoteControlOfOtherUsers = true;
-                await UpdateUserPolicy(user, user.Policy, false).ConfigureAwait(false);
+                UpdateUserPolicy(user, user.Policy, false);
             }
 
             return users;
@@ -542,7 +539,7 @@ namespace Emby.Server.Implementations.Library
         /// <param name="user">The user.</param>
         /// <exception cref="System.ArgumentNullException">user</exception>
         /// <exception cref="System.ArgumentException"></exception>
-        public async Task UpdateUser(User user)
+        public void UpdateUser(User user)
         {
             if (user == null)
             {
@@ -557,7 +554,7 @@ namespace Emby.Server.Implementations.Library
             user.DateModified = DateTime.UtcNow;
             user.DateLastSaved = DateTime.UtcNow;
 
-            await UserRepository.SaveUser(user, CancellationToken.None).ConfigureAwait(false);
+            UserRepository.SaveUser(user, CancellationToken.None);
 
             OnUserUpdated(user);
         }
@@ -602,7 +599,7 @@ namespace Emby.Server.Implementations.Library
 
                 user.DateLastSaved = DateTime.UtcNow;
 
-                await UserRepository.SaveUser(user, CancellationToken.None).ConfigureAwait(false);
+                UserRepository.SaveUser(user, CancellationToken.None);
 
                 EventHelper.QueueEventIfNotNull(UserCreated, this, new GenericEventArgs<User> { Argument = user }, _logger);
 
@@ -656,7 +653,7 @@ namespace Emby.Server.Implementations.Library
             {
                 var configPath = GetConfigurationFilePath(user);
 
-                await UserRepository.DeleteUser(user, CancellationToken.None).ConfigureAwait(false);
+                UserRepository.DeleteUser(user, CancellationToken.None);
 
                 try
                 {
@@ -670,7 +667,7 @@ namespace Emby.Server.Implementations.Library
                 DeleteUserPolicy(user);
 
                 // Force this to be lazy loaded again
-                Users = await LoadUsers().ConfigureAwait(false);
+                Users = LoadUsers();
 
                 OnUserDeleted(user);
             }
@@ -684,17 +681,17 @@ namespace Emby.Server.Implementations.Library
         /// Resets the password by clearing it.
         /// </summary>
         /// <returns>Task.</returns>
-        public Task ResetPassword(User user)
+        public void ResetPassword(User user)
         {
-            return ChangePassword(user, GetSha1String(string.Empty));
+            ChangePassword(user, GetSha1String(string.Empty));
         }
 
-        public Task ResetEasyPassword(User user)
+        public void ResetEasyPassword(User user)
         {
-            return ChangeEasyPassword(user, GetSha1String(string.Empty));
+            ChangeEasyPassword(user, GetSha1String(string.Empty));
         }
 
-        public async Task ChangePassword(User user, string newPasswordSha1)
+        public void ChangePassword(User user, string newPasswordSha1)
         {
             if (user == null)
             {
@@ -712,12 +709,12 @@ namespace Emby.Server.Implementations.Library
 
             user.Password = newPasswordSha1;
 
-            await UpdateUser(user).ConfigureAwait(false);
+            UpdateUser(user);
 
             EventHelper.FireEventIfNotNull(UserPasswordChanged, this, new GenericEventArgs<User>(user), _logger);
         }
 
-        public async Task ChangeEasyPassword(User user, string newPasswordSha1)
+        public void ChangeEasyPassword(User user, string newPasswordSha1)
         {
             if (user == null)
             {
@@ -730,7 +727,7 @@ namespace Emby.Server.Implementations.Library
 
             user.EasyPassword = newPasswordSha1;
 
-            await UpdateUser(user).ConfigureAwait(false);
+            UpdateUser(user);
 
             EventHelper.FireEventIfNotNull(UserPasswordChanged, this, new GenericEventArgs<User>(user), _logger);
         }
@@ -845,7 +842,7 @@ namespace Emby.Server.Implementations.Library
             };
         }
 
-        public async Task<PinRedeemResult> RedeemPasswordResetPin(string pin)
+        public PinRedeemResult RedeemPasswordResetPin(string pin)
         {
             DeletePinFile();
 
@@ -866,12 +863,12 @@ namespace Emby.Server.Implementations.Library
 
                 foreach (var user in users)
                 {
-                    await ResetPassword(user).ConfigureAwait(false);
+                    ResetPassword(user);
 
                     if (user.Policy.IsDisabled)
                     {
                         user.Policy.IsDisabled = false;
-                        await UpdateUserPolicy(user, user.Policy, true).ConfigureAwait(false);
+                        UpdateUserPolicy(user, user.Policy, true);
                     }
                     usersReset.Add(user.Name);
                 }
@@ -948,13 +945,13 @@ namespace Emby.Server.Implementations.Library
         }
 
         private readonly object _policySyncLock = new object();
-        public Task UpdateUserPolicy(string userId, UserPolicy userPolicy)
+        public void UpdateUserPolicy(string userId, UserPolicy userPolicy)
         {
             var user = GetUserById(userId);
-            return UpdateUserPolicy(user, userPolicy, true);
+            UpdateUserPolicy(user, userPolicy, true);
         }
 
-        private async Task UpdateUserPolicy(User user, UserPolicy userPolicy, bool fireEvent)
+        private void UpdateUserPolicy(User user, UserPolicy userPolicy, bool fireEvent)
         {
             // The xml serializer will output differently if the type is not exact
             if (userPolicy.GetType() != typeof(UserPolicy))
@@ -973,7 +970,7 @@ namespace Emby.Server.Implementations.Library
                 user.Policy = userPolicy;
             }
 
-            await UpdateConfiguration(user, user.Configuration, true).ConfigureAwait(false);
+            UpdateConfiguration(user, user.Configuration, true);
         }
 
         private void DeleteUserPolicy(User user)
@@ -1035,13 +1032,13 @@ namespace Emby.Server.Implementations.Library
         }
 
         private readonly object _configSyncLock = new object();
-        public Task UpdateConfiguration(string userId, UserConfiguration config)
+        public void UpdateConfiguration(string userId, UserConfiguration config)
         {
             var user = GetUserById(userId);
-            return UpdateConfiguration(user, config, true);
+            UpdateConfiguration(user, config, true);
         }
 
-        private async Task UpdateConfiguration(User user, UserConfiguration config, bool fireEvent)
+        private void UpdateConfiguration(User user, UserConfiguration config, bool fireEvent)
         {
             var path = GetConfigurationFilePath(user);
 

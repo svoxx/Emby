@@ -11,20 +11,16 @@ using System.Net.Security;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Emby.Common.Implementations.EnvironmentInfo;
-using Emby.Common.Implementations.Logging;
-using Emby.Common.Implementations.Networking;
-using Emby.Common.Implementations.Security;
+using Emby.Server.Core.Cryptography;
 using Emby.Server.Core;
-using Emby.Server.Core.Logging;
 using Emby.Server.Implementations;
+using Emby.Server.Implementations.EnvironmentInfo;
 using Emby.Server.Implementations.IO;
 using Emby.Server.Implementations.Logging;
+using Emby.Server.Implementations.Networking;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.System;
-using MediaBrowser.Server.Startup.Common.IO;
 using Mono.Unix.Native;
-using NLog;
 using ILogger = MediaBrowser.Model.Logging.ILogger;
 using X509Certificate = System.Security.Cryptography.X509Certificates.X509Certificate;
 
@@ -42,7 +38,6 @@ namespace MediaBrowser.Server.Mono
             var applicationPath = Assembly.GetEntryAssembly().Location;
             var appFolderPath = Path.GetDirectoryName(applicationPath);
 
-            TryCopySqliteConfigFile(appFolderPath);
             SetSqliteProvider();
 
             var options = new StartupOptions(Environment.GetCommandLineArgs());
@@ -52,7 +47,7 @@ namespace MediaBrowser.Server.Mono
 
             var appPaths = CreateApplicationPaths(applicationPath, customProgramDataPath);
 
-            var logManager = new NlogManager(appPaths.LogDirectoryPath, "server");
+            var logManager = new SimpleLogManager(appPaths.LogDirectoryPath, "server");
             logManager.ReloadLogger(LogSeverity.Info);
             logManager.AddConsoleOutput();
 
@@ -74,20 +69,6 @@ namespace MediaBrowser.Server.Mono
             }
         }
 
-        private static void TryCopySqliteConfigFile(string appFolderPath)
-        {
-            try
-            {
-                File.Copy(Path.Combine(appFolderPath, "System.Data.SQLite.dll.config"),
-                    Path.Combine(appFolderPath, "SQLitePCLRaw.provider.sqlite3.dll.config"),
-                    true);
-            }
-            catch
-            {
-                
-            }
-        }
-
         private static void SetSqliteProvider()
         {
             SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
@@ -102,9 +83,7 @@ namespace MediaBrowser.Server.Mono
 
             var appFolderPath = Path.GetDirectoryName(applicationPath);
 
-            Action<string> createDirectoryFn = s => Directory.CreateDirectory(s);
-
-            return new ServerApplicationPaths(programDataPath, appFolderPath, Path.GetDirectoryName(applicationPath), createDirectoryFn);
+            return new ServerApplicationPaths(programDataPath, appFolderPath, Path.GetDirectoryName(applicationPath));
         }
 
         private static readonly TaskCompletionSource<bool> ApplicationTaskCompletionSource = new TaskCompletionSource<bool>();
@@ -120,7 +99,7 @@ namespace MediaBrowser.Server.Mono
 
             FileSystem = fileSystem;
 
-            var imageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => _appHost.HttpClient, appPaths);
+            var imageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => _appHost.HttpClient, appPaths, environmentInfo);
 
             _appHost = new MonoAppHost(appPaths,
                 logManager,
@@ -130,11 +109,8 @@ namespace MediaBrowser.Server.Mono
                 "emby.mono.zip",
                 environmentInfo,
                 imageEncoder,
-                new Startup.Common.SystemEvents(logManager.GetLogger("SystemEvents")),
-                new MemoryStreamProvider(),
-                new NetworkManager(logManager.GetLogger("NetworkManager")),
-                GenerateCertificate,
-                () => Environment.UserName);
+                new SystemEvents(logManager.GetLogger("SystemEvents")),
+                new NetworkManager(logManager.GetLogger("NetworkManager")));
 
             if (options.ContainsOption("-v"))
             {
@@ -159,11 +135,6 @@ namespace MediaBrowser.Server.Mono
             Task.WaitAll(task);
         }
 
-        private static void GenerateCertificate(string certPath, string certHost, string certPassword)
-        {
-            CertificateGenerator.CreateSelfSignCertificatePfx(certPath, certHost, certPassword, _logger);
-        }
-
         private static MonoEnvironmentInfo GetEnvironmentInfo()
         {
             var info = new MonoEnvironmentInfo();
@@ -174,39 +145,38 @@ namespace MediaBrowser.Server.Mono
 
             if (string.Equals(sysName, "Darwin", StringComparison.OrdinalIgnoreCase))
             {
-                //info.OperatingSystem = Startup.Common.OperatingSystem.Osx;
+                info.OperatingSystem = Model.System.OperatingSystem.OSX;
             }
             else if (string.Equals(sysName, "Linux", StringComparison.OrdinalIgnoreCase))
             {
-                //info.OperatingSystem = Startup.Common.OperatingSystem.Linux;
+                info.OperatingSystem = Model.System.OperatingSystem.Linux;
             }
             else if (string.Equals(sysName, "BSD", StringComparison.OrdinalIgnoreCase))
             {
-                //info.OperatingSystem = Startup.Common.OperatingSystem.Bsd;
-                info.IsBsd = true;
+                info.OperatingSystem = Model.System.OperatingSystem.BSD;
             }
 
             var archX86 = new Regex("(i|I)[3-6]86");
 
             if (archX86.IsMatch(uname.machine))
             {
-                info.CustomArchitecture = Architecture.X86;
+                info.SystemArchitecture = Architecture.X86;
             }
             else if (string.Equals(uname.machine, "x86_64", StringComparison.OrdinalIgnoreCase))
             {
-                info.CustomArchitecture = Architecture.X64;
+                info.SystemArchitecture = Architecture.X64;
             }
             else if (uname.machine.StartsWith("arm", StringComparison.OrdinalIgnoreCase))
             {
-                info.CustomArchitecture = Architecture.Arm;
+                info.SystemArchitecture = Architecture.Arm;
             }
             else if (System.Environment.Is64BitOperatingSystem)
             {
-                info.CustomArchitecture = Architecture.X64;
+                info.SystemArchitecture = Architecture.X64;
             }
             else
             {
-                info.CustomArchitecture = Architecture.X86;
+                info.SystemArchitecture = Architecture.X86;
             }
 
             return info;
@@ -260,7 +230,8 @@ namespace MediaBrowser.Server.Mono
             {
                 var message = LogHelper.GetLogMessage(exception).ToString();
 
-                if (message.IndexOf("InotifyWatcher", StringComparison.OrdinalIgnoreCase) == -1)
+                if (message.IndexOf("InotifyWatcher", StringComparison.OrdinalIgnoreCase) == -1 &&
+                    message.IndexOf("_IOCompletionCallback", StringComparison.OrdinalIgnoreCase) == -1)
                 {
                     Environment.Exit(System.Runtime.InteropServices.Marshal.GetHRForException(exception));
                 }
@@ -290,9 +261,10 @@ namespace MediaBrowser.Server.Mono
             {
                 var args = Environment.GetCommandLineArgs()
                                 .Skip(1)
-                                .Select(NormalizeCommandLineArgument);
+                                .Select(NormalizeCommandLineArgument)
+                                .ToArray();
 
-                commandLineArgsString = string.Join(" ", args.ToArray());
+                commandLineArgsString = string.Join(" ", args);
             }
 
             _logger.Info("Executable: {0}", module);
@@ -325,24 +297,9 @@ namespace MediaBrowser.Server.Mono
 
     public class MonoEnvironmentInfo : EnvironmentInfo
     {
-        public bool IsBsd { get; set; }
-
         public override string GetUserId()
         {
             return Syscall.getuid().ToString(CultureInfo.InvariantCulture);
-        }
-
-        public override Model.System.OperatingSystem OperatingSystem
-        {
-            get
-            {
-                if (IsBsd)
-                {
-                    return Model.System.OperatingSystem.BSD;
-                }
-
-                return base.OperatingSystem;
-            }
         }
     }
 }

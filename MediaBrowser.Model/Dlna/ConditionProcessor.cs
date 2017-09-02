@@ -3,7 +3,6 @@ using MediaBrowser.Model.MediaInfo;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 
 namespace MediaBrowser.Model.Dlna
 {
@@ -12,7 +11,7 @@ namespace MediaBrowser.Model.Dlna
         public bool IsVideoConditionSatisfied(ProfileCondition condition,
             int? width,
             int? height,
-            int? bitDepth,
+            int? videoBitDepth,
             int? videoBitrate,
             string videoProfile,
             double? videoLevel,
@@ -20,6 +19,7 @@ namespace MediaBrowser.Model.Dlna
             int? packetLength,
             TransportStreamTimestamp? timestamp,
             bool? isAnamorphic,
+            bool? isInterlaced,
             int? refFrames,
             int? numVideoStreams,
             int? numAudioStreams,
@@ -28,6 +28,8 @@ namespace MediaBrowser.Model.Dlna
         {
             switch (condition.Property)
             {
+                case ProfileConditionValue.IsInterlaced:
+                    return IsConditionSatisfied(condition, isInterlaced);
                 case ProfileConditionValue.IsAnamorphic:
                     return IsConditionSatisfied(condition, isAnamorphic);
                 case ProfileConditionValue.IsAvc:
@@ -43,7 +45,7 @@ namespace MediaBrowser.Model.Dlna
                 case ProfileConditionValue.PacketLength:
                     return IsConditionSatisfied(condition, packetLength);
                 case ProfileConditionValue.VideoBitDepth:
-                    return IsConditionSatisfied(condition, bitDepth);
+                    return IsConditionSatisfied(condition, videoBitDepth);
                 case ProfileConditionValue.VideoBitrate:
                     return IsConditionSatisfied(condition, videoBitrate);
                 case ProfileConditionValue.Height:
@@ -76,7 +78,7 @@ namespace MediaBrowser.Model.Dlna
             }
         }
 
-        public bool IsAudioConditionSatisfied(ProfileCondition condition, int? audioChannels, int? audioBitrate, int? audioSampleRate)
+        public bool IsAudioConditionSatisfied(ProfileCondition condition, int? audioChannels, int? audioBitrate, int? audioSampleRate, int? audioBitDepth)
         {
             switch (condition.Property)
             {
@@ -86,6 +88,8 @@ namespace MediaBrowser.Model.Dlna
                     return IsConditionSatisfied(condition, audioChannels);
                 case ProfileConditionValue.AudioSampleRate:
                     return IsConditionSatisfied(condition, audioSampleRate);
+                case ProfileConditionValue.AudioBitDepth:
+                    return IsConditionSatisfied(condition, audioBitDepth);
                 default:
                     throw new ArgumentException("Unexpected condition on audio file: " + condition.Property);
             }
@@ -94,7 +98,8 @@ namespace MediaBrowser.Model.Dlna
         public bool IsVideoAudioConditionSatisfied(ProfileCondition condition,
             int? audioChannels,
             int? audioBitrate,
-            int? audioSampleRate,
+            int? audioSampleRate, 
+            int? audioBitDepth,
             string audioProfile,
             bool? isSecondaryTrack)
         {
@@ -110,6 +115,8 @@ namespace MediaBrowser.Model.Dlna
                     return IsConditionSatisfied(condition, isSecondaryTrack);
                 case ProfileConditionValue.AudioSampleRate:
                     return IsConditionSatisfied(condition, audioSampleRate);
+                case ProfileConditionValue.AudioBitDepth:
+                    return IsConditionSatisfied(condition, audioBitDepth);
                 default:
                     throw new ArgumentException("Unexpected condition on audio file: " + condition.Property);
             }

@@ -66,10 +66,10 @@ namespace MediaBrowser.Api.UserLibrary
         /// <returns>Task{BaseItemDto}.</returns>
         private BaseItemDto GetItem(GetGenre request)
         {
-            var item = GetGenre(request.Name, LibraryManager);
-            
-            var dtoOptions = GetDtoOptions(AuthorizationContext ,request);
+            var dtoOptions = GetDtoOptions(AuthorizationContext, request);
 
+            var item = GetGenre(request.Name, LibraryManager, dtoOptions);
+            
             if (!string.IsNullOrWhiteSpace(request.UserId))
             {
                 var user = UserManager.GetUserById(request.UserId);
@@ -115,7 +115,7 @@ namespace MediaBrowser.Api.UserLibrary
         /// <param name="request">The request.</param>
         /// <param name="items">The items.</param>
         /// <returns>IEnumerable{Tuple{System.StringFunc{System.Int32}}}.</returns>
-        protected override IEnumerable<BaseItem> GetAllItems(GetItemsByName request, IEnumerable<BaseItem> items)
+        protected override IEnumerable<BaseItem> GetAllItems(GetItemsByName request, IList<BaseItem> items)
         {
             throw new NotImplementedException();
         }

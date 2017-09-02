@@ -5,12 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Serialization;
-using MediaBrowser.Server.Implementations.Devices;
 
 namespace Emby.Server.Implementations.Devices
 {

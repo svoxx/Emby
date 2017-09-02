@@ -10,7 +10,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Emby.Server.Implementations.Images;
-using MediaBrowser.Common.IO;
+
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
@@ -26,7 +27,7 @@ namespace Emby.Server.Implementations.Playlists
         {
         }
 
-        protected override Task<List<BaseItem>> GetItemsWithImages(IHasImages item)
+        protected override List<BaseItem> GetItemsWithImages(IHasMetadata item)
         {
             var playlist = (Playlist)item;
 
@@ -64,10 +65,9 @@ namespace Emby.Server.Implementations.Playlists
                     return null;
                 })
                 .Where(i => i != null)
-                .DistinctBy(i => i.Id)
-                .ToList();
+                .DistinctBy(i => i.Id);
 
-            return Task.FromResult(GetFinalItems(items));
+            return GetFinalItems(items);
         }
     }
 
@@ -80,7 +80,7 @@ namespace Emby.Server.Implementations.Playlists
             _libraryManager = libraryManager;
         }
 
-        protected override Task<List<BaseItem>> GetItemsWithImages(IHasImages item)
+        protected override List<BaseItem> GetItemsWithImages(IHasMetadata item)
         {
             var items = _libraryManager.GetItemList(new InternalItemsQuery
             {
@@ -89,14 +89,15 @@ namespace Emby.Server.Implementations.Playlists
                 SortBy = new[] { ItemSortBy.Random },
                 Limit = 4,
                 Recursive = true,
-                ImageTypes = new[] { ImageType.Primary }
+                ImageTypes = new[] { ImageType.Primary },
+                DtoOptions = new DtoOptions(false)
 
-            }).ToList();
+            });
 
-            return Task.FromResult(GetFinalItems(items));
+            return GetFinalItems(items);
         }
 
-        //protected override Task<string> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
+        //protected override Task<string> CreateImage(IHasMetadata item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
         //{
         //    return CreateSingleImage(itemsWithImages, outputPathWithoutExtension, ImageType.Primary);
         //}
@@ -111,7 +112,7 @@ namespace Emby.Server.Implementations.Playlists
             _libraryManager = libraryManager;
         }
 
-        protected override Task<List<BaseItem>> GetItemsWithImages(IHasImages item)
+        protected override List<BaseItem> GetItemsWithImages(IHasMetadata item)
         {
             var items = _libraryManager.GetItemList(new InternalItemsQuery
             {
@@ -120,14 +121,15 @@ namespace Emby.Server.Implementations.Playlists
                 SortBy = new[] { ItemSortBy.Random },
                 Limit = 4,
                 Recursive = true,
-                ImageTypes = new[] { ImageType.Primary }
+                ImageTypes = new[] { ImageType.Primary },
+                DtoOptions = new DtoOptions(false)
 
-            }).ToList();
+            });
 
-            return Task.FromResult(GetFinalItems(items));
+            return GetFinalItems(items);
         }
 
-        //protected override Task<string> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
+        //protected override Task<string> CreateImage(IHasMetadata item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
         //{
         //    return CreateSingleImage(itemsWithImages, outputPathWithoutExtension, ImageType.Primary);
         //}

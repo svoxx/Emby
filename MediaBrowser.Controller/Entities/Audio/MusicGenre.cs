@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Extensions;
@@ -89,16 +88,6 @@ namespace MediaBrowser.Controller.Entities.Audio
             {
                 return false;
             }
-        }
-
-        public IEnumerable<BaseItem> GetTaggedItems(IEnumerable<BaseItem> inputItems)
-        {
-            return inputItems.Where(GetItemFilter());
-        }
-
-        public Func<BaseItem, bool> GetItemFilter()
-        {
-            return i => i is IHasMusicGenres && i.Genres.Contains(Name, StringComparer.OrdinalIgnoreCase);
         }
 
         [IgnoreDataMember]

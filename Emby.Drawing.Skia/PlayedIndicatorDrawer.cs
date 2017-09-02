@@ -5,10 +5,11 @@ using MediaBrowser.Model.Drawing;
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using System.Reflection;
+using MediaBrowser.Common.Progress;
 
 namespace Emby.Drawing.Skia
 {
@@ -99,7 +100,7 @@ namespace Emby.Drawing.Skia
             var tempPath = await httpClient.GetTempFile(new HttpRequestOptions
             {
                 Url = url,
-                Progress = new Progress<double>()
+                Progress = new SimpleProgress<double>()
 
             }).ConfigureAwait(false);
 

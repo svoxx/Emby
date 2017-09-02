@@ -24,14 +24,14 @@ namespace MediaBrowser.Controller.Dto
         /// </summary>
         /// <param name="dto">The dto.</param>
         /// <param name="item">The item.</param>
-        void AttachPrimaryImageAspectRatio(IItemDto dto, IHasImages item);
+        void AttachPrimaryImageAspectRatio(IItemDto dto, IHasMetadata item);
 
         /// <summary>
         /// Gets the primary image aspect ratio.
         /// </summary>
         /// <param name="item">The item.</param>
         /// <returns>System.Nullable&lt;System.Double&gt;.</returns>
-        double? GetPrimaryImageAspectRatio(IHasImages item);
+        double? GetPrimaryImageAspectRatio(IHasMetadata item);
 
         /// <summary>
         /// Gets the base item dto.
@@ -41,7 +41,7 @@ namespace MediaBrowser.Controller.Dto
         /// <param name="user">The user.</param>
         /// <param name="owner">The owner.</param>
         /// <returns>Task{BaseItemDto}.</returns>
-        BaseItemDto GetBaseItemDto(BaseItem item, List<ItemFields> fields, User user = null, BaseItem owner = null);
+        BaseItemDto GetBaseItemDto(BaseItem item, ItemFields[] fields, User user = null, BaseItem owner = null);
 
         /// <summary>
         /// Gets the base item dto.
@@ -61,9 +61,10 @@ namespace MediaBrowser.Controller.Dto
         /// <param name="user">The user.</param>
         /// <param name="owner">The owner.</param>
         /// <returns>IEnumerable&lt;BaseItemDto&gt;.</returns>
-        Task<List<BaseItemDto>> GetBaseItemDtos(IEnumerable<BaseItem> items, DtoOptions options, User user = null,
-            BaseItem owner = null);
-        
+        Task<BaseItemDto[]> GetBaseItemDtos(BaseItem[] items, DtoOptions options, User user = null, BaseItem owner = null);
+
+        Task<BaseItemDto[]> GetBaseItemDtos(List<BaseItem> items, DtoOptions options, User user = null, BaseItem owner = null);
+
         /// <summary>
         /// Gets the chapter information dto.
         /// </summary>

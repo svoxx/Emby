@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Model.Logging;
-using MediaBrowser.Server.Implementations;
 using MediaBrowser.Server.Startup.Common;
 using MediaBrowser.ServerApplication.Native;
 using MediaBrowser.ServerApplication.Splash;
@@ -17,22 +16,17 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Emby.Common.Implementations.EnvironmentInfo;
-using Emby.Common.Implementations.IO;
-using Emby.Common.Implementations.Logging;
-using Emby.Common.Implementations.Networking;
-using Emby.Common.Implementations.Security;
+using Emby.Server.Core.Cryptography;
 using Emby.Drawing;
 using Emby.Server.Core;
-using Emby.Server.Core.Logging;
 using Emby.Server.Implementations;
 using Emby.Server.Implementations.Browser;
+using Emby.Server.Implementations.EnvironmentInfo;
 using Emby.Server.Implementations.IO;
 using Emby.Server.Implementations.Logging;
-using ImageMagickSharp;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Model.IO;
-using MediaBrowser.Server.Startup.Common.IO;
+using SystemEvents = Emby.Server.Implementations.SystemEvents;
 
 namespace MediaBrowser.ServerApplication
 {
@@ -53,31 +47,10 @@ namespace MediaBrowser.ServerApplication
 
         private static IFileSystem FileSystem;
 
-        public static bool TryGetLocalFromUncDirectory(string local, out string unc)
-        {
-            if ((local == null) || (local == ""))
-            {
-                unc = "";
-                throw new ArgumentNullException("local");
-            }
-
-            ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_share WHERE path ='" + local.Replace("\\", "\\\\") + "'");
-            ManagementObjectCollection coll = searcher.Get();
-            if (coll.Count == 1)
-            {
-                foreach (ManagementObject share in searcher.Get())
-                {
-                    unc = share["Name"] as String;
-                    unc = "\\\\" + SystemInformation.ComputerName + "\\" + unc;
-                    return true;
-                }
-            }
-            unc = "";
-            return false;
-        }
         /// <summary>
         /// Defines the entry point of the application.
         /// </summary>
+        [STAThread]
         public static void Main()
         {
             var options = new StartupOptions(Environment.GetCommandLineArgs());
@@ -93,15 +66,13 @@ namespace MediaBrowser.ServerApplication
             ApplicationPath = currentProcess.MainModule.FileName;
             var architecturePath = Path.Combine(Path.GetDirectoryName(ApplicationPath), Environment.Is64BitProcess ? "x64" : "x86");
 
-            Wand.SetMagickCoderModulePath(architecturePath);
-
             var success = SetDllDirectory(architecturePath);
 
             SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
 
             var appPaths = CreateApplicationPaths(ApplicationPath, IsRunningAsService);
 
-            var logManager = new NlogManager(appPaths.LogDirectoryPath, "server");
+            var logManager = new SimpleLogManager(appPaths.LogDirectoryPath, "server");
             logManager.ReloadLogger(LogSeverity.Debug);
             logManager.AddConsoleOutput();
 
@@ -265,18 +236,16 @@ namespace MediaBrowser.ServerApplication
 
             var resourcesPath = Path.GetDirectoryName(applicationPath);
 
-            Action<string> createDirectoryFn = s => Directory.CreateDirectory(s);
-
             if (runAsService)
             {
                 var systemPath = Path.GetDirectoryName(applicationPath);
 
                 var programDataPath = Path.GetDirectoryName(systemPath);
 
-                return new ServerApplicationPaths(programDataPath, appFolderPath, resourcesPath, createDirectoryFn);
+                return new ServerApplicationPaths(programDataPath, appFolderPath, resourcesPath);
             }
 
-            return new ServerApplicationPaths(ApplicationPathHelper.GetProgramDataPath(applicationPath), appFolderPath, resourcesPath, createDirectoryFn);
+            return new ServerApplicationPaths(ApplicationPathHelper.GetProgramDataPath(applicationPath), appFolderPath, resourcesPath);
         }
 
         /// <summary>
@@ -321,8 +290,6 @@ namespace MediaBrowser.ServerApplication
             }
         }
 
-        private static readonly TaskCompletionSource<bool> ApplicationTaskCompletionSource = new TaskCompletionSource<bool>();
-
         /// <summary>
         /// Runs the application.
         /// </summary>
@@ -346,11 +313,8 @@ namespace MediaBrowser.ServerApplication
                 "emby.windows.zip",
                 environmentInfo,
                 new NullImageEncoder(),
-                new Server.Startup.Common.SystemEvents(logManager.GetLogger("SystemEvents")),
-                new RecyclableMemoryStreamProvider(),
-                new Networking.NetworkManager(logManager.GetLogger("NetworkManager")),
-                GenerateCertificate,
-                () => Environment.UserDomainName);
+                new SystemEvents(logManager.GetLogger("SystemEvents")),
+                new Networking.NetworkManager(logManager.GetLogger("NetworkManager")));
 
             var initProgress = new Progress<double>();
 
@@ -394,15 +358,7 @@ namespace MediaBrowser.ServerApplication
                 HideSplashScreen();
 
                 ShowTrayIcon();
-
-                task = ApplicationTaskCompletionSource.Task;
-                Task.WaitAll(task);
             }
-        }
-
-        private static void GenerateCertificate(string certPath, string certHost, string certPassword)
-        {
-            CertificateGenerator.CreateSelfSignCertificatePfx(certPath, certHost, certPassword, _logger);
         }
 
         private static ServerNotifyIcon _serverNotifyIcon;
@@ -487,7 +443,6 @@ namespace MediaBrowser.ServerApplication
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         static void service_Disposed(object sender, EventArgs e)
         {
-            ApplicationTaskCompletionSource.SetResult(true);
             OnServiceShutdown();
         }
 
@@ -706,14 +661,10 @@ namespace MediaBrowser.ServerApplication
                 _serverNotifyIcon = null;
             }
 
-            //_logger.Info("Calling Application.Exit");
+            _logger.Info("Calling Application.Exit");
             //Application.Exit();
 
-            _logger.Info("Calling Environment.Exit");
             Environment.Exit(0);
-
-            _logger.Info("Calling ApplicationTaskCompletionSource.SetResult");
-            ApplicationTaskCompletionSource.SetResult(true);
         }
 
         private static void ShutdownWindowsService()
@@ -804,19 +755,43 @@ namespace MediaBrowser.ServerApplication
 
             try
             {
-                var subkey = Environment.Is64BitProcess
-                    ? "SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64"
-                    : "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86";
+                RegistryKey key;
 
-                using (RegistryKey ndpKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
-                    .OpenSubKey(subkey))
+                if (Environment.Is64BitProcess)
                 {
-                    if (ndpKey != null && ndpKey.GetValue("Version") != null)
+                    key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
+                       .OpenSubKey("SOFTWARE\\Classes\\Installer\\Dependencies\\{d992c12e-cab2-426f-bde3-fb8c53950b0d}");
+
+                    if (key == null)
                     {
-                        var installedVersion = ((string)ndpKey.GetValue("Version")).TrimStart('v');
-                        if (installedVersion.StartsWith("14", StringComparison.OrdinalIgnoreCase))
+                        key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
+                            .OpenSubKey("SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64");
+                    }
+                }
+                else
+                {
+                    key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
+                        .OpenSubKey("SOFTWARE\\Classes\\Installer\\Dependencies\\{e2803110-78b3-4664-a479-3611a381656a}");
+
+                    if (key == null)
+                    {
+                        key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
+                            .OpenSubKey("SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86");
+                    }
+                }
+
+                if (key != null)
+                {
+                    using (key)
+                    {
+                        var version = key.GetValue("Version");
+                        if (version != null)
                         {
-                            return;
+                            var installedVersion = ((string)version).TrimStart('v');
+                            if (installedVersion.StartsWith("14", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return;
+                            }
                         }
                     }
                 }

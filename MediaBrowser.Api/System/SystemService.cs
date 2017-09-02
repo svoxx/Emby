@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Net;
@@ -60,7 +60,7 @@ namespace MediaBrowser.Api.System
 
     [Route("/System/Logs", "GET", Summary = "Gets a list of available server log files")]
     [Authenticated(Roles = "Admin")]
-    public class GetServerLogs : IReturn<List<LogFile>>
+    public class GetServerLogs : IReturn<LogFile[]>
     {
     }
 
@@ -118,16 +118,15 @@ namespace MediaBrowser.Api.System
 
         public object Get(GetServerLogs request)
         {
-            List<FileSystemMetadata> files;
+            IEnumerable<FileSystemMetadata> files;
 
             try
             {
-                files = _fileSystem.GetFiles(_appPaths.LogDirectoryPath, new[] { ".txt" }, true, false)
-                    .ToList();
+                files = _fileSystem.GetFiles(_appPaths.LogDirectoryPath, new[] { ".txt" }, true, false);
             }
             catch (IOException)
             {
-                files = new List<FileSystemMetadata>();
+                files = new FileSystemMetadata[]{};
             }
 
             var result = files.Select(i => new LogFile
@@ -140,7 +139,7 @@ namespace MediaBrowser.Api.System
             }).OrderByDescending(i => i.DateModified)
                 .ThenByDescending(i => i.DateCreated)
                 .ThenBy(i => i.Name)
-                .ToList();
+                .ToArray();
 
             return ToOptimizedResult(result);
         }

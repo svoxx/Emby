@@ -2,6 +2,7 @@
 using MediaBrowser.Controller.Notifications;
 using MediaBrowser.Controller.Plugins;
 using System.Linq;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.Notifications
 {
@@ -23,7 +24,6 @@ namespace Emby.Server.Implementations.Notifications
         public void Run()
         {
             _notificationsRepo.NotificationAdded += _notificationsRepo_NotificationAdded;
-
             _notificationsRepo.NotificationsMarkedRead += _notificationsRepo_NotificationsMarkedRead;
         }
 
@@ -34,7 +34,7 @@ namespace Emby.Server.Implementations.Notifications
             list.Add(e.UserId);
             list.Add(e.IsRead.ToString().ToLower());
 
-            var msg = string.Join("|", list.ToArray());
+            var msg = string.Join("|", list.ToArray(list.Count));
 
             _serverManager.SendWebSocketMessage("NotificationsMarkedRead", msg);
         }

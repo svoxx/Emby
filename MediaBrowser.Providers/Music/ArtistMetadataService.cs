@@ -9,21 +9,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
 namespace MediaBrowser.Providers.Music
 {
     public class ArtistMetadataService : MetadataService<MusicArtist, ArtistInfo>
     {
-        protected override async Task<ItemUpdateType> BeforeSave(MusicArtist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        protected override ItemUpdateType BeforeSave(MusicArtist item, bool isFullRefresh, ItemUpdateType currentUpdateType)
         {
-            var updateType = await base.BeforeSave(item, isFullRefresh, currentUpdateType).ConfigureAwait(false);
+            var updateType = base.BeforeSave(item, isFullRefresh, currentUpdateType);
 
             if (isFullRefresh || currentUpdateType > ItemUpdateType.None)
             {
-                if (!item.IsLocked)
+                if (!item.IsLocked && !item.LockedFields.Contains(MetadataFields.Genres))
                 {
                     var taggedItems = item.IsAccessedByName ?
                         item.GetTaggedItems(new Controller.Entities.InternalItemsQuery()
@@ -31,28 +29,25 @@ namespace MediaBrowser.Providers.Music
                             Recursive = true,
                             IsFolder = false
                         }) :
-                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder).ToList();
+                        item.GetRecursiveChildren(i => i is IHasArtist && !i.IsFolder);
 
-                    if (!item.LockedFields.Contains(MetadataFields.Genres))
+                    var currentList = item.Genres;
+
+                    item.Genres = taggedItems.SelectMany(i => i.Genres)
+                        .DistinctNames()
+                        .ToList();
+
+                    if (currentList.Count != item.Genres.Count || !currentList.OrderBy(i => i).SequenceEqual(item.Genres.OrderBy(i => i), StringComparer.OrdinalIgnoreCase))
                     {
-                        var currentList = item.Genres.ToList();
-
-                        item.Genres = taggedItems.SelectMany(i => i.Genres)
-                            .DistinctNames()
-                            .ToList();
-
-                        if (currentList.Count != item.Genres.Count || !currentList.OrderBy(i => i).SequenceEqual(item.Genres.OrderBy(i => i), StringComparer.OrdinalIgnoreCase))
-                        {
-                            updateType = updateType | ItemUpdateType.MetadataEdit;
-                        }
+                        updateType = updateType | ItemUpdateType.MetadataEdit;
                     }
                 }
             }
-            
+
             return updateType;
         }
 
-        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<MusicArtist> source, MetadataResult<MusicArtist> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
         }

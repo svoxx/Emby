@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Extensions;
 
 namespace MediaBrowser.Providers.MediaInfo
 {
@@ -34,6 +35,11 @@ namespace MediaBrowser.Providers.MediaInfo
         {
             if (video.LocationType != LocationType.FileSystem ||
                 video.VideoType != VideoType.VideoFile)
+            {
+                return new List<string>();
+            }
+
+            if (!video.IsCompleteMedia)
             {
                 return new List<string>();
             }
@@ -139,7 +145,7 @@ namespace MediaBrowser.Providers.MediaInfo
                 request.IndexNumberEnd = episode.IndexNumberEnd;
                 request.SeriesName = episode.SeriesName;
             }
-           
+
             try
             {
                 var searchResults = await _subtitleManager.SearchSubtitles(request, cancellationToken).ConfigureAwait(false);
@@ -153,6 +159,9 @@ namespace MediaBrowser.Providers.MediaInfo
 
                     return true;
                 }
+            }
+            catch (RateLimitExceededException)
+            {
             }
             catch (Exception ex)
             {

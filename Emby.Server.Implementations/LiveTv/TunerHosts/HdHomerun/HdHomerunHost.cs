@@ -27,17 +27,14 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
     public class HdHomerunHost : BaseTunerHost, ITunerHost, IConfigurableTunerHost
     {
         private readonly IHttpClient _httpClient;
-        private readonly IFileSystem _fileSystem;
         private readonly IServerApplicationHost _appHost;
         private readonly ISocketFactory _socketFactory;
         private readonly INetworkManager _networkManager;
         private readonly IEnvironmentInfo _environment;
 
-        public HdHomerunHost(IServerConfigurationManager config, ILogger logger, IJsonSerializer jsonSerializer, IMediaEncoder mediaEncoder, IHttpClient httpClient, IFileSystem fileSystem, IServerApplicationHost appHost, ISocketFactory socketFactory, INetworkManager networkManager, IEnvironmentInfo environment)
-            : base(config, logger, jsonSerializer, mediaEncoder)
+        public HdHomerunHost(IServerConfigurationManager config, ILogger logger, IJsonSerializer jsonSerializer, IMediaEncoder mediaEncoder, IFileSystem fileSystem, IHttpClient httpClient, IServerApplicationHost appHost, ISocketFactory socketFactory, INetworkManager networkManager, IEnvironmentInfo environment) : base(config, logger, jsonSerializer, mediaEncoder, fileSystem)
         {
             _httpClient = httpClient;
-            _fileSystem = fileSystem;
             _appHost = appHost;
             _socketFactory = socketFactory;
             _networkManager = networkManager;
@@ -71,7 +68,10 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
         {
             var id = ChannelIdPrefix + i.GuideNumber;
 
-            id += '_' + (i.GuideName ?? string.Empty).GetMD5().ToString("N");
+            if (!info.EnableNewHdhrChannelIds)
+            {
+                id += '_' + (i.GuideName ?? string.Empty).GetMD5().ToString("N");
+            }
 
             return id;
         }
@@ -421,7 +421,11 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
                 IsInfiniteStream = true,
-                IgnoreDts = true
+                IgnoreDts = true,
+                //SupportsProbing = false,
+                //AnalyzeDurationMs = 2000000
+                //IgnoreIndex = true,
+                //ReadAtNativeFramerate = true
             };
 
             mediaSource.InferTotalBitrate();
@@ -505,12 +509,12 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
 
             if (hdhomerunChannel != null && hdhomerunChannel.IsLegacyTuner)
             {
-                return new HdHomerunUdpStream(mediaSource, streamId, new LegacyHdHomerunChannelCommands(hdhomerunChannel.Url), modelInfo.TunerCount, _fileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _socketFactory, _networkManager);
+                return new HdHomerunUdpStream(mediaSource, streamId, new LegacyHdHomerunChannelCommands(hdhomerunChannel.Url), modelInfo.TunerCount, FileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _socketFactory, _networkManager, _environment);
             }
 
             // The UDP method is not working reliably on OSX, and on BSD it hasn't been tested yet
-            var enableHttpStream = _environment.OperatingSystem == OperatingSystem.OSX ||
-                _environment.OperatingSystem == OperatingSystem.BSD;
+            var enableHttpStream = _environment.OperatingSystem == MediaBrowser.Model.System.OperatingSystem.OSX 
+                || _environment.OperatingSystem == MediaBrowser.Model.System.OperatingSystem.BSD;
             enableHttpStream = true;
             if (enableHttpStream)
             {
@@ -519,17 +523,16 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
                 var httpUrl = GetApiUrl(info, true) + "/auto/v" + hdhrId;
 
                 // If raw was used, the tuner doesn't support params
-                if (!string.IsNullOrWhiteSpace(profile)
-                    && !string.Equals(profile, "native", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(profile) && !string.Equals(profile, "native", StringComparison.OrdinalIgnoreCase))
                 {
                     httpUrl += "?transcode=" + profile;
                 }
                 mediaSource.Path = httpUrl;
 
-                return new HdHomerunHttpStream(mediaSource, streamId, _fileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost);
+                return new HdHomerunHttpStream(mediaSource, streamId, FileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _environment);
             }
 
-            return new HdHomerunUdpStream(mediaSource, streamId, new HdHomerunChannelCommands(hdhomerunChannel.Number), modelInfo.TunerCount, _fileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _socketFactory, _networkManager);
+            return new HdHomerunUdpStream(mediaSource, streamId, new HdHomerunChannelCommands(hdhomerunChannel.Number, profile), modelInfo.TunerCount, FileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _socketFactory, _networkManager, _environment);
         }
 
         public async Task Validate(TunerHostInfo info)
@@ -596,10 +599,12 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
                 // Need a way to set the Receive timeout on the socket otherwise this might never timeout?
                 try
                 {
-                    await udpClient.SendAsync(discBytes, discBytes.Length, new IpEndPointInfo(new IpAddressInfo("255.255.255.255", IpAddressFamily.InterNetwork), 65001), cancellationToken);
+                    await udpClient.SendToAsync(discBytes, 0, discBytes.Length, new IpEndPointInfo(new IpAddressInfo("255.255.255.255", IpAddressFamily.InterNetwork), 65001), cancellationToken);
+                    var receiveBuffer = new byte[8192];
+
                     while (!cancellationToken.IsCancellationRequested)
                     {
-                        var response = await udpClient.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+                        var response = await udpClient.ReceiveAsync(receiveBuffer, 0, receiveBuffer.Length, cancellationToken).ConfigureAwait(false);
                         var deviceIp = response.RemoteEndPoint.IpAddress.Address;
 
                         // check to make sure we have enough bytes received to be a valid message and make sure the 2nd byte is the discover reply byte

@@ -18,15 +18,15 @@ namespace Emby.Server.Implementations.Photos
         {
         }
 
-        protected override Task<List<BaseItem>> GetItemsWithImages(IHasImages item)
+        protected override List<BaseItem> GetItemsWithImages(IHasMetadata item)
         {
             var photoAlbum = (PhotoAlbum)item;
-            var items = GetFinalItems(photoAlbum.Children.ToList());
+            var items = GetFinalItems(photoAlbum.Children);
 
-            return Task.FromResult(items);
+            return items;
         }
 
-        protected override Task<string> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
+        protected override string CreateImage(IHasMetadata item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
         {
             return CreateSingleImage(itemsWithImages, outputPathWithoutExtension, ImageType.Primary);
         }

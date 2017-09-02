@@ -12,9 +12,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.IO;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.Playlists
 {
@@ -128,14 +128,17 @@ namespace Emby.Server.Implementations.Playlists
 
                 playlist.SetMediaType(options.MediaType);
 
-                await parentFolder.AddChild(playlist, CancellationToken.None).ConfigureAwait(false);
+                parentFolder.AddChild(playlist, CancellationToken.None);
 
                 await playlist.RefreshMetadata(new MetadataRefreshOptions(_fileSystem) { ForceSave = true }, CancellationToken.None)
                     .ConfigureAwait(false);
 
-                if (options.ItemIdList.Count > 0)
+                if (options.ItemIdList.Length > 0)
                 {
-                    await AddToPlaylistInternal(playlist.Id.ToString("N"), options.ItemIdList, user);
+                    await AddToPlaylistInternal(playlist.Id.ToString("N"), options.ItemIdList, user, new DtoOptions(false)
+                    {
+                        EnableImages = true
+                    });
                 }
 
                 return new PlaylistCreationResult
@@ -160,21 +163,24 @@ namespace Emby.Server.Implementations.Playlists
             return path;
         }
 
-        private Task<IEnumerable<BaseItem>> GetPlaylistItems(IEnumerable<string> itemIds, string playlistMediaType, User user)
+        private List<BaseItem> GetPlaylistItems(IEnumerable<string> itemIds, string playlistMediaType, User user, DtoOptions options)
         {
             var items = itemIds.Select(i => _libraryManager.GetItemById(i)).Where(i => i != null);
 
-            return Playlist.GetPlaylistItems(playlistMediaType, items, user);
+            return Playlist.GetPlaylistItems(playlistMediaType, items, user, options);
         }
 
         public Task AddToPlaylist(string playlistId, IEnumerable<string> itemIds, string userId)
         {
             var user = string.IsNullOrWhiteSpace(userId) ? null : _userManager.GetUserById(userId);
 
-            return AddToPlaylistInternal(playlistId, itemIds, user);
+            return AddToPlaylistInternal(playlistId, itemIds, user, new DtoOptions(false)
+            {
+                EnableImages = true
+            });
         }
 
-        private async Task AddToPlaylistInternal(string playlistId, IEnumerable<string> itemIds, User user)
+        private async Task AddToPlaylistInternal(string playlistId, IEnumerable<string> itemIds, User user, DtoOptions options)
         {
             var playlist = _libraryManager.GetItemById(playlistId) as Playlist;
 
@@ -185,16 +191,23 @@ namespace Emby.Server.Implementations.Playlists
 
             var list = new List<LinkedChild>();
 
-            var items = (await GetPlaylistItems(itemIds, playlist.MediaType, user).ConfigureAwait(false))
+            var items = (GetPlaylistItems(itemIds, playlist.MediaType, user, options))
                 .Where(i => i.SupportsAddingToPlaylist)
                 .ToList();
 
             foreach (var item in items)
             {
+                if (string.IsNullOrWhiteSpace(item.Path))
+                {
+                    continue;
+                }
+
                 list.Add(LinkedChild.Create(item));
             }
 
-            playlist.LinkedChildren.AddRange(list);
+            var newList = playlist.LinkedChildren.ToList();
+            newList.AddRange(list);
+            playlist.LinkedChildren = newList.ToArray(newList.Count);
 
             await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 
@@ -222,7 +235,7 @@ namespace Emby.Server.Implementations.Playlists
 
             playlist.LinkedChildren = children.Except(removals)
                 .Select(i => i.Item1)
-                .ToList();
+                .ToArray();
 
             await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 
@@ -253,16 +266,20 @@ namespace Emby.Server.Implementations.Playlists
 
             var item = playlist.LinkedChildren[oldIndex];
 
-            playlist.LinkedChildren.Remove(item);
+            var newList = playlist.LinkedChildren.ToList();
 
-            if (newIndex >= playlist.LinkedChildren.Count)
+            newList.Remove(item);
+
+            if (newIndex >= newList.Count)
             {
-                playlist.LinkedChildren.Add(item);
+                newList.Add(item);
             }
             else
             {
-                playlist.LinkedChildren.Insert(newIndex, item);
+                newList.Insert(newIndex, item);
             }
+
+            playlist.LinkedChildren = newList.ToArray(newList.Count);
 
             await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
         }
@@ -271,7 +288,7 @@ namespace Emby.Server.Implementations.Playlists
         {
             var typeName = "PlaylistsFolder";
 
-            return _libraryManager.RootFolder.Children.OfType<Folder>().FirstOrDefault(i => string.Equals(i.GetType().Name, typeName, StringComparison.Ordinal)) ?? 
+            return _libraryManager.RootFolder.Children.OfType<Folder>().FirstOrDefault(i => string.Equals(i.GetType().Name, typeName, StringComparison.Ordinal)) ??
                 _libraryManager.GetUserRootFolder().Children.OfType<Folder>().FirstOrDefault(i => string.Equals(i.GetType().Name, typeName, StringComparison.Ordinal));
         }
     }

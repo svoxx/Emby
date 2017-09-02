@@ -36,7 +36,7 @@ namespace MediaBrowser.Api.Movies
     }
 
     [Route("/Movies/Recommendations", "GET", Summary = "Gets movie recommendations")]
-    public class GetMovieRecommendations : IReturn<RecommendationDto[]>, IHasItemFields
+    public class GetMovieRecommendations : IReturn<RecommendationDto[]>, IHasDtoOptions
     {
         [ApiMember(Name = "CategoryLimit", Description = "The max number of categories to return", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public int CategoryLimit { get; set; }
@@ -57,6 +57,18 @@ namespace MediaBrowser.Api.Movies
         /// <value>The parent id.</value>
         [ApiMember(Name = "ParentId", Description = "Specify this to localize the search to a specific item or folder. Omit to use the root", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string ParentId { get; set; }
+
+        [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableImages { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? ImageTypeLimit { get; set; }
+
+        [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string EnableImageTypes { get; set; }
 
         public GetMovieRecommendations()
         {
@@ -115,13 +127,11 @@ namespace MediaBrowser.Api.Movies
             return ToOptimizedSerializedResultUsingCache(result);
         }
 
-        public async Task<object> Get(GetMovieRecommendations request)
+        public object Get(GetMovieRecommendations request)
         {
             var user = _userManager.GetUserById(request.UserId);
 
             var dtoOptions = GetDtoOptions(_authContext, request);
-
-            dtoOptions.Fields = request.GetItemFields().ToList();
 
             var result = GetRecommendationCategories(user, request.ParentId, request.CategoryLimit, request.ItemLimit, dtoOptions);
 
@@ -148,17 +158,19 @@ namespace MediaBrowser.Api.Movies
             var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 Limit = request.Limit,
-                IncludeItemTypes = itemTypes.ToArray(),
+                IncludeItemTypes = itemTypes.ToArray(itemTypes.Count),
                 IsMovie = true,
                 SimilarTo = item,
                 EnableGroupByMetadataKey = true,
                 DtoOptions = dtoOptions
 
-            }).ToList();
+            });
+
+            var returnList = await _dtoService.GetBaseItemDtos(itemsResult, dtoOptions, user).ConfigureAwait(false);
 
             var result = new QueryResult<BaseItemDto>
             {
-                Items = (await _dtoService.GetBaseItemDtos(itemsResult, dtoOptions, user).ConfigureAwait(false)).ToArray(),
+                Items = returnList,
 
                 TotalRecordCount = itemsResult.Count
             };
@@ -190,7 +202,7 @@ namespace MediaBrowser.Api.Movies
                 DtoOptions = dtoOptions
             };
 
-            var recentlyPlayedMovies = _libraryManager.GetItemList(query).ToList();
+            var recentlyPlayedMovies = _libraryManager.GetItemList(query);
 
             var itemTypes = new List<string> { typeof(Movie).Name };
             if (_config.Configuration.EnableExternalContentInSuggestions)
@@ -201,19 +213,19 @@ namespace MediaBrowser.Api.Movies
 
             var likedMovies = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
-                IncludeItemTypes = itemTypes.ToArray(),
+                IncludeItemTypes = itemTypes.ToArray(itemTypes.Count),
                 IsMovie = true,
                 SortBy = new[] { ItemSortBy.Random },
                 SortOrder = SortOrder.Descending,
                 Limit = 10,
                 IsFavoriteOrLiked = true,
-                ExcludeItemIds = recentlyPlayedMovies.Select(i => i.Id.ToString("N")).ToArray(),
+                ExcludeItemIds = recentlyPlayedMovies.Select(i => i.Id.ToString("N")).ToArray(recentlyPlayedMovies.Count),
                 EnableGroupByMetadataKey = true,
                 ParentId = parentIdGuid,
                 Recursive = true,
                 DtoOptions = dtoOptions
 
-            }).ToList();
+            });
 
             var mostRecentMovies = recentlyPlayedMovies.Take(6).ToList();
             // Get recently played directors
@@ -290,7 +302,7 @@ namespace MediaBrowser.Api.Movies
                     // Account for duplicates by imdb id, since the database doesn't support this yet
                     Limit = itemLimit + 2,
                     PersonTypes = new[] { PersonType.Director },
-                    IncludeItemTypes = itemTypes.ToArray(),
+                    IncludeItemTypes = itemTypes.ToArray(itemTypes.Count),
                     IsMovie = true,
                     EnableGroupByMetadataKey = true,
                     DtoOptions = dtoOptions
@@ -301,12 +313,14 @@ namespace MediaBrowser.Api.Movies
 
                 if (items.Count > 0)
                 {
+                    var returnItems = _dtoService.GetBaseItemDtos(items, dtoOptions, user).Result;
+
                     yield return new RecommendationDto
                     {
                         BaselineItemName = name,
                         CategoryId = name.GetMD5().ToString("N"),
                         RecommendationType = type,
-                        Items = _dtoService.GetBaseItemDtos(items, dtoOptions, user).Result.ToArray()
+                        Items = returnItems
                     };
                 }
             }
@@ -328,7 +342,7 @@ namespace MediaBrowser.Api.Movies
                     Person = name,
                     // Account for duplicates by imdb id, since the database doesn't support this yet
                     Limit = itemLimit + 2,
-                    IncludeItemTypes = itemTypes.ToArray(),
+                    IncludeItemTypes = itemTypes.ToArray(itemTypes.Count),
                     IsMovie = true,
                     EnableGroupByMetadataKey = true,
                     DtoOptions = dtoOptions
@@ -339,12 +353,14 @@ namespace MediaBrowser.Api.Movies
 
                 if (items.Count > 0)
                 {
+                    var returnItems = _dtoService.GetBaseItemDtos(items, dtoOptions, user).Result;
+
                     yield return new RecommendationDto
                     {
                         BaselineItemName = name,
                         CategoryId = name.GetMD5().ToString("N"),
                         RecommendationType = type,
-                        Items = _dtoService.GetBaseItemDtos(items, dtoOptions, user).Result.ToArray()
+                        Items = returnItems
                     };
                 }
             }
@@ -364,28 +380,30 @@ namespace MediaBrowser.Api.Movies
                 var similar = _libraryManager.GetItemList(new InternalItemsQuery(user)
                 {
                     Limit = itemLimit,
-                    IncludeItemTypes = itemTypes.ToArray(),
+                    IncludeItemTypes = itemTypes.ToArray(itemTypes.Count),
                     IsMovie = true,
                     SimilarTo = item,
                     EnableGroupByMetadataKey = true,
                     DtoOptions = dtoOptions
 
-                }).ToList();
+                });
 
                 if (similar.Count > 0)
                 {
+                    var returnItems = _dtoService.GetBaseItemDtos(similar, dtoOptions, user).Result;
+
                     yield return new RecommendationDto
                     {
                         BaselineItemName = item.Name,
                         CategoryId = item.Id.ToString("N"),
                         RecommendationType = type,
-                        Items = _dtoService.GetBaseItemDtos(similar, dtoOptions, user).Result.ToArray()
+                        Items = returnItems
                     };
                 }
             }
         }
 
-        private IEnumerable<string> GetActors(IEnumerable<BaseItem> items)
+        private IEnumerable<string> GetActors(List<BaseItem> items)
         {
             var people = _libraryManager.GetPeople(new InternalPeopleQuery
             {
@@ -404,11 +422,11 @@ namespace MediaBrowser.Api.Movies
                 .DistinctNames();
         }
 
-        private IEnumerable<string> GetDirectors(IEnumerable<BaseItem> items)
+        private IEnumerable<string> GetDirectors(List<BaseItem> items)
         {
             var people = _libraryManager.GetPeople(new InternalPeopleQuery
             {
-                PersonTypes = new List<string>
+                PersonTypes = new string[]
                 {
                     PersonType.Director
                 }

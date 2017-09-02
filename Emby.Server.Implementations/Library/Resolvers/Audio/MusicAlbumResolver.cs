@@ -8,7 +8,7 @@ using MediaBrowser.Naming.Audio;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.IO;
@@ -163,7 +163,7 @@ namespace Emby.Server.Implementations.Library.Resolvers.Audio
 
         private bool IsMultiDiscFolder(string path, LibraryOptions libraryOptions)
         {
-            var namingOptions = ((LibraryManager)_libraryManager).GetNamingOptions(libraryOptions);
+            var namingOptions = ((LibraryManager)_libraryManager).GetNamingOptions();
 
             var parser = new AlbumParser(namingOptions, new NullLogger());
             var result = parser.ParseMultiPart(path);

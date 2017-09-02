@@ -4,9 +4,10 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MediaBrowser.Model.Serialization;
 using System.Threading.Tasks;
-using System.Linq;
+using MediaBrowser.Controller.Dto;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -40,6 +41,15 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        [IgnoreDataMember]
         public override bool SupportsPlayedStatus
         {
             get
@@ -50,10 +60,10 @@ namespace MediaBrowser.Controller.Entities
 
         public override int GetChildCount(User user)
         {
-            return GetChildren(user, true).Count();
+            return GetChildren(user, true).Count;
         }
 
-        protected override Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
+        protected override QueryResult<BaseItem> GetItemsInternal(InternalItemsQuery query)
         {
             var parent = this as Folder;
 
@@ -67,19 +77,20 @@ namespace MediaBrowser.Controller.Entities
             }
 
             return new UserViewBuilder(UserViewManager, LiveTvManager, ChannelManager, LibraryManager, Logger, UserDataManager, TVSeriesManager, ConfigurationManager, PlaylistManager)
-                .GetUserItems(parent, this, ViewType, query);
+                .GetUserItems(parent, this, ViewType, query).Result;
         }
 
-        public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
+        public override List<BaseItem> GetChildren(User user, bool includeLinkedChildren)
         {
-            var result = GetItems(new InternalItemsQuery
+            var result = GetItemList(new InternalItemsQuery
             {
                 User = user,
-                EnableTotalRecordCount = false
+                EnableTotalRecordCount = false,
+                DtoOptions = new DtoOptions(true)
 
-            }).Result;
+            });
 
-            return result.Items;
+            return result.ToList();
         }
 
         public override bool CanDelete()
@@ -94,17 +105,19 @@ namespace MediaBrowser.Controller.Entities
 
         public override IEnumerable<BaseItem> GetRecursiveChildren(User user, InternalItemsQuery query)
         {
-            var result = GetItems(new InternalItemsQuery
+            var result = GetItemList(new InternalItemsQuery
             {
                 User = user,
                 Recursive = true,
                 EnableTotalRecordCount = false,
 
-                ForceDirect = true
+                ForceDirect = true,
 
-            }).Result;
+                DtoOptions = query.DtoOptions
 
-            return result.Items.Where(i => UserViewBuilder.FilterItem(i, query));
+            });
+
+            return result.Where(i => UserViewBuilder.FilterItem(i, query));
         }
 
         protected override IEnumerable<BaseItem> GetEligibleChildrenForRecursiveChildren(User user)

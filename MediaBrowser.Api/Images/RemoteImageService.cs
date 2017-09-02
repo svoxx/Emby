@@ -14,7 +14,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Services;
@@ -141,11 +141,6 @@ namespace MediaBrowser.Api.Images
         {
             var item = _libraryManager.GetItemById(request.Id);
 
-            return await GetRemoteImageResult(item, request).ConfigureAwait(false);
-        }
-
-        private async Task<RemoteImageResult> GetRemoteImageResult(BaseItem item, BaseRemoteImageRequest request)
-        {
             var images = await _providerManager.GetAvailableRemoteImages(item, new RemoteImageQuery
             {
                 ProviderName = request.ProviderName,
@@ -155,7 +150,7 @@ namespace MediaBrowser.Api.Images
 
             }, CancellationToken.None).ConfigureAwait(false);
 
-            var imagesList = images.ToList();
+            var imagesList = images.ToArray();
 
             var allProviders = _providerManager.GetRemoteImageProviderInfo(item);
 
@@ -166,22 +161,22 @@ namespace MediaBrowser.Api.Images
 
             var result = new RemoteImageResult
             {
-                TotalRecordCount = imagesList.Count,
+                TotalRecordCount = imagesList.Length,
                 Providers = allProviders.Select(i => i.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList()
+                .ToArray()
             };
 
             if (request.StartIndex.HasValue)
             {
                 imagesList = imagesList.Skip(request.StartIndex.Value)
-                    .ToList();
+                    .ToArray();
             }
 
             if (request.Limit.HasValue)
             {
                 imagesList = imagesList.Take(request.Limit.Value)
-                    .ToList();
+                    .ToArray();
             }
 
             result.Images = imagesList;

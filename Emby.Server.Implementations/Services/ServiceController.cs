@@ -15,27 +15,18 @@ namespace Emby.Server.Implementations.Services
     public class ServiceController
     {
         public static ServiceController Instance;
-        private readonly Func<IEnumerable<Type>> _resolveServicesFn;
 
-        public ServiceController(Func<IEnumerable<Type>> resolveServicesFn)
+        public ServiceController()
         {
             Instance = this;
-            _resolveServicesFn = resolveServicesFn;
         }
 
-        public void Init(HttpListenerHost appHost)
+        public void Init(HttpListenerHost appHost, Type[] serviceTypes)
         {
-            foreach (var serviceType in _resolveServicesFn())
+            foreach (var serviceType in serviceTypes)
             {
                 RegisterService(appHost, serviceType);
             }
-        }
-
-        private Type[] GetGenericArguments(Type type)
-        {
-            return type.GetTypeInfo().IsGenericTypeDefinition
-                ? type.GetTypeInfo().GenericTypeParameters
-                : type.GetTypeInfo().GenericTypeArguments;
         }
 
         public void RegisterService(HttpListenerHost appHost, Type serviceType)
@@ -52,36 +43,17 @@ namespace Emby.Server.Implementations.Services
 
                 ServiceExecGeneral.CreateServiceRunnersFor(requestType, actions);
 
-                var returnMarker = GetTypeWithGenericTypeDefinitionOf(requestType, typeof(IReturn<>));
-                var responseType = returnMarker != null ?
-                      GetGenericArguments(returnMarker)[0]
-                    : mi.ReturnType != typeof(object) && mi.ReturnType != typeof(void) ?
-                      mi.ReturnType
-                    : Type.GetType(requestType.FullName + "Response");
+                //var returnMarker = GetTypeWithGenericTypeDefinitionOf(requestType, typeof(IReturn<>));
+                //var responseType = returnMarker != null ?
+                //      GetGenericArguments(returnMarker)[0]
+                //    : mi.ReturnType != typeof(object) && mi.ReturnType != typeof(void) ?
+                //      mi.ReturnType
+                //    : Type.GetType(requestType.FullName + "Response");
 
                 RegisterRestPaths(appHost, requestType);
 
-                appHost.AddServiceInfo(serviceType, requestType, responseType);
+                appHost.AddServiceInfo(serviceType, requestType);
             }
-        }
-
-        private static Type GetTypeWithGenericTypeDefinitionOf(Type type, Type genericTypeDefinition)
-        {
-            foreach (var t in type.GetTypeInfo().ImplementedInterfaces)
-            {
-                if (t.GetTypeInfo().IsGenericType && t.GetGenericTypeDefinition() == genericTypeDefinition)
-                {
-                    return t;
-                }
-            }
-
-            var genericType = FirstGenericType(type);
-            if (genericType != null && genericType.GetGenericTypeDefinition() == genericTypeDefinition)
-            {
-                return genericType;
-            }
-
-            return null;
         }
 
         public static Type FirstGenericType(Type type)
@@ -187,7 +159,7 @@ namespace Emby.Server.Implementations.Services
             return null;
         }
 
-        public async Task<object> Execute(HttpListenerHost appHost, object requestDto, IRequest req)
+        public Task<object> Execute(HttpListenerHost appHost, object requestDto, IRequest req)
         {
             req.Dto = requestDto;
             var requestType = requestDto.GetType();
@@ -209,9 +181,7 @@ namespace Emby.Server.Implementations.Services
                 req.Dto = requestDto;
 
             //Executes the service and returns the result
-            var response = await ServiceExecGeneral.Execute(serviceType, req, service, requestDto, requestType.GetMethodName()).ConfigureAwait(false);
-
-            return response;
+            return ServiceExecGeneral.Execute(serviceType, req, service, requestDto, requestType.GetMethodName());
         }
     }
 

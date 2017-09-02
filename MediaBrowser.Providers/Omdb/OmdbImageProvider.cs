@@ -12,7 +12,7 @@ using MediaBrowser.Model.Serialization;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 
 namespace MediaBrowser.Providers.Omdb
@@ -32,7 +32,7 @@ namespace MediaBrowser.Providers.Omdb
             _configurationManager = configurationManager;
         }
 
-        public IEnumerable<ImageType> GetSupportedImages(IHasImages item)
+        public IEnumerable<ImageType> GetSupportedImages(IHasMetadata item)
         {
             return new List<ImageType>
             {
@@ -40,7 +40,7 @@ namespace MediaBrowser.Providers.Omdb
             };
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasImages item, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken)
         {
             var imdbId = item.GetProviderId(MetadataProviders.Imdb);
 
@@ -54,11 +54,23 @@ namespace MediaBrowser.Providers.Omdb
 
                 if (!string.IsNullOrEmpty(rootObject.Poster))
                 {
-                    list.Add(new RemoteImageInfo
+                    if (item is Episode)
                     {
-                        ProviderName = Name,
-                        Url = string.Format("https://img.omdbapi.com/?i={0}&apikey=82e83907", imdbId)
-                    });
+                        // img.omdbapi.com returning 404's
+                        list.Add(new RemoteImageInfo
+                        {
+                            ProviderName = Name,
+                            Url = rootObject.Poster
+                        });
+                    }
+                    else
+                    {
+                        list.Add(new RemoteImageInfo
+                        {
+                            ProviderName = Name,
+                            Url = string.Format("https://img.omdbapi.com/?i={0}&apikey=82e83907", imdbId)
+                        });
+                    }
                 }
             }
 
@@ -79,15 +91,8 @@ namespace MediaBrowser.Providers.Omdb
             get { return "The Open Movie Database"; }
         }
 
-        public bool Supports(IHasImages item)
+        public bool Supports(IHasMetadata item)
         {
-            // Supports images for tv movies
-            var tvProgram = item as LiveTvProgram;
-            if (tvProgram != null && tvProgram.IsMovie)
-            {
-                return true;
-            }
-
             return item is Movie || item is Trailer || item is Episode;
         }
 

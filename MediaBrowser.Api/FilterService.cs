@@ -52,7 +52,7 @@ namespace MediaBrowser.Api
             _userManager = userManager;
         }
 
-        public async Task<object> Get(GetQueryFilters request)
+        public object Get(GetQueryFilters request)
         {
             var parentItem = string.IsNullOrEmpty(request.ParentId) ? null : _libraryManager.GetItemById(request.ParentId);
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
@@ -61,9 +61,9 @@ namespace MediaBrowser.Api
                user == null ? _libraryManager.RootFolder : user.RootFolder :
                parentItem;
 
-            var result = await ((Folder)item).GetItems(GetItemsQuery(request, user));
+            var result = ((Folder)item).GetItemList(GetItemsQuery(request, user));
 
-            return ToOptimizedResult(GetFilters(result.Items));
+            return ToOptimizedResult(GetFilters(result));
         }
 
         private QueryFilters GetFilters(BaseItem[] items)
@@ -108,7 +108,7 @@ namespace MediaBrowser.Api
                 EnableTotalRecordCount = false,
                 DtoOptions = new Controller.Dto.DtoOptions
                 {
-                    Fields = new List<ItemFields> { ItemFields.Genres, ItemFields.Tags },
+                    Fields = new ItemFields[] { ItemFields.Genres, ItemFields.Tags },
                     EnableImages = false,
                     EnableUserData = false
                 }

@@ -70,9 +70,6 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "IsUnaired", Description = "Optional filter by items that are unaired episodes or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? IsUnaired { get; set; }
 
-        [ApiMember(Name = "IsVirtualUnaired", Description = "Optional filter by items that are virtual unaired episodes or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
-        public bool? IsVirtualUnaired { get; set; }
-
         [ApiMember(Name = "MinCommunityRating", Description = "Optional filter by minimum community rating.", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public double? MinCommunityRating { get; set; }
 
@@ -82,10 +79,16 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "AiredDuringSeason", Description = "Gets all episodes that aired during a season, including specials.", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public int? AiredDuringSeason { get; set; }
 
-        [ApiMember(Name = "MinPremiereDate", Description = "Optional. The minimum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "POST")]
+        [ApiMember(Name = "MinPremiereDate", Description = "Optional. The minimum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string MinPremiereDate { get; set; }
 
-        [ApiMember(Name = "MaxPremiereDate", Description = "Optional. The maximum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "POST")]
+        [ApiMember(Name = "MinDateLastSaved", Description = "Optional. The minimum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string MinDateLastSaved { get; set; }
+
+        [ApiMember(Name = "MinDateLastSavedForUser", Description = "Optional. The minimum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string MinDateLastSavedForUser { get; set; }
+
+        [ApiMember(Name = "MaxPremiereDate", Description = "Optional. The maximum premiere date. Format = ISO", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string MaxPremiereDate { get; set; }
 
         [ApiMember(Name = "HasOverview", Description = "Optional filter by items that have an overview or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
@@ -294,13 +297,6 @@ namespace MediaBrowser.Api.UserLibrary
         public string VideoTypes { get; set; }
 
         /// <summary>
-        /// Gets or sets the air days.
-        /// </summary>
-        /// <value>The air days.</value>
-        [ApiMember(Name = "AirDays", Description = "Optional filter by Series Air Days. Allows multiple, comma delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
-        public string AirDays { get; set; }
-
-        /// <summary>
         /// Gets or sets the user id.
         /// </summary>
         /// <value>The user id.</value>
@@ -347,9 +343,6 @@ namespace MediaBrowser.Api.UserLibrary
 
         [ApiMember(Name = "NameLessThan", Description = "Optional filter by items whose name is equally or lesser than a given input string.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string NameLessThan { get; set; }
-
-        [ApiMember(Name = "AlbumArtistStartsWithOrGreater", Description = "Optional filter by items whose album artist is sorted equally or greater than a given input string.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
-        public string AlbumArtistStartsWithOrGreater { get; set; }
 
         public string[] GetGenres()
         {
@@ -442,7 +435,7 @@ namespace MediaBrowser.Api.UserLibrary
         /// Gets the filters.
         /// </summary>
         /// <returns>IEnumerable{ItemFilter}.</returns>
-        public IEnumerable<ItemFilter> GetFilters()
+        public ItemFilter[] GetFilters()
         {
             var val = Filters;
 
@@ -451,14 +444,14 @@ namespace MediaBrowser.Api.UserLibrary
                 return new ItemFilter[] { };
             }
 
-            return val.Split(',').Select(v => (ItemFilter)Enum.Parse(typeof(ItemFilter), v, true));
+            return val.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(v => (ItemFilter)Enum.Parse(typeof(ItemFilter), v, true)).ToArray();
         }
 
         /// <summary>
         /// Gets the image types.
         /// </summary>
         /// <returns>IEnumerable{ImageType}.</returns>
-        public IEnumerable<ImageType> GetImageTypes()
+        public ImageType[] GetImageTypes()
         {
             var val = ImageTypes;
 
@@ -467,7 +460,7 @@ namespace MediaBrowser.Api.UserLibrary
                 return new ImageType[] { };
             }
 
-            return val.Split(',').Select(v => (ImageType)Enum.Parse(typeof(ImageType), v, true));
+            return val.Split(',').Select(v => (ImageType)Enum.Parse(typeof(ImageType), v, true)).ToArray();
         }
 
         /// <summary>

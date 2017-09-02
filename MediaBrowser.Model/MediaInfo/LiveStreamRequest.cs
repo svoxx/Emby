@@ -15,9 +15,15 @@ namespace MediaBrowser.Model.MediaInfo
         public string ItemId { get; set; }
         public DeviceProfile DeviceProfile { get; set; }
 
+        public bool EnableDirectPlay { get; set; }
+        public bool EnableDirectStream { get; set; }
+        public bool EnableMediaProbe { get; set; }
+
         public LiveStreamRequest()
         {
-
+            EnableDirectPlay = true;
+            EnableDirectStream = true;
+            EnableMediaProbe = true;
         }
 
         public LiveStreamRequest(AudioOptions options)

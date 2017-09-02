@@ -5,7 +5,7 @@ using MediaBrowser.Controller.Resolvers;
 using System;
 using System.IO;
 using System.Linq;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -53,7 +53,7 @@ namespace Emby.Server.Implementations.Library.Resolvers
                     return new CollectionFolder
                     {
                         CollectionType = GetCollectionType(args),
-                        PhysicalLocationsList = args.PhysicalLocations.ToList()
+                        PhysicalLocationsList = args.PhysicalLocations
                     };
                 }
             }

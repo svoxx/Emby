@@ -17,12 +17,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.IO;
 using Emby.Drawing.Common;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.IO;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.Net;
 using MediaBrowser.Model.Threading;
-using TagLib;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Drawing
 {
@@ -46,7 +45,7 @@ namespace Emby.Drawing
         /// Image processors are specialized metadata providers that run after the normal ones
         /// </summary>
         /// <value>The image enhancers.</value>
-        public IEnumerable<IImageEnhancer> ImageEnhancers { get; private set; }
+        public IImageEnhancer[] ImageEnhancers { get; private set; }
 
         /// <summary>
         /// The _logger
@@ -58,23 +57,26 @@ namespace Emby.Drawing
         private readonly IServerApplicationPaths _appPaths;
         private IImageEncoder _imageEncoder;
         private readonly Func<ILibraryManager> _libraryManager;
+        private readonly Func<IMediaEncoder> _mediaEncoder;
 
         public ImageProcessor(ILogger logger,
             IServerApplicationPaths appPaths,
             IFileSystem fileSystem,
             IJsonSerializer jsonSerializer,
             IImageEncoder imageEncoder,
-            Func<ILibraryManager> libraryManager, ITimerFactory timerFactory)
+            Func<ILibraryManager> libraryManager, ITimerFactory timerFactory, Func<IMediaEncoder> mediaEncoder)
         {
             _logger = logger;
             _fileSystem = fileSystem;
             _jsonSerializer = jsonSerializer;
             _imageEncoder = imageEncoder;
             _libraryManager = libraryManager;
+            _mediaEncoder = mediaEncoder;
             _appPaths = appPaths;
 
-            ImageEnhancers = new List<IImageEnhancer>();
+            ImageEnhancers = new IImageEnhancer[] { };
             _saveImageSizeTimer = timerFactory.Create(SaveImageSizeCallback, null, Timeout.Infinite, Timeout.Infinite);
+            ImageHelper.ImageProcessor = this;
 
             Dictionary<Guid, ImageSize> sizeDictionary;
 
@@ -121,7 +123,36 @@ namespace Emby.Drawing
         {
             get
             {
-                return _imageEncoder.SupportedInputFormats;
+                return new string[]
+                {
+                    "tiff",
+                    "jpeg",
+                    "jpg",
+                    "png",
+                    "aiff",
+                    "cr2",
+                    "crw",
+                    "dng", 
+
+                    // Remove until supported
+                    //"nef", 
+                    "orf",
+                    "pef",
+                    "arw",
+                    "webp",
+                    "gif",
+                    "bmp",
+                    "erf",
+                    "raf",
+                    "rw2",
+                    "nrw",
+                    "dng",
+                    "ico",
+                    "astc",
+                    "ktx",
+                    "pkm",
+                    "wbmp"
+                };
             }
         }
 
@@ -170,6 +201,13 @@ namespace Emby.Drawing
             return _imageEncoder.SupportedOutputFormats;
         }
 
+        private static readonly string[] TransparentImageTypes = new string[] { ".png", ".webp" };
+        private bool SupportsTransparency(string path)
+        {
+            return TransparentImageTypes.Contains(Path.GetExtension(path) ?? string.Empty);
+            ;
+        }
+
         public async Task<Tuple<string, string, DateTime>> ProcessImage(ImageProcessingOptions options)
         {
             if (options == null)
@@ -178,10 +216,15 @@ namespace Emby.Drawing
             }
 
             var originalImage = options.Image;
+            IHasMetadata item = options.Item;
 
             if (!originalImage.IsLocalFile)
             {
-                originalImage = await _libraryManager().ConvertImageToLocal(options.Item, originalImage, options.ImageIndex).ConfigureAwait(false);
+                if (item == null)
+                {
+                    item = _libraryManager().GetItemById(options.ItemId);
+                }
+                originalImage = await _libraryManager().ConvertImageToLocal(item, originalImage, options.ImageIndex).ConfigureAwait(false);
             }
 
             var originalImagePath = originalImage.Path;
@@ -192,39 +235,50 @@ namespace Emby.Drawing
                 return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
 
+            var supportedImageInfo = await GetSupportedImage(originalImagePath, dateModified).ConfigureAwait(false);
+            originalImagePath = supportedImageInfo.Item1;
+            dateModified = supportedImageInfo.Item2;
+
             if (options.Enhancers.Count > 0)
             {
+                if (item == null)
+                {
+                    item = _libraryManager().GetItemById(options.ItemId);
+                }
+
                 var tuple = await GetEnhancedImage(new ItemImageInfo
                 {
                     DateModified = dateModified,
                     Type = originalImage.Type,
                     Path = originalImagePath
 
-                }, options.Item, options.ImageIndex, options.Enhancers).ConfigureAwait(false);
+                }, item, options.ImageIndex, options.Enhancers).ConfigureAwait(false);
 
                 originalImagePath = tuple.Item1;
                 dateModified = tuple.Item2;
             }
 
-            if (options.HasDefaultOptions(originalImagePath))
+            var photo = item as Photo;
+            var autoOrient = false;
+            ImageOrientation? orientation = null;
+            if (photo != null && photo.Orientation.HasValue && photo.Orientation.Value != ImageOrientation.TopLeft)
+            {
+                autoOrient = true;
+                orientation = photo.Orientation;
+            }
+
+            if (options.HasDefaultOptions(originalImagePath) && !autoOrient)
             {
                 // Just spit out the original file if all the options are default
                 return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
 
-            ImageSize? originalImageSize = null;
-            try
+            ImageSize? originalImageSize = GetSavedImageSize(originalImagePath, dateModified);
+            if (originalImageSize.HasValue && options.HasDefaultOptions(originalImagePath, originalImageSize.Value) && !autoOrient)
             {
-                originalImageSize = GetImageSize(originalImagePath, dateModified, true);
-                if (options.HasDefaultOptions(originalImagePath, originalImageSize.Value))
-                {
-                    // Just spit out the original file if all the options are default
-                    return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
-                }
-            }
-            catch
-            {
-                originalImageSize = null;
+                // Just spit out the original file if all the options are default
+                _logger.Info("Returning original image {0}", originalImagePath);
+                return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
 
             var newSize = ImageHelper.GetNewImageSize(options, originalImageSize);
@@ -239,11 +293,27 @@ namespace Emby.Drawing
 
                 if (!_fileSystem.FileExists(cacheFilePath))
                 {
-                    _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(cacheFilePath));
                     var tmpPath = Path.ChangeExtension(Path.Combine(_appPaths.TempDirectory, Guid.NewGuid().ToString("N")), Path.GetExtension(cacheFilePath));
                     _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(tmpPath));
 
-                    _imageEncoder.EncodeImage(originalImagePath, originalImageSize, tmpPath, AutoOrient(options.Item), quality, options, outputFormat);
+                    if (item == null && string.Equals(options.ItemType, typeof(Photo).Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        item = _libraryManager().GetItemById(options.ItemId);
+                    }
+
+                    if (options.CropWhiteSpace && !SupportsTransparency(originalImagePath))
+                    {
+                        options.CropWhiteSpace = false;
+                    }
+
+                    var resultPath = _imageEncoder.EncodeImage(originalImagePath, dateModified, tmpPath, autoOrient, orientation, quality, options, outputFormat);
+
+                    if (string.Equals(resultPath, originalImagePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
+                    }
+
+                    _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(cacheFilePath));
                     CopyFile(tmpPath, cacheFilePath);
 
                     return new Tuple<string, string, DateTime>(tmpPath, GetMimeType(outputFormat, cacheFilePath), _fileSystem.GetLastWriteTimeUtc(tmpPath));
@@ -271,17 +341,6 @@ namespace Emby.Drawing
             {
 
             }
-        }
-
-        private bool AutoOrient(IHasImages item)
-        {
-            var photo = item as Photo;
-            if (photo != null && photo.Orientation.HasValue)
-            {
-                return true;
-            }
-
-            return false;
         }
 
         //private static  int[][] OPERATIONS = new int[][] {
@@ -397,6 +456,11 @@ namespace Emby.Drawing
             return GetCachePath(ResizedImageCachePath, filename, "." + format.ToString().ToLower());
         }
 
+        public ImageSize GetImageSize(ItemImageInfo info, bool allowSlowMethods)
+        {
+            return GetImageSize(info.Path, info.DateModified, allowSlowMethods);
+        }
+
         public ImageSize GetImageSize(ItemImageInfo info)
         {
             return GetImageSize(info.Path, info.DateModified, false);
@@ -422,24 +486,70 @@ namespace Emby.Drawing
                 throw new ArgumentNullException("path");
             }
 
-            var name = path + "datemodified=" + imageDateModified.Ticks;
-
             ImageSize size;
 
-            var cacheHash = name.GetMD5();
+            var cacheHash = GetImageSizeKey(path, imageDateModified);
 
             if (!_cachedImagedSizes.TryGetValue(cacheHash, out size))
             {
                 size = GetImageSizeInternal(path, allowSlowMethod);
 
-                if (size.Width > 0 && size.Height > 0)
-                {
-                    StartSaveImageSizeTimer();
-                    _cachedImagedSizes.AddOrUpdate(cacheHash, size, (keyName, oldValue) => size);
-                }
+                SaveImageSize(size, cacheHash, false);
             }
 
             return size;
+        }
+
+        public void SaveImageSize(string path, DateTime imageDateModified, ImageSize size)
+        {
+            var cacheHash = GetImageSizeKey(path, imageDateModified);
+            SaveImageSize(size, cacheHash, true);
+        }
+
+        private void SaveImageSize(ImageSize size, Guid cacheHash, bool checkExists)
+        {
+            if (size.Width <= 0 || size.Height <= 0)
+            {
+                return;
+            }
+
+            if (checkExists && _cachedImagedSizes.ContainsKey(cacheHash))
+            {
+                return;
+            }
+
+            if (checkExists)
+            {
+                if (_cachedImagedSizes.TryAdd(cacheHash, size))
+                {
+                    StartSaveImageSizeTimer();
+                }
+            }
+            else
+            {
+                StartSaveImageSizeTimer();
+                _cachedImagedSizes.AddOrUpdate(cacheHash, size, (keyName, oldValue) => size);
+            }
+        }
+
+        private Guid GetImageSizeKey(string path, DateTime imageDateModified)
+        {
+            var name = path + "datemodified=" + imageDateModified.Ticks;
+            return name.GetMD5();
+        }
+
+        public ImageSize? GetSavedImageSize(string path, DateTime imageDateModified)
+        {
+            ImageSize size;
+
+            var cacheHash = GetImageSizeKey(path, imageDateModified);
+
+            if (_cachedImagedSizes.TryGetValue(cacheHash, out size))
+            {
+                return size;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -530,7 +640,7 @@ namespace Emby.Drawing
         /// <param name="image">The image.</param>
         /// <returns>Guid.</returns>
         /// <exception cref="System.ArgumentNullException">item</exception>
-        public string GetImageCacheTag(IHasImages item, ItemImageInfo image)
+        public string GetImageCacheTag(IHasMetadata item, ItemImageInfo image)
         {
             if (item == null)
             {
@@ -544,7 +654,7 @@ namespace Emby.Drawing
 
             var supportedEnhancers = GetSupportedEnhancers(item, image.Type);
 
-            return GetImageCacheTag(item, image, supportedEnhancers.ToList());
+            return GetImageCacheTag(item, image, supportedEnhancers);
         }
 
         /// <summary>
@@ -555,7 +665,7 @@ namespace Emby.Drawing
         /// <param name="imageEnhancers">The image enhancers.</param>
         /// <returns>Guid.</returns>
         /// <exception cref="System.ArgumentNullException">item</exception>
-        public string GetImageCacheTag(IHasImages item, ItemImageInfo image, List<IImageEnhancer> imageEnhancers)
+        public string GetImageCacheTag(IHasMetadata item, ItemImageInfo image, List<IImageEnhancer> imageEnhancers)
         {
             if (item == null)
             {
@@ -586,7 +696,43 @@ namespace Emby.Drawing
             var cacheKeys = imageEnhancers.Select(i => i.GetConfigurationCacheKey(item, imageType)).ToList();
             cacheKeys.Add(originalImagePath + dateModified.Ticks);
 
-            return string.Join("|", cacheKeys.ToArray()).GetMD5().ToString("N");
+            return string.Join("|", cacheKeys.ToArray(cacheKeys.Count)).GetMD5().ToString("N");
+        }
+
+        private async Task<Tuple<string, DateTime>> GetSupportedImage(string originalImagePath, DateTime dateModified)
+        {
+            var inputFormat = (Path.GetExtension(originalImagePath) ?? string.Empty)
+                .TrimStart('.')
+                .Replace("jpeg", "jpg", StringComparison.OrdinalIgnoreCase);
+
+            if (!_imageEncoder.SupportedInputFormats.Contains(inputFormat, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var filename = (originalImagePath + dateModified.Ticks.ToString(UsCulture)).GetMD5().ToString("N");
+
+                    var outputPath = Path.Combine(_appPaths.ImageCachePath, "converted-images", filename + ".webp");
+
+                    var file = _fileSystem.GetFileInfo(outputPath);
+                    if (!file.Exists)
+                    {
+                        await _mediaEncoder().ConvertImage(originalImagePath, outputPath).ConfigureAwait(false);
+                        dateModified = _fileSystem.GetLastWriteTimeUtc(outputPath);
+                    }
+                    else
+                    {
+                        dateModified = file.LastWriteTimeUtc;
+                    }
+
+                    originalImagePath = outputPath;
+                }
+                catch (Exception ex)
+                {
+                    _logger.ErrorException("Image conversion failed for {0}", ex, originalImagePath);
+                }
+            }
+
+            return new Tuple<string, DateTime>(originalImagePath, dateModified);
         }
 
         /// <summary>
@@ -596,9 +742,9 @@ namespace Emby.Drawing
         /// <param name="imageType">Type of the image.</param>
         /// <param name="imageIndex">Index of the image.</param>
         /// <returns>Task{System.String}.</returns>
-        public async Task<string> GetEnhancedImage(IHasImages item, ImageType imageType, int imageIndex)
+        public async Task<string> GetEnhancedImage(IHasMetadata item, ImageType imageType, int imageIndex)
         {
-            var enhancers = GetSupportedEnhancers(item, imageType).ToList();
+            var enhancers = GetSupportedEnhancers(item, imageType);
 
             var imageInfo = item.GetImageInfo(imageType, imageIndex);
 
@@ -608,7 +754,7 @@ namespace Emby.Drawing
         }
 
         private async Task<Tuple<string, DateTime>> GetEnhancedImage(ItemImageInfo image,
-            IHasImages item,
+            IHasMetadata item,
             int imageIndex,
             List<IImageEnhancer> enhancers)
         {
@@ -624,7 +770,7 @@ namespace Emby.Drawing
                 var ehnancedImagePath = await GetEnhancedImageInternal(originalImagePath, item, imageType, imageIndex, enhancers, cacheGuid).ConfigureAwait(false);
 
                 // If the path changed update dateModified
-                if (!ehnancedImagePath.Equals(originalImagePath, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(ehnancedImagePath, originalImagePath, StringComparison.OrdinalIgnoreCase))
                 {
                     return GetResult(ehnancedImagePath);
                 }
@@ -653,7 +799,7 @@ namespace Emby.Drawing
         /// item
         /// </exception>
         private async Task<string> GetEnhancedImageInternal(string originalImagePath,
-            IHasImages item,
+            IHasMetadata item,
             ImageType imageType,
             int imageIndex,
             IEnumerable<IImageEnhancer> supportedEnhancers,
@@ -707,7 +853,7 @@ namespace Emby.Drawing
         /// <param name="imageType">Type of the image.</param>
         /// <param name="imageIndex">Index of the image.</param>
         /// <returns>Task{EnhancedImage}.</returns>
-        private async Task ExecuteImageEnhancers(IEnumerable<IImageEnhancer> imageEnhancers, string inputPath, string outputPath, IHasImages item, ImageType imageType, int imageIndex)
+        private async Task ExecuteImageEnhancers(IEnumerable<IImageEnhancer> imageEnhancers, string inputPath, string outputPath, IHasMetadata item, ImageType imageType, int imageIndex)
         {
             // Run the enhancers sequentially in order of priority
             foreach (var enhancer in imageEnhancers)
@@ -783,7 +929,7 @@ namespace Emby.Drawing
             return Path.Combine(path, filename);
         }
 
-        public async Task CreateImageCollage(ImageCollageOptions options)
+        public void CreateImageCollage(ImageCollageOptions options)
         {
             _logger.Info("Creating image collage and saving to {0}", options.OutputPath);
 
@@ -792,21 +938,25 @@ namespace Emby.Drawing
             _logger.Info("Completed creation of image collage and saved to {0}", options.OutputPath);
         }
 
-        public IEnumerable<IImageEnhancer> GetSupportedEnhancers(IHasImages item, ImageType imageType)
+        public List<IImageEnhancer> GetSupportedEnhancers(IHasMetadata item, ImageType imageType)
         {
-            return ImageEnhancers.Where(i =>
+            var list = new List<IImageEnhancer>();
+
+            foreach (var i in ImageEnhancers)
             {
                 try
                 {
-                    return i.Supports(item, imageType);
+                    if (i.Supports(item, imageType))
+                    {
+                        list.Add(i);
+                    }
                 }
                 catch (Exception ex)
                 {
                     _logger.ErrorException("Error in image enhancer: {0}", ex, i.GetType().Name);
-
-                    return false;
                 }
-            });
+            }
+            return list;
         }
 
         private bool _disposed;

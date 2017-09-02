@@ -58,6 +58,10 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
             timerInfo.OriginalAirDate = programInfo.OriginalAirDate;
             timerInfo.IsProgramSeries = programInfo.IsSeries;
 
+            timerInfo.IsSeries = programInfo.IsSeries;
+            timerInfo.IsLive = programInfo.IsLive;
+            timerInfo.IsPremiere = programInfo.IsPremiere;
+
             timerInfo.HomePageUrl = programInfo.HomePageUrl;
             timerInfo.CommunityRating = programInfo.CommunityRating;
             timerInfo.Overview = programInfo.Overview;
@@ -105,7 +109,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
             }
             else
             {
-                name += " " + info.StartDate.ToString("yyyy-MM-dd") + " " + info.Id;
+                name += " " + info.StartDate.ToString("yyyy-MM-dd");
             }
 
             return name;

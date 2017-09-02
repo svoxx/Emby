@@ -1,6 +1,7 @@
 ﻿using MediaBrowser.Model.Dlna;
 using System.Linq;
 using System.Xml.Serialization;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Dlna.Profiles
 {
@@ -70,7 +71,7 @@ namespace Emby.Dlna.Profiles
 
                 new DirectPlayProfile
                 {
-                    Container = "aac,mp3,mpa,wav,wma,mp2,ogg,oga,webma,ape,opus,flac",
+                    Container = "aac,mp3,mpa,wav,wma,mp2,ogg,oga,webma,ape,opus,flac,m4a",
                     Type = DlnaProfileType.Audio
                 }
             };
@@ -135,6 +136,18 @@ namespace Emby.Dlna.Profiles
                 {
                     Format = "sub",
                     Method = SubtitleDeliveryMethod.Embed
+                },
+
+                new SubtitleProfile
+                {
+                    Format = "subrip",
+                    Method = SubtitleDeliveryMethod.Embed
+                },
+
+                new SubtitleProfile
+                {
+                    Format = "vtt",
+                    Method = SubtitleDeliveryMethod.Embed
                 }
             };
 
@@ -160,7 +173,7 @@ namespace Emby.Dlna.Profiles
                 Value = value
             });
 
-            XmlRootAttributes = list.ToArray();
+            XmlRootAttributes = list.ToArray(list.Count);
         }
     }
 }

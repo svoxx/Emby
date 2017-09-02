@@ -12,7 +12,7 @@ using MediaBrowser.Providers.Omdb;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 
 namespace MediaBrowser.Providers.TV
@@ -50,7 +50,7 @@ namespace MediaBrowser.Providers.TV
             };
 
             // Allowing this will dramatically increase scan times
-            if (info.IsMissingEpisode || info.IsVirtualUnaired)
+            if (info.IsMissingEpisode)
             {
                 return result;
             }

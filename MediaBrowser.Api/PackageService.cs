@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Progress;
 using MediaBrowser.Model.Services;
 
 namespace MediaBrowser.Api
@@ -39,7 +40,7 @@ namespace MediaBrowser.Api
     /// </summary>
     [Route("/Packages", "GET", Summary = "Gets available packages")]
     [Authenticated]
-    public class GetPackages : IReturn<List<PackageInfo>>
+    public class GetPackages : IReturn<PackageInfo[]>
     {
         /// <summary>
         /// Gets or sets the name.
@@ -65,7 +66,7 @@ namespace MediaBrowser.Api
     /// </summary>
     [Route("/Packages/Updates", "GET", Summary = "Gets available package updates for currently installed packages")]
     [Authenticated(Roles = "Admin")]
-    public class GetPackageVersionUpdates : IReturn<List<PackageVersionInfo>>
+    public class GetPackageVersionUpdates : IReturn<PackageVersionInfo[]>
     {
         /// <summary>
         /// Gets or sets the name.
@@ -147,24 +148,26 @@ namespace MediaBrowser.Api
         /// <returns>System.Object.</returns>
         public object Get(GetPackageVersionUpdates request)
         {
-            var result = new List<PackageVersionInfo>();
+            PackageVersionInfo[] result = null;
 
             if (string.Equals(request.PackageType, "UserInstalled", StringComparison.OrdinalIgnoreCase) || string.Equals(request.PackageType, "All", StringComparison.OrdinalIgnoreCase))
             {
-                result.AddRange(_installationManager.GetAvailablePluginUpdates(_appHost.ApplicationVersion, false, CancellationToken.None).Result.ToList());
+                result = _installationManager.GetAvailablePluginUpdates(_appHost.ApplicationVersion, false, CancellationToken.None).Result.ToArray();
             }
 
-            else if (string.Equals(request.PackageType, "System", StringComparison.OrdinalIgnoreCase) || string.Equals(request.PackageType, "All", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(request.PackageType, "System", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(request.PackageType, "All", StringComparison.OrdinalIgnoreCase))
             {
-                var updateCheckResult = _appHost.CheckForApplicationUpdate(CancellationToken.None, new Progress<double>()).Result;
+                var updateCheckResult = _appHost
+                    .CheckForApplicationUpdate(CancellationToken.None, new SimpleProgress<double>()).Result;
 
                 if (updateCheckResult.IsUpdateAvailable)
                 {
-                    result.Add(updateCheckResult.Package);
+                    result = new PackageVersionInfo[] {updateCheckResult.Package};
                 }
             }
 
-            return ToOptimizedResult(result);
+            return ToOptimizedResult(result ?? new PackageVersionInfo[] { });
         }
 
         /// <summary>
@@ -175,10 +178,9 @@ namespace MediaBrowser.Api
         public object Get(GetPackage request)
         {
             var packages = _installationManager.GetAvailablePackages(CancellationToken.None, applicationVersion: _appHost.ApplicationVersion).Result;
-            var list = packages.ToList();
 
-            var result = list.FirstOrDefault(p => string.Equals(p.guid, request.AssemblyGuid ?? "none", StringComparison.OrdinalIgnoreCase))
-                         ?? list.FirstOrDefault(p => p.name.Equals(request.Name, StringComparison.OrdinalIgnoreCase));
+            var result = packages.FirstOrDefault(p => string.Equals(p.guid, request.AssemblyGuid ?? "none", StringComparison.OrdinalIgnoreCase))
+                         ?? packages.FirstOrDefault(p => p.name.Equals(request.Name, StringComparison.OrdinalIgnoreCase));
 
             return ToOptimizedResult(result);
         }
@@ -190,7 +192,7 @@ namespace MediaBrowser.Api
         /// <returns>System.Object.</returns>
         public async Task<object> Get(GetPackages request)
         {
-            var packages = await _installationManager.GetAvailablePackages(CancellationToken.None, false, request.PackageType, _appHost.ApplicationVersion).ConfigureAwait(false);
+            IEnumerable<PackageInfo> packages = await _installationManager.GetAvailablePackages(CancellationToken.None, false, request.PackageType, _appHost.ApplicationVersion).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(request.TargetSystems))
             {
@@ -214,7 +216,7 @@ namespace MediaBrowser.Api
                 packages = packages.Where(p => p.enableInAppStore == request.IsAppStoreEnabled.Value);
             }
 
-            return ToOptimizedResult(packages.ToList());
+            return ToOptimizedResult(packages.ToArray());
         }
 
         /// <summary>
@@ -233,7 +235,7 @@ namespace MediaBrowser.Api
                 throw new ResourceNotFoundException(string.Format("Package not found: {0}", request.Name));
             }
 
-            Task.Run(() => _installationManager.InstallPackage(package, true, new Progress<double>(), CancellationToken.None));
+            Task.Run(() => _installationManager.InstallPackage(package, true, new SimpleProgress<double>(), CancellationToken.None));
         }
 
         /// <summary>

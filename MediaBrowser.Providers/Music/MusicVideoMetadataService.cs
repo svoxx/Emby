@@ -7,15 +7,16 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Providers.Manager;
 using System.Collections.Generic;
 using System.Linq;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Music
 {
     class MusicVideoMetadataService : MetadataService<MusicVideo, MusicVideoInfo>
     {
-        protected override void MergeData(MetadataResult<MusicVideo> source, MetadataResult<MusicVideo> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<MusicVideo> source, MetadataResult<MusicVideo> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
 
@@ -27,9 +28,9 @@ namespace MediaBrowser.Providers.Music
                 targetItem.Album = sourceItem.Album;
             }
 
-            if (replaceData || targetItem.Artists.Count == 0)
+            if (replaceData || targetItem.Artists.Length == 0)
             {
-                targetItem.Artists = sourceItem.Artists.ToList();
+                targetItem.Artists = sourceItem.Artists;
             }
         }
 

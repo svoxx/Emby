@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.WebDashboard.Api
 {
@@ -39,8 +40,6 @@ namespace MediaBrowser.WebDashboard.Api
 
             if (resourceStream != null)
             {
-                // Don't apply any caching for html pages
-                // jQuery ajax doesn't seem to handle if-modified-since correctly
                 if (IsFormat(virtualPath, "html"))
                 {
                     if (IsCoreHtml(virtualPath))
@@ -68,7 +67,7 @@ namespace MediaBrowser.WebDashboard.Api
         /// Gets the dashboard resource path.
         /// </summary>
         /// <returns>System.String.</returns>
-        private string GetDashboardResourcePath(string virtualPath)
+        public string GetResourcePath(string virtualPath)
         {
             var fullPath = Path.Combine(_basePath, virtualPath.Replace('/', _fileSystem.DirectorySeparatorChar));
 
@@ -97,11 +96,11 @@ namespace MediaBrowser.WebDashboard.Api
                 return false;
             }
 
-            path = GetDashboardResourcePath(path);
+            path = GetResourcePath(path);
             var parent = _fileSystem.GetDirectoryName(path);
             
             return string.Equals(_basePath, parent, StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(Path.Combine(_basePath, "voice"), parent, StringComparison.OrdinalIgnoreCase);
+                   string.Equals(Path.Combine(_basePath, "offline"), parent, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -140,7 +139,7 @@ namespace MediaBrowser.WebDashboard.Api
                                 html = html.Substring(0, index);
                             }
                         }
-                        var mainFile = _fileSystem.ReadAllText(GetDashboardResourcePath("index.html"));
+                        var mainFile = _fileSystem.ReadAllText(GetResourcePath("index.html"));
 
                         html = ReplaceFirst(mainFile, "<div class=\"mainAnimatedPages skinBody\"></div>", "<div class=\"mainAnimatedPages skinBody hide\">" + html + "</div>");
                     }
@@ -242,10 +241,7 @@ namespace MediaBrowser.WebDashboard.Api
 
             var files = new[]
                             {
-                                      "css/site.css" + versionString,
-                                      "css/librarymenu.css" + versionString,
-                                      "css/librarybrowser.css" + versionString,
-                                      "thirdparty/paper-button-style.css" + versionString
+                                      "css/site.css" + versionString
                             };
 
             var tags = files.Select(s => string.Format("<link rel=\"stylesheet\" href=\"{0}\" async />", s)).ToArray();
@@ -287,7 +283,7 @@ namespace MediaBrowser.WebDashboard.Api
                 files.Insert(0, "cordova.js");
             }
 
-            var tags = files.Select(s => string.Format("<script src=\"{0}\" defer></script>", s)).ToArray();
+            var tags = files.Select(s => string.Format("<script src=\"{0}\" defer></script>", s)).ToArray(files.Count);
 
             builder.Append(string.Join(string.Empty, tags));
 
@@ -299,7 +295,7 @@ namespace MediaBrowser.WebDashboard.Api
         /// </summary>
         private Stream GetRawResourceStream(string virtualPath)
         {
-            return _fileSystem.GetFileStream(GetDashboardResourcePath(virtualPath), FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true);
+            return _fileSystem.GetFileStream(GetResourcePath(virtualPath), FileOpenMode.Open, FileAccessMode.Read, FileShareMode.ReadWrite, true);
         }
 
     }

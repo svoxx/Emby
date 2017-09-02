@@ -8,7 +8,7 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.XbmcMetadata.Configuration;
 using MediaBrowser.XbmcMetadata.Savers;
 using System;
-using System.Linq;
+using MediaBrowser.Controller.Dto;
 
 namespace MediaBrowser.XbmcMetadata
 {
@@ -52,9 +52,10 @@ namespace MediaBrowser.XbmcMetadata
 
                     var items = _libraryManager.GetItemList(new InternalItemsQuery
                     {
-                        PersonIds = new [] { person.Id.ToString("N") }
+                        PersonIds = new [] { person.Id.ToString("N") },
+                        DtoOptions = new DtoOptions(true)
 
-                    }).ToList();
+                    });
 
                     foreach (var item in items)
                     {

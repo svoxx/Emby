@@ -23,6 +23,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Model.Threading;
+using MediaBrowser.Model.Dto;
 
 namespace Emby.Server.Implementations.Notifications
 {
@@ -260,7 +261,7 @@ namespace Emby.Server.Implementations.Notifications
 
             var item = e.MediaInfo;
 
-            if ( item.IsThemeMedia)
+            if (e.Item != null && e.Item.IsThemeMedia)
             {
                 // Don't report theme song or local trailer playback
                 return;
@@ -421,7 +422,7 @@ namespace Emby.Server.Implementations.Notifications
             {
                 var artists = hasArtist.AllArtists;
 
-                if (artists.Count > 0)
+                if (artists.Length > 0)
                 {
                     name = hasArtist.AllArtists[0] + " - " + name;
                 }
@@ -430,7 +431,7 @@ namespace Emby.Server.Implementations.Notifications
             return name;
         }
 
-        public static string GetItemName(BaseItemInfo item)
+        public static string GetItemName(BaseItemDto item)
         {
             var name = item.Name;
 
@@ -439,7 +440,7 @@ namespace Emby.Server.Implementations.Notifications
                 name = item.SeriesName + " - " + name;
             }
 
-            if (item.Artists != null && item.Artists.Count > 0)
+            if (item.Artists != null && item.Artists.Length > 0)
             {
                 name = item.Artists[0] + " - " + name;
             }

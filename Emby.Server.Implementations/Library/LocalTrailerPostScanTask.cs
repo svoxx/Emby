@@ -3,9 +3,11 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 
@@ -27,7 +29,8 @@ namespace Emby.Server.Implementations.Library
             var items = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { typeof(BoxSet).Name, typeof(Game).Name, typeof(Movie).Name, typeof(Series).Name },
-                Recursive = true
+                Recursive = true,
+                DtoOptions = new DtoOptions(true)
 
             }).OfType<IHasTrailers>().ToList();
 
@@ -40,9 +43,10 @@ namespace Emby.Server.Implementations.Library
             {
                 IncludeItemTypes = new[] { typeof(Trailer).Name },
                 TrailerTypes = trailerTypes,
-                Recursive = true
+                Recursive = true,
+                DtoOptions = new DtoOptions(false)
 
-            }).ToArray();
+            });
 
             var numComplete = 0;
 
@@ -61,7 +65,7 @@ namespace Emby.Server.Implementations.Library
             progress.Report(100);
         }
 
-        private async Task AssignTrailers(IHasTrailers item, BaseItem[] channelTrailers)
+        private async Task AssignTrailers(IHasTrailers item, IEnumerable<BaseItem> channelTrailers)
         {
             if (item is Game)
             {
@@ -87,7 +91,7 @@ namespace Emby.Server.Implementations.Library
             });
 
             var trailerIds = trailers.Select(i => i.Id)
-                .ToList();
+                .ToArray();
 
             if (!trailerIds.SequenceEqual(item.RemoteTrailerIds))
             {

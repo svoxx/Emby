@@ -18,18 +18,27 @@ namespace MediaBrowser.Controller.Entities
     {
         private List<Guid> _childrenIds = null;
         private readonly object _childIdsLock = new object();
-        protected override IEnumerable<BaseItem> LoadChildren()
+        protected override List<BaseItem> LoadChildren()
         {
             lock (_childIdsLock)
             {
                 if (_childrenIds == null)
                 {
-                    var list = base.LoadChildren().ToList();
+                    var list = base.LoadChildren();
                     _childrenIds = list.Select(i => i.Id).ToList();
                     return list;
                 }
 
                 return _childrenIds.Select(LibraryManager.GetItemById).Where(i => i != null).ToList();
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
             }
         }
 
@@ -50,29 +59,29 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        protected override async Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
+        protected override QueryResult<BaseItem> GetItemsInternal(InternalItemsQuery query)
         {
             if (query.Recursive)
             {
                 return QueryRecursive(query);
             }
 
-            var result = await UserViewManager.GetUserViews(new UserViewQuery
+            var result = UserViewManager.GetUserViews(new UserViewQuery
             {
                 UserId = query.User.Id.ToString("N"),
                 PresetViews = query.PresetViews
 
-            }, CancellationToken.None).ConfigureAwait(false);
+            }, CancellationToken.None).Result;
 
             var user = query.User;
             Func<BaseItem, bool> filter = i => UserViewBuilder.Filter(i, user, query, UserDataManager, LibraryManager);
-            
+
             return PostFilterAndSort(result.Where(filter), query, true, true);
         }
 
         public override int GetChildCount(User user)
         {
-            return GetChildren(user, true).Count();
+            return GetChildren(user, true).Count;
         }
 
         [IgnoreDataMember]

@@ -19,6 +19,44 @@
                     <input is="emby-input" type="text" id="txtVaapiDevice" label="${LabelVaapiDevice}" />
                     <div class="fieldDescription">${LabelVaapiDeviceHelp}</div>
                 </div>
+
+                <div class="hardwareAccelerationOptions hide">
+                    <div class="checkboxListContainer decodingCodecsList">
+                        <h3 class="checkboxListLabel">${LabelEnableHardwareDecodingFor}</h3>
+                        <div class="checkboxList">
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" class="chkDecodeCodec" data-codec="h264" data-types="qsv,nvenc" />
+                                <span>H264</span>
+                            </label>
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" class="chkDecodeCodec" data-codec="hevc" data-types="qsv,nvenc" />
+                                <span>HEVC</span>
+                            </label>
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" class="chkDecodeCodec" data-codec="mpeg2video" data-types="qsv,nvenc" />
+                                <span>MPEG2</span>
+                            </label>
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" class="chkDecodeCodec" data-codec="mpeg4" data-types="nvenc" />
+                                <span>MPEG4</span>
+                            </label>
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" class="chkDecodeCodec" data-codec="vc1" data-types="qsv,nvenc" />
+                                <span>VC1</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="checkboxListContainer">
+                        <div class="checkboxList">
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" id="chkHardwareEncoding" />
+                                <span>${EnableHardwareEncoding}</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="selectContainer">
                     <select is="emby-select" id="selectThreadCount" label="${LabelTranscodingThreadCount}">
                         <option value="-1">${OptionAuto}</option>
@@ -42,13 +80,7 @@
                     <div class="fieldDescription checkboxFieldDescription">${OptionEnableTranscodingThrottleHelp}</div>
                 </div>
 
-                <div class="selectContainer fldSelectEncoderPathType hide">
-                    <select is="emby-select" id="selectEncoderPath" label="${LabelffmpegVersion}">
-                        <option value="System">${OptionUseSystemInstalledVersion}</option>
-                        <option value="Custom">${OptionUseMyCustomVersion}</option>
-                    </select>
-                </div>
-                <div class="inputContainer fldEncoderPath hide">
+                <div class="inputContainer fldEncoderPath">
                     <div style="display: flex; align-items: center;">
                         <div style="flex-grow:1;">
                             <input is="emby-input" class="txtEncoderPath" label="${LabelffmpegPath}" autocomplete="off" required />
@@ -91,6 +123,13 @@
                 <div class="inputContainer">
                     <input is="emby-input" type="number" id="txtH264Crf" pattern="[0-9]*" min="0" max="51" step="1" label="${LabelH264Crf}" />
                     <div class="fieldDescription">${H264CrfHelp}</div>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkEnableSubtitleExtraction" />
+                        <span>${AllowOnTheFlySubtitleExtraction}</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">${AllowOnTheFlySubtitleExtractionHelp}</div>
                 </div>
 
                 <div>

@@ -7,8 +7,8 @@ using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Logging;
 using System;
 using System.IO;
-using System.Linq;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.System;
 
 namespace Emby.Drawing.ImageMagick
 {
@@ -18,13 +18,15 @@ namespace Emby.Drawing.ImageMagick
         private readonly IApplicationPaths _appPaths;
         private readonly Func<IHttpClient> _httpClientFactory;
         private readonly IFileSystem _fileSystem;
+        private readonly IEnvironmentInfo _environment;
 
-        public ImageMagickEncoder(ILogger logger, IApplicationPaths appPaths, Func<IHttpClient> httpClientFactory, IFileSystem fileSystem)
+        public ImageMagickEncoder(ILogger logger, IApplicationPaths appPaths, Func<IHttpClient> httpClientFactory, IFileSystem fileSystem, IEnvironmentInfo environment)
         {
             _logger = logger;
             _appPaths = appPaths;
             _httpClientFactory = httpClientFactory;
             _fileSystem = fileSystem;
+            _environment = environment;
 
             LogVersion();
         }
@@ -130,7 +132,7 @@ namespace Emby.Drawing.ImageMagick
                 string.Equals(ext, ".webp", StringComparison.OrdinalIgnoreCase);
         }
 
-        public void EncodeImage(string inputPath, ImageSize? originalImageSize, string outputPath, bool autoOrient, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
+        public string EncodeImage(string inputPath, DateTime dateModified, string outputPath, bool autoOrient, ImageOrientation? orientation, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
         {
             // Even if the caller specified 100, don't use it because it takes forever
             quality = Math.Min(quality, 99);
@@ -144,9 +146,13 @@ namespace Emby.Drawing.ImageMagick
                         originalImage.CurrentImage.TrimImage(10);
                     }
 
-                    if (options.CropWhiteSpace || !originalImageSize.HasValue)
+                    var originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
+                    ImageHelper.SaveImageSize(inputPath, dateModified, originalImageSize);
+
+                    if (!options.CropWhiteSpace && options.HasDefaultOptions(inputPath, originalImageSize))
                     {
-                        originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
+                        // Just spit out the original file if all the options are default
+                        return inputPath;
                     }
 
                     var newImageSize = ImageHelper.GetNewImageSize(options, originalImageSize);
@@ -174,10 +180,8 @@ namespace Emby.Drawing.ImageMagick
             {
                 using (var originalImage = new MagickWand(inputPath))
                 {
-                    if (options.CropWhiteSpace || !originalImageSize.HasValue)
-                    {
-                        originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
-                    }
+                    var originalImageSize = new ImageSize(originalImage.CurrentImage.Width, originalImage.CurrentImage.Height);
+                    ImageHelper.SaveImageSize(inputPath, dateModified, originalImageSize);
 
                     var newImageSize = ImageHelper.GetNewImageSize(options, originalImageSize);
 
@@ -205,6 +209,8 @@ namespace Emby.Drawing.ImageMagick
                     }
                 }
             }
+
+            return outputPath;
         }
 
         private void AddForegroundLayer(MagickWand wand, ImageProcessingOptions options)
@@ -299,15 +305,15 @@ namespace Emby.Drawing.ImageMagick
 
             if (ratio >= 1.4)
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildThumbCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildThumbCollage(options.InputPaths, options.OutputPath, options.Width, options.Height);
             }
             else if (ratio >= .9)
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildSquareCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildSquareCollage(options.InputPaths, options.OutputPath, options.Width, options.Height);
             }
             else
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildPosterCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildPosterCollage(options.InputPaths, options.OutputPath, options.Width, options.Height);
             }
         }
 
@@ -333,7 +339,17 @@ namespace Emby.Drawing.ImageMagick
 
         public bool SupportsImageCollageCreation
         {
-            get { return true; }
+            get
+            {
+                // too heavy. seeing crashes on RPI.
+                if (_environment.SystemArchitecture == Architecture.Arm ||
+                    _environment.SystemArchitecture == Architecture.Arm64)
+                {
+                    return false;
+                }
+
+                return true;
+            }
         }
 
         public bool SupportsImageEncoding

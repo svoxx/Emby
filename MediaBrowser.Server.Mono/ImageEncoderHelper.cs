@@ -1,6 +1,5 @@
 ﻿using System;
 using Emby.Drawing;
-using Emby.Drawing.Net;
 using Emby.Drawing.ImageMagick;
 using Emby.Server.Core;
 using Emby.Server.Implementations;
@@ -9,6 +8,8 @@ using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
+using Emby.Drawing.Skia;
+using MediaBrowser.Model.System;
 
 namespace MediaBrowser.Server.Startup.Common
 {
@@ -19,27 +20,28 @@ namespace MediaBrowser.Server.Startup.Common
             IFileSystem fileSystem, 
             StartupOptions startupOptions, 
             Func<IHttpClient> httpClient,
-            IApplicationPaths appPaths)
+            IApplicationPaths appPaths,
+            IEnvironmentInfo environment)
         {
             if (!startupOptions.ContainsOption("-enablegdi"))
             {
                 try
                 {
-                    return new ImageMagickEncoder(logManager.GetLogger("ImageMagick"), appPaths, httpClient, fileSystem);
+                    return new SkiaEncoder(logManager.GetLogger("Skia"), appPaths, httpClient, fileSystem);
+                }
+                catch (Exception ex)
+                {
+                    logger.Error("Skia not available. Will try next image processor. {0}", ex.Message);
+                }
+
+                try
+                {
+                    return new ImageMagickEncoder(logManager.GetLogger("ImageMagick"), appPaths, httpClient, fileSystem, environment);
                 }
                 catch
                 {
-                    logger.Error("Error loading ImageMagick. Will revert to GDI.");
+                    logger.Error("ImageMagick not available. Will try next image processor.");
                 }
-            }
-
-            try
-            {
-                return new GDIImageEncoder(fileSystem, logManager.GetLogger("GDI"));
-            }
-            catch
-            {
-                logger.Error("Error loading GDI. Will revert to NullImageEncoder.");
             }
 
             return new NullImageEncoder();

@@ -7,24 +7,23 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Providers.Manager;
 using System.Collections.Generic;
 using System.Linq;
-using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Music
 {
     public class AudioMetadataService : MetadataService<Audio, SongInfo>
     {
-        protected override void MergeData(MetadataResult<Audio> source, MetadataResult<Audio> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<Audio> source, MetadataResult<Audio> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
 
             var sourceItem = source.Item;
             var targetItem = target.Item;
 
-            if (replaceData || targetItem.Artists.Count == 0)
+            if (replaceData || targetItem.Artists.Length == 0)
             {
-                targetItem.Artists = sourceItem.Artists.ToList();
+                targetItem.Artists = sourceItem.Artists;
             }
 
             if (replaceData || string.IsNullOrEmpty(targetItem.Album))

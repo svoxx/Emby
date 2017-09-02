@@ -15,7 +15,7 @@
   <EnableAlbumArtInDidl>false</EnableAlbumArtInDidl>
   <EnableSingleAlbumArtLimit>false</EnableSingleAlbumArtLimit>
   <EnableSingleSubtitleLimit>false</EnableSingleSubtitleLimit>
-  <SupportedMediaTypes>Audio,Photo,Video</SupportedMediaTypes>
+  <SupportedMediaTypes>Audio</SupportedMediaTypes>
   <AlbumArtPn>JPEG_SM</AlbumArtPn>
   <MaxAlbumArtWidth>480</MaxAlbumArtWidth>
   <MaxAlbumArtHeight>480</MaxAlbumArtHeight>
@@ -55,5 +55,7 @@
     <SubtitleProfile format="pgs" method="Embed" />
     <SubtitleProfile format="pgssub" method="Embed" />
     <SubtitleProfile format="sub" method="Embed" />
+    <SubtitleProfile format="subrip" method="Embed" />
+    <SubtitleProfile format="vtt" method="Embed" />
   </SubtitleProfiles>
 </Profile>

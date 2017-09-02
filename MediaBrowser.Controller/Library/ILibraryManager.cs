@@ -10,8 +10,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dto;
@@ -68,18 +69,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="name">The name.</param>
         /// <returns>Task{Artist}.</returns>
         MusicArtist GetArtist(string name);
-        /// <summary>
-        /// Gets the album artists.
-        /// </summary>
-        /// <param name="items">The items.</param>
-        /// <returns>IEnumerable&lt;MusicArtist&gt;.</returns>
-        IEnumerable<MusicArtist> GetAlbumArtists(IEnumerable<IHasAlbumArtist> items);
-        /// <summary>
-        /// Gets the artists.
-        /// </summary>
-        /// <param name="items">The items.</param>
-        /// <returns>IEnumerable&lt;MusicArtist&gt;.</returns>
-        IEnumerable<MusicArtist> GetArtists(IEnumerable<IHasArtist> items);
+        MusicArtist GetArtist(string name, DtoOptions options);
         /// <summary>
         /// Gets a Studio
         /// </summary>
@@ -142,7 +132,9 @@ namespace MediaBrowser.Controller.Library
         /// Gets the default view.
         /// </summary>
         /// <returns>IEnumerable{VirtualFolderInfo}.</returns>
-        IEnumerable<VirtualFolderInfo> GetVirtualFolders();
+        List<VirtualFolderInfo> GetVirtualFolders();
+
+        List<VirtualFolderInfo> GetVirtualFolders(bool includeRefreshState);
 
         /// <summary>
         /// Gets the item by id.
@@ -193,13 +185,6 @@ namespace MediaBrowser.Controller.Library
                                    SortOrder sortOrder);
 
         /// <summary>
-        /// Ensure supplied item has only one instance throughout
-        /// </summary>
-        /// <param name="item">The item.</param>
-        /// <returns>The proper instance to the item</returns>
-        BaseItem GetOrAddByReferenceItem(BaseItem item);
-
-        /// <summary>
         /// Gets the user root folder.
         /// </summary>
         /// <returns>UserRootFolder.</returns>
@@ -210,16 +195,14 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task CreateItem(BaseItem item, CancellationToken cancellationToken);
+        void CreateItem(BaseItem item, CancellationToken cancellationToken);
 
         /// <summary>
         /// Creates the items.
         /// </summary>
         /// <param name="items">The items.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        Task CreateItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken);
+        void CreateItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken);
 
         /// <summary>
         /// Updates the item.
@@ -292,7 +275,7 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="paths">The paths.</param>
         /// <returns>IEnumerable{System.String}.</returns>
-        IEnumerable<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths);
+        List<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths);
 
         /// <summary>
         /// Registers the item.
@@ -318,7 +301,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetNamedView(User user,
+        UserView GetNamedView(User user,
             string name,
             string parentId,
             string viewType,
@@ -334,7 +317,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetNamedView(User user,
+        UserView GetNamedView(User user,
             string name,
             string viewType,
             string sortName,
@@ -378,7 +361,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="sortName">Name of the sort.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
-        Task<UserView> GetShadowView(BaseItem parent,
+        UserView GetShadowView(BaseItem parent,
           string viewType,
           string sortName,
           CancellationToken cancellationToken);
@@ -486,8 +469,7 @@ namespace MediaBrowser.Controller.Library
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="people">The people.</param>
-        /// <returns>Task.</returns>
-        Task UpdatePeople(BaseItem item, List<PersonInfo> people);
+        void UpdatePeople(BaseItem item, List<PersonInfo> people);
 
         /// <summary>
         /// Gets the item ids.
@@ -528,19 +510,21 @@ namespace MediaBrowser.Controller.Library
         /// <param name="image">The image.</param>
         /// <param name="imageIndex">Index of the image.</param>
         /// <returns>Task.</returns>
-        Task<ItemImageInfo> ConvertImageToLocal(IHasImages item, ItemImageInfo image, int imageIndex);
+        Task<ItemImageInfo> ConvertImageToLocal(IHasMetadata item, ItemImageInfo image, int imageIndex);
 
         /// <summary>
         /// Gets the items.
         /// </summary>
         /// <param name="query">The query.</param>
         /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
-        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query);
+        List<BaseItem> GetItemList(InternalItemsQuery query);
+
+        List<BaseItem> GetItemList(InternalItemsQuery query, bool allowExternalContent);
 
         /// <summary>
         /// Gets the items.
         /// </summary>
-        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query, List<BaseItem> parents);
+        List<BaseItem> GetItemList(InternalItemsQuery query, List<BaseItem> parents);
 
         /// <summary>
         /// Gets the items result.
@@ -556,6 +540,14 @@ namespace MediaBrowser.Controller.Library
         /// <param name="parent">The parent.</param>
         /// <returns><c>true</c> if XXXX, <c>false</c> otherwise.</returns>
         bool IgnoreFile(FileSystemMetadata file, BaseItem parent);
+
+        Guid GetStudioId(string name);
+
+        Guid GetGenreId(string name);
+
+        Guid GetMusicGenreId(string name);
+
+        Guid GetGameGenreId(string name);
 
         void AddVirtualFolder(string name, string collectionType, LibraryOptions options, bool refreshLibrary);
         void RemoveVirtualFolder(string name, bool refreshLibrary);

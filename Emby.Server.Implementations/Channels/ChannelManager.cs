@@ -23,19 +23,21 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+using MediaBrowser.Common.Progress;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.IO;
+using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.Tasks;
 
 namespace Emby.Server.Implementations.Channels
 {
     public class ChannelManager : IChannelManager
     {
-        private IChannel[] _channels;
+        internal IChannel[] Channels { get; private set; }
 
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
@@ -76,12 +78,12 @@ namespace Emby.Server.Implementations.Channels
 
         public void AddParts(IEnumerable<IChannel> channels)
         {
-            _channels = channels.ToArray();
+            Channels = channels.ToArray();
         }
 
         private IEnumerable<IChannel> GetAllChannels()
         {
-            return _channels
+            return Channels
                 .OrderBy(i => i.Name);
         }
 
@@ -120,7 +122,7 @@ namespace Emby.Server.Implementations.Channels
             if (query.IsFavorite.HasValue)
             {
                 var val = query.IsFavorite.Value;
-                channels = channels.Where(i => _userDataManager.GetUserData(user,  i).IsFavorite == val)
+                channels = channels.Where(i => _userDataManager.GetUserData(user, i).IsFavorite == val)
                     .ToList();
             }
 
@@ -157,7 +159,7 @@ namespace Emby.Server.Implementations.Channels
                 all = all.Take(query.Limit.Value).ToList();
             }
 
-            var returnItems = all.ToArray();
+            var returnItems = all.ToArray(all.Count);
 
             var result = new QueryResult<Channel>
             {
@@ -176,10 +178,12 @@ namespace Emby.Server.Implementations.Channels
 
             var internalResult = await GetChannelsInternal(query, cancellationToken).ConfigureAwait(false);
 
-            var dtoOptions = new DtoOptions();
+            var dtoOptions = new DtoOptions()
+            {
+            };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -263,7 +267,7 @@ namespace Emby.Server.Implementations.Channels
                 }
                 catch
                 {
-                    
+
                 }
                 return;
             }
@@ -273,7 +277,7 @@ namespace Emby.Server.Implementations.Channels
             _jsonSerializer.SerializeToFile(mediaSources, path);
         }
 
-        public async Task<IEnumerable<MediaSourceInfo>> GetStaticMediaSources(BaseItem item, CancellationToken cancellationToken)
+        public IEnumerable<MediaSourceInfo> GetStaticMediaSources(BaseItem item, CancellationToken cancellationToken)
         {
             IEnumerable<ChannelMediaInfo> results = GetSavedMediaSources(item);
 
@@ -425,7 +429,7 @@ namespace Emby.Server.Implementations.Channels
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
             }
             else if (forceUpdate)
             {
@@ -458,14 +462,14 @@ namespace Emby.Server.Implementations.Channels
             return _libraryManager.GetItemById(id) as Channel;
         }
 
-        public IEnumerable<ChannelFeatures> GetAllChannelFeatures()
+        public ChannelFeatures[] GetAllChannelFeatures()
         {
-            return _libraryManager.GetItemList(new InternalItemsQuery
+            return _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { typeof(Channel).Name },
                 SortBy = new[] { ItemSortBy.SortName }
 
-            }).Select(i => GetChannelFeatures(i.Id.ToString("N")));
+            }).Select(i => GetChannelFeatures(i.ToString("N"))).ToArray();
         }
 
         public ChannelFeatures GetChannelFeatures(string id)
@@ -505,10 +509,10 @@ namespace Emby.Server.Implementations.Channels
             {
                 CanFilter = !features.MaxPageSize.HasValue,
                 CanSearch = provider is ISearchableChannel,
-                ContentTypes = features.ContentTypes,
-                DefaultSortFields = features.DefaultSortFields,
+                ContentTypes = features.ContentTypes.ToArray(),
+                DefaultSortFields = features.DefaultSortFields.ToArray(),
                 MaxPageSize = features.MaxPageSize,
-                MediaTypes = features.MediaTypes,
+                MediaTypes = features.MediaTypes.ToArray(),
                 SupportsSortOrderToggle = features.SupportsSortOrderToggle,
                 SupportsLatestMedia = supportsLatest,
                 Name = channel.Name,
@@ -558,10 +562,12 @@ namespace Emby.Server.Implementations.Channels
                 totalRecordCount = items.Length;
             }
 
-            var dtoOptions = new DtoOptions();
+            var dtoOptions = new DtoOptions()
+            {
+                Fields = query.Fields
+            };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(items, dtoOptions, user).ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -669,12 +675,10 @@ namespace Emby.Server.Implementations.Channels
                 internalItems = internalItems.Take(query.Limit.Value).ToArray();
             }
 
-            var returnItemArray = internalItems.ToArray();
-
             return new QueryResult<BaseItem>
             {
                 TotalRecordCount = totalCount,
-                Items = returnItemArray
+                Items = internalItems
             };
         }
 
@@ -806,12 +810,10 @@ namespace Emby.Server.Implementations.Channels
 
             var internalItems = await Task.WhenAll(itemTasks).ConfigureAwait(false);
 
-            var returnItemArray = internalItems.ToArray();
-
             return new QueryResult<BaseItem>
             {
                 TotalRecordCount = totalCount,
-                Items = returnItemArray
+                Items = internalItems
             };
         }
 
@@ -825,10 +827,13 @@ namespace Emby.Server.Implementations.Channels
 
             RefreshIfNeeded(internalResult.Items);
 
-            var dtoOptions = new DtoOptions();
+            var dtoOptions = new DtoOptions()
+            {
+                Fields = query.Fields
+            };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -963,7 +968,7 @@ namespace Emby.Server.Implementations.Channels
                 }
             }
 
-            return await GetReturnItems(internalItems, providerTotalRecordCount, user, query).ConfigureAwait(false);
+            return GetReturnItems(internalItems, providerTotalRecordCount, user, query);
         }
 
         public async Task<QueryResult<BaseItemDto>> GetChannelItems(ChannelItemQuery query, CancellationToken cancellationToken)
@@ -972,12 +977,15 @@ namespace Emby.Server.Implementations.Channels
                 ? null
                 : _userManager.GetUserById(query.UserId);
 
-            var internalResult = await GetChannelItemsInternal(query, new Progress<double>(), cancellationToken).ConfigureAwait(false);
+            var internalResult = await GetChannelItemsInternal(query, new SimpleProgress<double>(), cancellationToken).ConfigureAwait(false);
 
-            var dtoOptions = new DtoOptions();
+            var dtoOptions = new DtoOptions()
+            {
+                Fields = query.Fields
+            };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user).ConfigureAwait(false))
-                .ToArray();
+            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
+                .ConfigureAwait(false));
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -1154,7 +1162,7 @@ namespace Emby.Server.Implementations.Channels
                 filename + ".json");
         }
 
-        private async Task<QueryResult<BaseItem>> GetReturnItems(IEnumerable<BaseItem> items,
+        private QueryResult<BaseItem> GetReturnItems(IEnumerable<BaseItem> items,
             int? totalCountFromProvider,
             User user,
             ChannelItemQuery query)
@@ -1178,7 +1186,7 @@ namespace Emby.Server.Implementations.Channels
                 }
             }
 
-            var returnItemArray = all.ToArray();
+            var returnItemArray = all.ToArray(all.Count);
             RefreshIfNeeded(returnItemArray);
 
             return new QueryResult<BaseItem>
@@ -1296,7 +1304,7 @@ namespace Emby.Server.Implementations.Channels
             {
                 item.Name = info.Name;
                 item.Genres = info.Genres;
-                item.Studios = info.Studios;
+                item.Studios = info.Studios.ToArray(info.Studios.Count);
                 item.CommunityRating = info.CommunityRating;
                 item.Overview = info.Overview;
                 item.IndexNumber = info.IndexNumber;
@@ -1306,7 +1314,7 @@ namespace Emby.Server.Implementations.Channels
                 item.ProviderIds = info.ProviderIds;
                 item.OfficialRating = info.OfficialRating;
                 item.DateCreated = info.DateCreated ?? DateTime.UtcNow;
-                item.Tags = info.Tags;
+                item.Tags = info.Tags.ToArray(info.Tags.Count);
                 item.HomePageUrl = info.HomePageUrl;
             }
             else if (info.Type == ChannelItemType.Folder && info.FolderType == ChannelFolderType.Container)
@@ -1322,13 +1330,13 @@ namespace Emby.Server.Implementations.Channels
             var hasArtists = item as IHasArtist;
             if (hasArtists != null)
             {
-                hasArtists.Artists = info.Artists;
+                hasArtists.Artists = info.Artists.ToArray();
             }
 
             var hasAlbumArtists = item as IHasAlbumArtist;
             if (hasAlbumArtists != null)
             {
-                hasAlbumArtists.AlbumArtists = info.AlbumArtists;
+                hasAlbumArtists.AlbumArtists = info.AlbumArtists.ToArray(info.AlbumArtists.Count);
             }
 
             var trailer = item as Trailer;
@@ -1378,19 +1386,13 @@ namespace Emby.Server.Implementations.Channels
                 item.SetImagePath(ImageType.Primary, info.ImageUrl);
             }
 
-            if (item.SourceType != SourceType.Channel)
-            {
-                item.SourceType = SourceType.Channel;
-                forceUpdate = true;
-            }
-
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
 
                 if (info.People != null && info.People.Count > 0)
                 {
-                    await _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>()).ConfigureAwait(false);
+                    _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>());
                 }
             }
             else if (forceUpdate)
@@ -1552,6 +1554,78 @@ namespace Emby.Server.Implementations.Channels
             var name = _localization.GetLocalizedString("ViewTypeChannels");
 
             return await _libraryManager.GetNamedView(name, "channels", "zz_" + name, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public class ChannelsEntryPoint : IServerEntryPoint
+    {
+        private readonly IServerConfigurationManager _config;
+        private readonly IChannelManager _channelManager;
+        private readonly ITaskManager _taskManager;
+        private readonly IFileSystem _fileSystem;
+
+        public ChannelsEntryPoint(IChannelManager channelManager, ITaskManager taskManager, IServerConfigurationManager config, IFileSystem fileSystem)
+        {
+            _channelManager = channelManager;
+            _taskManager = taskManager;
+            _config = config;
+            _fileSystem = fileSystem;
+        }
+
+        public void Run()
+        {
+            var channels = ((ChannelManager)_channelManager).Channels
+                .Select(i => i.GetType().FullName.GetMD5().ToString("N"))
+                .ToArray();
+
+            var channelsString = string.Join(",", channels);
+
+            if (!string.Equals(channelsString, GetSavedLastChannels(), StringComparison.OrdinalIgnoreCase))
+            {
+                _taskManager.QueueIfNotRunning<RefreshChannelsScheduledTask>();
+
+                SetSavedLastChannels(channelsString);
+            }
+        }
+
+        private string DataPath
+        {
+            get { return Path.Combine(_config.ApplicationPaths.DataPath, "channels.txt"); }
+        }
+
+        private string GetSavedLastChannels()
+        {
+            try
+            {
+                return _fileSystem.ReadAllText(DataPath);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private void SetSavedLastChannels(string value)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    _fileSystem.DeleteFile(DataPath);
+
+                }
+                else
+                {
+                    _fileSystem.WriteAllText(DataPath, value);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

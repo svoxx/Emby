@@ -1,7 +1,7 @@
 ﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Security;
-using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Session;
 using MediaBrowser.Model.Users;
@@ -249,7 +249,7 @@ namespace MediaBrowser.Controller.Session
         /// </summary>
         /// <param name="sessionId">The session identifier.</param>
         /// <param name="item">The item.</param>
-        void ReportNowViewingItem(string sessionId, BaseItemInfo item);
+        void ReportNowViewingItem(string sessionId, BaseItemDto item);
 
         /// <summary>
         /// Authenticates the new session.
@@ -318,19 +318,19 @@ namespace MediaBrowser.Controller.Session
         /// </summary>
         /// <param name="accessToken">The access token.</param>
         /// <returns>Task.</returns>
-        Task Logout(string accessToken);
+        void Logout(string accessToken);
 
         /// <summary>
         /// Revokes the user tokens.
         /// </summary>
         /// <returns>Task.</returns>
-        Task RevokeUserTokens(string userId, string currentAccessToken);
+        void RevokeUserTokens(string userId, string currentAccessToken);
 
         /// <summary>
         /// Revokes the token.
         /// </summary>
         /// <param name="id">The identifier.</param>
         /// <returns>Task.</returns>
-        Task RevokeToken(string id);
+        void RevokeToken(string id);
     }
 }

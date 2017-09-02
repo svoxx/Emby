@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Emby.Server.Implementations.HttpServer;
 using Emby.Server.Implementations.HttpServer.SocketSharp;
@@ -103,6 +104,7 @@ namespace Emby.Server.Implementations.HttpServer
         readonly Dictionary<Type, int> _mapExceptionToStatusCode = new Dictionary<Type, int>
             {
                 {typeof (ResourceNotFoundException), 404},
+                {typeof (RemoteServiceUnavailableException), 502},
                 {typeof (FileNotFoundException), 404},
                 //{typeof (DirectoryNotFoundException), 404},
                 {typeof (SecurityException), 401},
@@ -121,13 +123,6 @@ namespace Emby.Server.Implementations.HttpServer
         public object CreateInstance(Type type)
         {
             return _appHost.CreateInstance(type);
-        }
-
-        private ServiceController CreateServiceController()
-        {
-            var types = _restServices.Select(r => r.GetType()).ToArray();
-
-            return new ServiceController(() => types);
         }
 
         /// <summary>
@@ -167,7 +162,7 @@ namespace Emby.Server.Implementations.HttpServer
             return serviceType;
         }
 
-        public void AddServiceInfo(Type serviceType, Type requestType, Type responseType)
+        public void AddServiceInfo(Type serviceType, Type requestType)
         {
             ServiceOperationsMap[requestType] = serviceType;
         }
@@ -184,7 +179,7 @@ namespace Emby.Server.Implementations.HttpServer
 
             attributes.Sort((x, y) => x.Priority - y.Priority);
 
-            return attributes.ToArray();
+            return attributes.ToArray(attributes.Count);
         }
 
         /// <summary>
@@ -267,6 +262,29 @@ namespace Emby.Server.Implementations.HttpServer
             }
         }
 
+        private Exception GetActualException(Exception ex)
+        {
+            var agg = ex as AggregateException;
+            if (agg != null)
+            {
+                var inner = agg.InnerException;
+                if (inner != null)
+                {
+                    return GetActualException(inner);
+                }
+                else
+                {
+                    var inners = agg.InnerExceptions;
+                    if (inners != null && inners.Count > 0)
+                    {
+                        return GetActualException(inners[0]);
+                    }
+                }
+            }
+
+            return ex;
+        }
+
         private int GetStatusCode(Exception ex)
         {
             if (ex is ArgumentException)
@@ -279,7 +297,7 @@ namespace Emby.Server.Implementations.HttpServer
             int statusCode;
             if (!_mapExceptionToStatusCode.TryGetValue(exceptionType, out statusCode))
             {
-                if (string.Equals(exceptionType.Name, "DirectoryNotFoundException", StringComparison.OrdinalIgnoreCase))
+                if (ex is DirectoryNotFoundException)
                 {
                     statusCode = 404;
                 }
@@ -296,6 +314,8 @@ namespace Emby.Server.Implementations.HttpServer
         {
             try
             {
+                ex = GetActualException(ex);
+
                 if (logException)
                 {
                     _logger.ErrorException("Error processing request", ex);
@@ -445,10 +465,7 @@ namespace Emby.Server.Implementations.HttpServer
         /// <summary>
         /// Overridable method that can be used to implement a custom hnandler
         /// </summary>
-        /// <param name="httpReq">The HTTP req.</param>
-        /// <param name="url">The URL.</param>
-        /// <returns>Task.</returns>
-        protected async Task RequestHandler(IHttpRequest httpReq, Uri url)
+        protected async Task RequestHandler(IHttpRequest httpReq, Uri url, CancellationToken cancellationToken)
         {
             var date = DateTime.Now;
             var httpRes = httpReq.Response;
@@ -589,7 +606,7 @@ namespace Emby.Server.Implementations.HttpServer
 
                 if (handler != null)
                 {
-                    await handler.ProcessRequestAsync(this, httpReq, httpRes, Logger, operationName).ConfigureAwait(false);
+                    await handler.ProcessRequestAsync(this, httpReq, httpRes, Logger, operationName, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -600,9 +617,10 @@ namespace Emby.Server.Implementations.HttpServer
             {
                 ErrorHandler(ex, httpReq, false);
             }
+
             catch (Exception ex)
             {
-                ErrorHandler(ex, httpReq);
+                ErrorHandler(ex, httpReq, !string.Equals(ex.GetType().Name, "SocketException", StringComparison.OrdinalIgnoreCase));
             }
             finally
             {
@@ -672,11 +690,13 @@ namespace Emby.Server.Implementations.HttpServer
         {
             _restServices.AddRange(services);
 
-            ServiceController = CreateServiceController();
+            ServiceController = new ServiceController();
 
             _logger.Info("Calling ServiceStack AppHost.Init");
 
-            ServiceController.Init(this);
+            var types = _restServices.Select(r => r.GetType()).ToArray();
+
+            ServiceController.Init(this, types);
 
             var requestFilters = _appHost.GetExports<IRequestFilter>().ToList();
             foreach (var filter in requestFilters)
@@ -716,7 +736,7 @@ namespace Emby.Server.Implementations.HttpServer
                 });
             }
 
-            return routes.ToArray();
+            return routes.ToArray(routes.Count);
         }
 
         public Func<string, object> GetParseFn(Type propertyType)

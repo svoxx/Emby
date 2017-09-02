@@ -1,4 +1,5 @@
 ﻿using MediaBrowser.Controller.Entities;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Controller.Collections
 {
@@ -7,7 +8,6 @@ namespace MediaBrowser.Controller.Collections
         public ManualCollectionsFolder()
         {
             Name = "Collections";
-            DisplayMediaType = "CollectionFolder";
         }
 
         public override bool IsHidden
@@ -18,11 +18,21 @@ namespace MediaBrowser.Controller.Collections
             }
         }
 
+        [IgnoreDataMember]
+        public override bool SupportsInheritedParentImages
+        {
+            get
+            {
+                return false;
+            }
+        }
+
         public bool IsHiddenFromUser(User user)
         {
             return !ConfigurationManager.Configuration.DisplayCollectionsView;
         }
 
+        [IgnoreDataMember]
         public override string CollectionType
         {
             get { return Model.Entities.CollectionType.BoxSets; }

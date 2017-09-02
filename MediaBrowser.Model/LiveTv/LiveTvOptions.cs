@@ -1,13 +1,11 @@
 ﻿using System.Collections.Generic;
 using MediaBrowser.Model.Dto;
-using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Model.LiveTv
 {
     public class LiveTvOptions
     {
         public int? GuideDays { get; set; }
-        public bool EnableMovieProviders { get; set; }
         public string RecordingPath { get; set; }
         public string MovieRecordingPath { get; set; }
         public string SeriesRecordingPath { get; set; }
@@ -17,8 +15,8 @@ namespace MediaBrowser.Model.LiveTv
         public bool EnableOriginalAudioWithEncodedRecordings { get; set; }
         public string RecordedVideoCodec { get; set; }
 
-        public List<TunerHostInfo> TunerHosts { get; set; }
-        public List<ListingsProviderInfo> ListingProviders { get; set; }
+        public TunerHostInfo[] TunerHosts { get; set; }
+        public ListingsProviderInfo[] ListingProviders { get; set; }
 
         public int PrePaddingSeconds { get; set; }
         public int PostPaddingSeconds { get; set; }
@@ -30,9 +28,8 @@ namespace MediaBrowser.Model.LiveTv
 
         public LiveTvOptions()
         {
-            EnableMovieProviders = true;
-            TunerHosts = new List<TunerHostInfo>();
-            ListingProviders = new List<ListingsProviderInfo>();
+            TunerHosts = new TunerHostInfo[] { };
+            ListingProviders = new ListingsProviderInfo[] { };
             MediaLocationsCreated = new string[] { };
             RecordingEncodingFormat = "mkv";
             RecordingPostProcessorArguments = "\"{path}\"";
@@ -49,7 +46,10 @@ namespace MediaBrowser.Model.LiveTv
         public string FriendlyName { get; set; }
         public bool ImportFavoritesOnly { get; set; }
         public bool AllowHWTranscoding { get; set; }
-        public bool EnableTvgId { get; set; }
+        public bool EnableStreamLooping { get; set; }
+        public bool EnableMpDecimate { get; set; }
+        public bool EnableNewHdhrChannelIds { get; set; }
+        public string Source { get; set; }
 
         public TunerHostInfo()
         {
@@ -77,6 +77,7 @@ namespace MediaBrowser.Model.LiveTv
         public NameValuePair[] ChannelMappings { get; set; }
         public string MoviePrefix { get; set; }
         public bool EnableNewProgramIds { get; set; }
+        public string PreferredLanguage { get; set; }
 
         public ListingsProviderInfo()
         {

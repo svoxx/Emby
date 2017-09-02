@@ -80,7 +80,6 @@ namespace MediaBrowser.LocalMetadata.Savers
 
                     "Overview",
                     "Persons",
-                    "PlotKeywords",
                     "PremiereDate",
                     "ProductionYear",
                     "Rating",
@@ -107,9 +106,7 @@ namespace MediaBrowser.LocalMetadata.Savers
                     "Trailers",
                     "TVcomId",
                     "TvDbId",
-                    "Type",
                     "TVRageId",
-                    "VoteCount",
                     "Website",
                     "Zap2ItId",
                     "CollectionItems",
@@ -305,14 +302,9 @@ namespace MediaBrowser.LocalMetadata.Savers
 
             writer.WriteElementString("LockData", item.IsLocked.ToString().ToLower());
 
-            if (item.LockedFields.Count > 0)
+            if (item.LockedFields.Length > 0)
             {
-                writer.WriteElementString("LockedFields", string.Join("|", item.LockedFields.Select(i => i.ToString()).ToArray()));
-            }
-
-            if (!string.IsNullOrEmpty(item.DisplayMediaType))
-            {
-                writer.WriteElementString("Type", item.DisplayMediaType);
+                writer.WriteElementString("LockedFields", string.Join("|", item.LockedFields));
             }
 
             if (item.CriticRating.HasValue)
@@ -339,9 +331,10 @@ namespace MediaBrowser.LocalMetadata.Savers
                 writer.WriteElementString("LocalTitle", item.Name);
             }
 
-            if (!string.IsNullOrEmpty(item.ForcedSortName))
+            var forcedSortName = item.ForcedSortName;
+            if (!string.IsNullOrEmpty(forcedSortName))
             {
-                writer.WriteElementString("SortTitle", item.ForcedSortName);
+                writer.WriteElementString("SortTitle", forcedSortName);
             }
 
             if (item.PremiereDate.HasValue)
@@ -371,7 +364,7 @@ namespace MediaBrowser.LocalMetadata.Savers
             var hasTrailers = item as IHasTrailers;
             if (hasTrailers != null)
             {
-                if (hasTrailers.RemoteTrailers.Count > 0)
+                if (hasTrailers.RemoteTrailers.Length > 0)
                 {
                     writer.WriteStartElement("Trailers");
 
@@ -384,7 +377,7 @@ namespace MediaBrowser.LocalMetadata.Savers
                 }
             }
 
-            if (item.ProductionLocations.Count > 0)
+            if (item.ProductionLocations.Length > 0)
             {
                 writer.WriteStartElement("Countries");
 
@@ -405,10 +398,6 @@ namespace MediaBrowser.LocalMetadata.Savers
             if (item.CommunityRating.HasValue)
             {
                 writer.WriteElementString("Rating", item.CommunityRating.Value.ToString(UsCulture));
-            }
-            if (item.VoteCount.HasValue)
-            {
-                writer.WriteElementString("VoteCount", item.VoteCount.Value.ToString(UsCulture));
             }
 
             if (item.ProductionYear.HasValue && !(item is Person))
@@ -480,7 +469,7 @@ namespace MediaBrowser.LocalMetadata.Savers
                 writer.WriteEndElement();
             }
 
-            if (item.Studios.Count > 0)
+            if (item.Studios.Length > 0)
             {
                 writer.WriteStartElement("Studios");
 
@@ -492,25 +481,13 @@ namespace MediaBrowser.LocalMetadata.Savers
                 writer.WriteEndElement();
             }
 
-            if (item.Tags.Count > 0)
+            if (item.Tags.Length > 0)
             {
                 writer.WriteStartElement("Tags");
 
                 foreach (var tag in item.Tags)
                 {
                     writer.WriteElementString("Tag", tag);
-                }
-
-                writer.WriteEndElement();
-            }
-
-            if (item.Keywords.Count > 0)
-            {
-                writer.WriteStartElement("PlotKeywords");
-
-                foreach (var tag in item.Keywords)
-                {
-                    writer.WriteElementString("PlotKeyword", tag);
                 }
 
                 writer.WriteEndElement();

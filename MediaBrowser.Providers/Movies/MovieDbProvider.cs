@@ -18,10 +18,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Common;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Net;
+using MediaBrowser.Model.Extensions;
 
 namespace MediaBrowser.Providers.Movies
 {
@@ -282,7 +283,7 @@ namespace MediaBrowser.Providers.Movies
                 languages.Add("en");
             }
 
-            return string.Join(",", languages.ToArray());
+            return string.Join(",", languages.ToArray(languages.Count));
         }
 
         public static string NormalizeLanguage(string language)

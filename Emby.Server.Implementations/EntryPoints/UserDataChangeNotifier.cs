@@ -122,11 +122,11 @@ namespace Emby.Server.Implementations.EntryPoints
                         .DistinctBy(i => i.Id)
                         .Select(i =>
                         {
-                            var dto = _userDataManager.GetUserDataDto(i, user).Result;
+                            var dto = _userDataManager.GetUserDataDto(i, user);
                             dto.ItemId = i.Id.ToString("N");
                             return dto;
                         })
-                        .ToList();
+                        .ToArray();
 
                     var info = new UserDataChangeInfo
                     {

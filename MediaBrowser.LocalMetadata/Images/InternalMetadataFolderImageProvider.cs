@@ -4,7 +4,7 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Providers;
 using System.Collections.Generic;
 using System.IO;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -26,7 +26,7 @@ namespace MediaBrowser.LocalMetadata.Images
             get { return "Internal Images"; }
         }
 
-        public bool Supports(IHasImages item)
+        public bool Supports(IHasMetadata item)
         {
             if (item is Photo)
             {
@@ -61,7 +61,7 @@ namespace MediaBrowser.LocalMetadata.Images
             }
         }
 
-        public List<LocalImageInfo> GetImages(IHasImages item, IDirectoryService directoryService)
+        public List<LocalImageInfo> GetImages(IHasMetadata item, IDirectoryService directoryService)
         {
             var path = item.GetInternalMetadataPath();
 

@@ -1,8 +1,7 @@
-﻿using MediaBrowser.Model.Entities;
+﻿using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Threading;
@@ -22,13 +21,13 @@ namespace MediaBrowser.Controller.Session
             _sessionManager = sessionManager;
             _logger = logger;
 
-            AdditionalUsers = new List<SessionUserInfo>();
+            AdditionalUsers = new SessionUserInfo[] { };
             PlayState = new PlayerStateInfo();
         }
 
         public PlayerStateInfo PlayState { get; set; }
 
-        public List<SessionUserInfo> AdditionalUsers { get; set; }
+        public SessionUserInfo[] AdditionalUsers { get; set; }
 
         public ClientCapabilities Capabilities { get; set; }
 
@@ -42,13 +41,13 @@ namespace MediaBrowser.Controller.Session
         /// Gets or sets the playable media types.
         /// </summary>
         /// <value>The playable media types.</value>
-        public List<string> PlayableMediaTypes
+        public string[] PlayableMediaTypes
         {
             get
             {
                 if (Capabilities == null)
                 {
-                    return new List<string>();
+                    return new string[] { };
                 }
                 return Capabilities.PlayableMediaTypes;
             }
@@ -100,13 +99,13 @@ namespace MediaBrowser.Controller.Session
         /// Gets or sets the name of the now viewing item.
         /// </summary>
         /// <value>The name of the now viewing item.</value>
-        public BaseItemInfo NowViewingItem { get; set; }
+        public BaseItemDto NowViewingItem { get; set; }
 
         /// <summary>
         /// Gets or sets the now playing item.
         /// </summary>
         /// <value>The now playing item.</value>
-        public BaseItemInfo NowPlayingItem { get; set; }
+        public BaseItemDto NowPlayingItem { get; set; }
 
         public BaseItem FullNowPlayingItem { get; set; }
 
@@ -138,13 +137,13 @@ namespace MediaBrowser.Controller.Session
         /// Gets or sets the supported commands.
         /// </summary>
         /// <value>The supported commands.</value>
-        public List<string> SupportedCommands
+        public string[] SupportedCommands
         {
             get
             {
                 if (Capabilities == null)
                 {
-                    return new List<string>();
+                    return new string[] { };
                 }
                 return Capabilities.SupportedCommands;
             }
@@ -194,7 +193,19 @@ namespace MediaBrowser.Controller.Session
 
         public bool ContainsUser(Guid userId)
         {
-            return (UserId ?? Guid.Empty) == userId || AdditionalUsers.Any(i => userId == new Guid(i.UserId));
+            if ((UserId ?? Guid.Empty) == userId)
+            {
+                return true;
+            }
+
+            foreach (var additionalUser in AdditionalUsers)
+            {
+                if (userId == new Guid(additionalUser.UserId))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private readonly object _progressLock = new object();
@@ -203,6 +214,11 @@ namespace MediaBrowser.Controller.Session
 
         public void StartAutomaticProgress(ITimerFactory timerFactory, PlaybackProgressInfo progressInfo)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             lock (_progressLock)
             {
                 _lastProgressInfo = progressInfo;
@@ -223,6 +239,11 @@ namespace MediaBrowser.Controller.Session
 
         private async void OnProgressTimerCallback(object state)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             var progressInfo = _lastProgressInfo;
             if (progressInfo == null)
             {
@@ -274,8 +295,12 @@ namespace MediaBrowser.Controller.Session
             }
         }
 
+        private bool _disposed = false;
+
         public void Dispose()
         {
+            _disposed = true;
+
             StopAutomaticProgress();
             _sessionManager = null;
         }

@@ -11,7 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 
@@ -55,32 +55,21 @@ namespace Emby.Server.Implementations.Library.Validators
         /// <returns>Task.</returns>
         public async Task ValidatePeople(CancellationToken cancellationToken, IProgress<double> progress)
         {
-            var innerProgress = new ActionableProgress<double>();
-
-            innerProgress.RegisterAction(pct => progress.Report(pct * .15));
-
-            var people = _libraryManager.GetPeople(new InternalPeopleQuery());
-
-            var dict = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var person in people)
-            {
-                dict[person.Name] = true;
-            }
+            var people = _libraryManager.GetPeopleNames(new InternalPeopleQuery());
 
             var numComplete = 0;
 
-            _logger.Debug("Will refresh {0} people", dict.Count);
+            var numPeople = people.Count;
 
-            var numPeople = dict.Count;
+            _logger.Debug("Will refresh {0} people", numPeople);
 
-            foreach (var person in dict)
+            foreach (var person in people)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    var item = _libraryManager.GetPerson(person.Key);
+                    var item = _libraryManager.GetPerson(person);
 
                     var options = new MetadataRefreshOptions(_fileSystem)
                     {

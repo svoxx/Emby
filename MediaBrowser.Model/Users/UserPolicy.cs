@@ -68,8 +68,12 @@ namespace MediaBrowser.Model.Users
         public string[] BlockedMediaFolders { get; set; }
         public string[] BlockedChannels { get; set; }
 
+        public int RemoteClientBitrateLimit { get; set; }
+
         public UserPolicy()
         {
+            EnableContentDeletion = true;
+
             EnableSyncTranscoding = true;
 
             EnableMediaPlayback = true;

@@ -177,7 +177,7 @@ namespace Rssdp.Infrastructure
         {
             try
             {
-                await socket.SendWithLockAsync(messageData, messageData.Length, destination, cancellationToken).ConfigureAwait(false);
+                await socket.SendToAsync(messageData, 0, messageData.Length, destination, cancellationToken).ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {
@@ -364,7 +364,7 @@ namespace Rssdp.Infrastructure
 
             if (_enableMultiSocketBinding)
             {
-                foreach (var address in _networkManager.GetLocalIpAddresses().ToList())
+                foreach (var address in _networkManager.GetLocalIpAddresses())
                 {
                     try
                     {
@@ -392,11 +392,13 @@ namespace Rssdp.Infrastructure
             var t = Task.Run(async () =>
             {
                 var cancelled = false;
+                var receiveBuffer = new byte[8192];
+
                 while (!cancelled)
                 {
                     try
                     {
-                        var result = await socket.ReceiveAsync(CancellationToken.None).ConfigureAwait(false);
+                        var result = await socket.ReceiveAsync(receiveBuffer, 0, receiveBuffer.Length, CancellationToken.None).ConfigureAwait(false);
 
                         if (result.ReceivedBytes > 0)
                         {

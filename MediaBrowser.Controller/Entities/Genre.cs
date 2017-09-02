@@ -2,7 +2,6 @@
 using MediaBrowser.Controller.Entities.Audio;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Extensions;
 using MediaBrowser.Model.Extensions;
@@ -79,16 +78,6 @@ namespace MediaBrowser.Controller.Entities
             {
                 return false;
             }
-        }
-
-        public IEnumerable<BaseItem> GetTaggedItems(IEnumerable<BaseItem> inputItems)
-        {
-            return inputItems.Where(GetItemFilter());
-        }
-
-        public Func<BaseItem, bool> GetItemFilter()
-        {
-            return i => !(i is Game) && !(i is IHasMusicGenres) && i.Genres.Contains(Name, StringComparer.OrdinalIgnoreCase);
         }
 
         public IEnumerable<BaseItem> GetTaggedItems(InternalItemsQuery query)
