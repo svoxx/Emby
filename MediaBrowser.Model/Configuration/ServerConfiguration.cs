@@ -78,12 +78,6 @@ namespace MediaBrowser.Model.Configuration
         public string MetadataNetworkPath { get; set; }
 
         /// <summary>
-        /// Gets or sets the display name of the season zero.
-        /// </summary>
-        /// <value>The display name of the season zero.</value>
-        public string SeasonZeroDisplayName { get; set; }
-
-        /// <summary>
         /// Gets or sets the preferred metadata language.
         /// </summary>
         /// <value>The preferred metadata language.</value>
@@ -179,7 +173,6 @@ namespace MediaBrowser.Model.Configuration
         public int SchemaVersion { get; set; }
 
         public bool EnableAnonymousUsageReporting { get; set; }
-        public bool EnableStandaloneMusicKeys { get; set; }
         public bool EnableFolderView { get; set; }
         public bool EnableGroupingIntoCollections { get; set; }
         public bool DisplaySpecialsWithinSeasons { get; set; }
@@ -188,6 +181,8 @@ namespace MediaBrowser.Model.Configuration
         public string[] CodecsUsed { get; set; }
         public bool EnableChannelView { get; set; }
         public bool EnableExternalContentInSuggestions { get; set; }
+        public bool RequireHttps { get; set; }
+        public bool IsBehindProxy { get; set; }
 
         public int ImageExtractionTimeoutMs { get; set; }
 
@@ -239,8 +234,6 @@ namespace MediaBrowser.Model.Configuration
             SortReplaceCharacters = new[] { ".", "+", "%" };
             SortRemoveCharacters = new[] { ",", "&", "-", "{", "}", "'" };
             SortRemoveWords = new[] { "the", "a", "an" };
-
-            SeasonZeroDisplayName = "Specials";
 
             UICulture = "en-us";
 

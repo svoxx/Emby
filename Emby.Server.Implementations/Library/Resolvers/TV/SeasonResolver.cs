@@ -3,8 +3,8 @@ using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Globalization;
-using MediaBrowser.Naming.Common;
-using MediaBrowser.Naming.TV;
+using Emby.Naming.Common;
+using Emby.Naming.TV;
 
 namespace Emby.Server.Implementations.Library.Resolvers.TV
 {
@@ -55,9 +55,9 @@ namespace Emby.Server.Implementations.Library.Resolvers.TV
                 if (season.IndexNumber.HasValue)
                 {
                     var seasonNumber = season.IndexNumber.Value;
-
+                    
                     season.Name = seasonNumber == 0 ?
-                        _config.Configuration.SeasonZeroDisplayName :
+                        args.LibraryOptions.SeasonZeroDisplayName :
                         string.Format(_localization.GetLocalizedString("NameSeasonNumber"), seasonNumber.ToString(UsCulture));
                 }
 

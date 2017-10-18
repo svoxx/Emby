@@ -204,10 +204,7 @@ namespace MediaBrowser.Providers.Manager
 
         private bool HasImage(IHasMetadata item, ImageType type)
         {
-            var image = item.GetImageInfo(type, 0);
-
-            // if it's a placeholder image then pretend like it's not there so that we can replace it
-            return image != null && !image.IsPlaceholder;
+            return item.HasImage(type);
         }
 
         /// <summary>
@@ -547,7 +544,7 @@ namespace MediaBrowser.Providers.Manager
             switch (type)
             {
                 case ImageType.Primary:
-                    return !(item is Movie || item is Series || item is Game);
+                    return true;
                 default:
                     return true;
             }

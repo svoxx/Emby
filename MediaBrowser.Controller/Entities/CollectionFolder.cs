@@ -31,6 +31,14 @@ namespace MediaBrowser.Controller.Entities
             PhysicalFolderIds = EmptyGuidArray;
         }
 
+        //public override double? GetDefaultPrimaryImageAspectRatio()
+        //{
+        //    double value = 16;
+        //    value /= 9;
+
+        //    return value;
+        //}
+
         [IgnoreDataMember]
         public override bool SupportsPlayedStatus
         {
@@ -280,7 +288,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 FileInfo = FileSystem.GetDirectoryInfo(path),
                 Path = path,
-                Parent = Parent,
+                Parent = GetParent() as Folder,
                 CollectionType = CollectionType
             };
 
