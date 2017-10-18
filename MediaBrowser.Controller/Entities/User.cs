@@ -30,11 +30,25 @@ namespace MediaBrowser.Controller.Entities
         /// <value>The password.</value>
         public string Password { get; set; }
         public string EasyPassword { get; set; }
+        public string Salt { get; set; }
 
         public string ConnectUserName { get; set; }
         public string ConnectUserId { get; set; }
         public UserLinkType? ConnectLinkType { get; set; }
         public string ConnectAccessKey { get; set; }
+
+        // Strictly to remove IgnoreDataMember
+        public override ItemImageInfo[] ImageInfos
+        {
+            get
+            {
+                return base.ImageInfos;
+            }
+            set
+            {
+                base.ImageInfos = value;
+            }
+        }
 
         /// <summary>
         /// Gets or sets the path.
@@ -238,6 +252,11 @@ namespace MediaBrowser.Controller.Entities
             {
                 return GetConfigurationDirectoryPath(Name);
             }
+        }
+
+        public override double? GetDefaultPrimaryImageAspectRatio()
+        {
+            return 1;
         }
 
         /// <summary>

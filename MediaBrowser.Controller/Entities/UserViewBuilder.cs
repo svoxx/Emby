@@ -238,12 +238,9 @@ namespace MediaBrowser.Controller.Entities
                     {
                         if (queryParent is UserView)
                         {
-                            return GetResult(GetMediaFolders(user).SelectMany(i => i.GetChildren(user, true)), queryParent, query);
+                            return GetResult(GetMediaFolders(user).OfType<Folder>().SelectMany(i => i.GetChildren(user, true)), queryParent, query);
                         }
-                        else
-                        {
-                            return GetResult(queryParent.GetChildren(user, true), queryParent, query);
-                        }
+                        return GetResult(queryParent.GetChildren(user, true), queryParent, query);
                     }
             }
         }
@@ -397,7 +394,7 @@ namespace MediaBrowser.Controller.Entities
 
             }, query.DtoOptions).Select(i => i.Item1 ?? i.Item2.FirstOrDefault()).Where(i => i != null);
 
-            query.SortBy = new string[] { };
+            query.OrderBy = new Tuple<string, SortOrder>[] { };
 
             return PostFilterAndSort(items, parent, null, query, false, true);
         }
@@ -507,8 +504,7 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> GetMovieLatest(Folder parent, User user, InternalItemsQuery query)
         {
-            query.SortBy = new[] { ItemSortBy.DateCreated, ItemSortBy.SortName };
-            query.SortOrder = SortOrder.Descending;
+            query.OrderBy = new[] { ItemSortBy.DateCreated, ItemSortBy.SortName }.Select(i => new Tuple<string, SortOrder>(i, SortOrder.Descending)).ToArray();
 
             query.Recursive = true;
             query.Parent = parent;
@@ -521,8 +517,7 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> GetMovieResume(Folder parent, User user, InternalItemsQuery query)
         {
-            query.SortBy = new[] { ItemSortBy.DatePlayed, ItemSortBy.SortName };
-            query.SortOrder = SortOrder.Descending;
+            query.OrderBy = new[] { ItemSortBy.DatePlayed, ItemSortBy.SortName }.Select(i => new Tuple<string, SortOrder>(i, SortOrder.Descending)).ToArray();
             query.IsResumable = true;
             query.Recursive = true;
             query.Parent = parent;
@@ -633,8 +628,7 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> GetTvLatest(Folder parent, User user, InternalItemsQuery query)
         {
-            query.SortBy = new[] { ItemSortBy.DateCreated, ItemSortBy.SortName };
-            query.SortOrder = SortOrder.Descending;
+            query.OrderBy = new[] { ItemSortBy.DateCreated, ItemSortBy.SortName }.Select(i => new Tuple<string, SortOrder>(i, SortOrder.Descending)).ToArray();
 
             query.Recursive = true;
             query.Parent = parent;
@@ -663,8 +657,7 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> GetTvResume(Folder parent, User user, InternalItemsQuery query)
         {
-            query.SortBy = new[] { ItemSortBy.DatePlayed, ItemSortBy.SortName };
-            query.SortOrder = SortOrder.Descending;
+            query.OrderBy = new[] { ItemSortBy.DatePlayed, ItemSortBy.SortName }.Select(i => new Tuple<string, SortOrder>(i, SortOrder.Descending)).ToArray();
             query.IsResumable = true;
             query.Recursive = true;
             query.Parent = parent;
@@ -1104,9 +1097,9 @@ namespace MediaBrowser.Controller.Entities
         {
             items = items.DistinctBy(i => i.GetPresentationUniqueKey(), StringComparer.OrdinalIgnoreCase);
 
-            if (query.SortBy.Length > 0)
+            if (query.OrderBy.Length > 0)
             {
-                items = libraryManager.Sort(items, query.User, query.SortBy, query.SortOrder);
+                items = libraryManager.Sort(items, query.User, query.OrderBy);
             }
 
             var itemsArray = totalRecordLimit.HasValue ? items.Take(totalRecordLimit.Value).ToArray() : items.ToArray();
@@ -1685,7 +1678,7 @@ namespace MediaBrowser.Controller.Entities
             return true;
         }
 
-        private IEnumerable<Folder> GetMediaFolders(User user)
+        private IEnumerable<BaseItem> GetMediaFolders(User user)
         {
             if (user == null)
             {
@@ -1700,7 +1693,7 @@ namespace MediaBrowser.Controller.Entities
                 .Where(i => user.IsFolderGrouped(i.Id) && UserView.IsEligibleForGrouping(i));
         }
 
-        private List<Folder> GetMediaFolders(User user, IEnumerable<string> viewTypes)
+        private List<BaseItem> GetMediaFolders(User user, IEnumerable<string> viewTypes)
         {
             if (user == null)
             {
@@ -1721,14 +1714,14 @@ namespace MediaBrowser.Controller.Entities
                 }).ToList();
         }
 
-        private List<Folder> GetMediaFolders(Folder parent, User user, IEnumerable<string> viewTypes)
+        private List<BaseItem> GetMediaFolders(Folder parent, User user, IEnumerable<string> viewTypes)
         {
             if (parent == null || parent is UserView)
             {
                 return GetMediaFolders(user, viewTypes);
             }
 
-            return new List<Folder> { parent };
+            return new List<BaseItem> { parent };
         }
 
         private async Task<QueryResult<BaseItem>> GetLiveTvView(Folder queryParent, User user, InternalItemsQuery query)

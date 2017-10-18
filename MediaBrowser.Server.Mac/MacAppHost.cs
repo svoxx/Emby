@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Emby.Server.Core;
 using Emby.Server.Implementations;
 using Emby.Server.Implementations.FFMpeg;
 using MediaBrowser.Model.IO;
@@ -90,25 +89,9 @@ namespace MediaBrowser.Server.Mac
             throw new NotImplementedException();
         }
 
-        public override bool SupportsRunningAsService
-        {
-            get
-            {
-                return false;
-            }
-        }
-
         public override bool SupportsAutoRunAtStartup
         {
             get { return false; }
-        }
-
-        public override bool IsRunningAsService
-        {
-            get
-            {
-                return false;
-            }
         }
     }
 }

@@ -74,7 +74,7 @@ namespace Emby.Server.Implementations.EntryPoints
 
             try
             {
-                await new UsageReporter(_applicationHost, _httpClient, _userManager, _logger)
+                await new UsageReporter(_applicationHost, _httpClient, _logger)
                     .ReportAppUsage(client, CancellationToken.None)
                     .ConfigureAwait(false);
             }
@@ -117,7 +117,7 @@ namespace Emby.Server.Implementations.EntryPoints
 
             try
             {
-                await new UsageReporter(_applicationHost, _httpClient, _userManager, _logger)
+                await new UsageReporter(_applicationHost, _httpClient, _logger)
                     .ReportServerUsage(CancellationToken.None)
                     .ConfigureAwait(false);
             }
@@ -130,6 +130,7 @@ namespace Emby.Server.Implementations.EntryPoints
         public void Dispose()
         {
             _sessionManager.SessionStarted -= _sessionManager_SessionStarted;
+            GC.SuppressFinalize(this);
         }
     }
 }
