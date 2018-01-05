@@ -110,34 +110,22 @@ namespace MediaBrowser.Api
 
         public void Delete(DeleteAlternateSources request)
         {
-            var task = DeleteAsync(request);
-
-            Task.WaitAll(task);
-        }
-
-        public async Task DeleteAsync(DeleteAlternateSources request)
-        {
             var video = (Video)_libraryManager.GetItemById(request.Id);
 
             foreach (var link in video.GetLinkedAlternateVersions())
             {
-                link.PrimaryVersionId = null;
+                link.SetPrimaryVersionId(null);
+                link.LinkedAlternateVersions = Video.EmptyLinkedChildArray;
 
-                await link.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                link.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
             }
 
             video.LinkedAlternateVersions = Video.EmptyLinkedChildArray;
-            await video.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            video.SetPrimaryVersionId(null);
+            video.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
         }
 
         public void Post(MergeVersions request)
-        {
-            var task = PostAsync(request);
-
-            Task.WaitAll(task);
-        }
-
-        public async Task PostAsync(MergeVersions request)
         {
             var items = request.Ids.Split(',')
                 .Select(i => _libraryManager.GetItemById(i))
@@ -162,19 +150,19 @@ namespace MediaBrowser.Api
             if (primaryVersion == null)
             {
                 primaryVersion = items.OrderBy(i =>
-                {
-                    if (i.Video3DFormat.HasValue)
                     {
-                        return 1;
-                    }
+                        if (i.Video3DFormat.HasValue)
+                        {
+                            return 1;
+                        }
 
-                    if (i.VideoType != Model.Entities.VideoType.VideoFile)
-                    {
-                        return 1;
-                    }
+                        if (i.VideoType != Model.Entities.VideoType.VideoFile)
+                        {
+                            return 1;
+                        }
 
-                    return 0;
-                })
+                        return 0;
+                    })
                     .ThenByDescending(i =>
                     {
                         var stream = i.GetDefaultVideoStream();
@@ -188,9 +176,9 @@ namespace MediaBrowser.Api
 
             foreach (var item in items.Where(i => i.Id != primaryVersion.Id))
             {
-                item.PrimaryVersionId = primaryVersion.Id.ToString("N");
+                item.SetPrimaryVersionId(primaryVersion.Id.ToString("N"));
 
-                await item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
 
                 list.Add(new LinkedChild
                 {
@@ -201,7 +189,7 @@ namespace MediaBrowser.Api
 
             primaryVersion.LinkedAlternateVersions = list.ToArray();
 
-            await primaryVersion.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            primaryVersion.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
         }
     }
 }

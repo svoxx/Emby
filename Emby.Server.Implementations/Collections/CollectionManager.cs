@@ -94,7 +94,7 @@ namespace Emby.Server.Implementations.Collections
 
                 if (options.ItemIdList.Length > 0)
                 {
-                    await AddToCollection(collection.Id, options.ItemIdList, false, new MetadataRefreshOptions(_fileSystem)
+                    AddToCollection(collection.Id, options.ItemIdList, false, new MetadataRefreshOptions(_fileSystem)
                     {
                         // The initial adding of items is going to create a local metadata file
                         // This will cause internet metadata to be skipped as a result
@@ -151,15 +151,17 @@ namespace Emby.Server.Implementations.Collections
 
         public Task AddToCollection(Guid collectionId, IEnumerable<string> ids)
         {
-            return AddToCollection(collectionId, ids, true, new MetadataRefreshOptions(_fileSystem));
+            AddToCollection(collectionId, ids, true, new MetadataRefreshOptions(_fileSystem));
+            return Task.CompletedTask;
         }
 
         public Task AddToCollection(Guid collectionId, IEnumerable<Guid> ids)
         {
-            return AddToCollection(collectionId, ids.Select(i => i.ToString("N")), true, new MetadataRefreshOptions(_fileSystem));
+            AddToCollection(collectionId, ids.Select(i => i.ToString("N")), true, new MetadataRefreshOptions(_fileSystem));
+            return Task.CompletedTask;
         }
 
-        private async Task AddToCollection(Guid collectionId, IEnumerable<string> ids, bool fireEvent, MetadataRefreshOptions refreshOptions)
+        private void AddToCollection(Guid collectionId, IEnumerable<string> ids, bool fireEvent, MetadataRefreshOptions refreshOptions)
         {
             var collection = _libraryManager.GetItemById(collectionId) as BoxSet;
 
@@ -203,7 +205,7 @@ namespace Emby.Server.Implementations.Collections
 
                 collection.UpdateRatingToContent();
 
-                await collection.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                collection.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
 
                 _providerManager.QueueRefresh(collection.Id, refreshOptions, RefreshPriority.High);
 
@@ -262,7 +264,7 @@ namespace Emby.Server.Implementations.Collections
 
             collection.UpdateRatingToContent();
 
-            await collection.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            collection.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
             _providerManager.QueueRefresh(collection.Id, new MetadataRefreshOptions(_fileSystem), RefreshPriority.High);
 
             EventHelper.FireEventIfNotNull(ItemsRemovedFromCollection, this, new CollectionModifiedEventArgs

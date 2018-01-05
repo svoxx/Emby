@@ -45,6 +45,12 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
+        public override bool SupportsPeople
+        {
+            get { return true; }
+        }
+
+        [IgnoreDataMember]
         public override bool SupportsInheritedParentImages
         {
             get
@@ -78,12 +84,18 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        public override double? GetDefaultPrimaryImageAspectRatio()
+        public void SetPrimaryVersionId(string id)
         {
-            double value = 16;
-            value /= 9;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                PrimaryVersionId = null;
+            }
+            else
+            {
+                PrimaryVersionId = id;
+            }
 
-            return value;
+            PresentationUniqueKey = CreatePresentationUniqueKey();
         }
 
         public override string CreatePresentationUniqueKey()
@@ -406,30 +418,31 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        internal override bool IsValidFromResolver(BaseItem newItem)
+        internal override ItemUpdateType UpdateFromResolvedItem(BaseItem newItem)
         {
-            var current = this;
+            var updateType = base.UpdateFromResolvedItem(newItem);
 
-            var newAsVideo = newItem as Video;
-
-            if (newAsVideo != null)
+            var newVideo = newItem as Video;
+            if (newVideo != null)
             {
-                if (!current.AdditionalParts.SequenceEqual(newAsVideo.AdditionalParts, StringComparer.OrdinalIgnoreCase))
+                if (!AdditionalParts.SequenceEqual(newVideo.AdditionalParts, StringComparer.Ordinal))
                 {
-                    return false;
+                    AdditionalParts = newVideo.AdditionalParts;
+                    updateType |= ItemUpdateType.MetadataImport;
                 }
-                if (!current.LocalAlternateVersions.SequenceEqual(newAsVideo.LocalAlternateVersions, StringComparer.OrdinalIgnoreCase))
+                if (!LocalAlternateVersions.SequenceEqual(newVideo.LocalAlternateVersions, StringComparer.Ordinal))
                 {
-                    return false;
+                    LocalAlternateVersions = newVideo.LocalAlternateVersions;
+                    updateType |= ItemUpdateType.MetadataImport;
                 }
-
-                if (newAsVideo.VideoType != VideoType)
+                if (VideoType != newVideo.VideoType)
                 {
-                    return false;
+                    VideoType = newVideo.VideoType;
+                    updateType |= ItemUpdateType.MetadataImport;
                 }
             }
 
-            return base.IsValidFromResolver(newItem);
+            return updateType;
         }
 
         public static string[] QueryPlayableStreamFiles(string rootPath, VideoType videoType)
@@ -521,9 +534,9 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        public override async Task UpdateToRepository(ItemUpdateType updateReason, CancellationToken cancellationToken)
+        public override void UpdateToRepository(ItemUpdateType updateReason, CancellationToken cancellationToken)
         {
-            await base.UpdateToRepository(updateReason, cancellationToken).ConfigureAwait(false);
+            base.UpdateToRepository(updateReason, cancellationToken);
 
             var localAlternates = GetLocalAlternateVersionIds()
                 .Select(i => LibraryManager.GetItemById(i))
@@ -540,7 +553,7 @@ namespace MediaBrowser.Controller.Entities
                 item.Genres = Genres;
                 item.ProviderIds = ProviderIds;
 
-                await item.UpdateToRepository(ItemUpdateType.MetadataDownload, cancellationToken).ConfigureAwait(false);
+                item.UpdateToRepository(ItemUpdateType.MetadataDownload, cancellationToken);
             }
         }
 
@@ -661,14 +674,12 @@ namespace MediaBrowser.Controller.Entities
             .ToList();
         }
 
-        private static MediaSourceInfo GetVersionInfo(bool enablePathSubstitution, Video media, MediaSourceType type)
+        private MediaSourceInfo GetVersionInfo(bool enablePathSubstitution, Video media, MediaSourceType type)
         {
             if (media == null)
             {
                 throw new ArgumentNullException("media");
             }
-
-            var mediaStreams = MediaSourceManager.GetMediaStreams(media.Id);
 
             var locationType = media.LocationType;
 
@@ -677,8 +688,8 @@ namespace MediaBrowser.Controller.Entities
                 Id = media.Id.ToString("N"),
                 IsoType = media.IsoType,
                 Protocol = locationType == LocationType.Remote ? MediaProtocol.Http : MediaProtocol.File,
-                MediaStreams = mediaStreams,
-                Name = GetMediaSourceName(media, mediaStreams),
+                MediaStreams = MediaSourceManager.GetMediaStreams(media.Id),
+                Name = GetMediaSourceName(media),
                 Path = enablePathSubstitution ? GetMappedPath(media, media.Path, locationType) : media.Path,
                 RunTimeTicks = media.RunTimeTicks,
                 Video3DFormat = media.Video3DFormat,
@@ -741,12 +752,20 @@ namespace MediaBrowser.Controller.Entities
             return info;
         }
 
-        private static string GetMediaSourceName(Video video, List<MediaStream> mediaStreams)
+        private string GetMediaSourceName(Video video)
         {
             var terms = new List<string>();
 
-            var videoStream = mediaStreams.FirstOrDefault(i => i.Type == MediaStreamType.Video);
-            var audioStream = mediaStreams.FirstOrDefault(i => i.Type == MediaStreamType.Audio);
+            var locationType = video.LocationType;
+            var path = video.Path;
+            if ((locationType == LocationType.FileSystem || locationType == LocationType.Offline) && !string.IsNullOrWhiteSpace(path))
+            {
+                terms.Add(System.IO.Path.GetFileName(path));
+            }
+            else
+            {
+                terms.Add(video.Name);
+            }
 
             if (video.Video3DFormat.HasValue)
             {
@@ -777,50 +796,6 @@ namespace MediaBrowser.Controller.Entities
                 else
                 {
                     terms.Add("ISO");
-                }
-            }
-
-            if (videoStream != null)
-            {
-                if (videoStream.Width.HasValue)
-                {
-                    if (videoStream.Width.Value >= 3800)
-                    {
-                        terms.Add("4K");
-                    }
-                    else if (videoStream.Width.Value >= 1900)
-                    {
-                        terms.Add("1080P");
-                    }
-                    else if (videoStream.Width.Value >= 1270)
-                    {
-                        terms.Add("720P");
-                    }
-                    else if (videoStream.Width.Value >= 700)
-                    {
-                        terms.Add("480P");
-                    }
-                    else
-                    {
-                        terms.Add("SD");
-                    }
-                }
-            }
-
-            if (videoStream != null && !string.IsNullOrWhiteSpace(videoStream.Codec))
-            {
-                terms.Add(videoStream.Codec.ToUpper());
-            }
-
-            if (audioStream != null)
-            {
-                var audioCodec = string.Equals(audioStream.Codec, "dca", StringComparison.OrdinalIgnoreCase)
-                    ? audioStream.Profile
-                    : audioStream.Codec;
-
-                if (!string.IsNullOrEmpty(audioCodec))
-                {
-                    terms.Add(audioCodec.ToUpper());
                 }
             }
 
