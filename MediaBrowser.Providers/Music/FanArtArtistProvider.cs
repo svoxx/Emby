@@ -59,12 +59,12 @@ namespace MediaBrowser.Providers.Music
             get { return "FanArt"; }
         }
 
-        public bool Supports(IHasMetadata item)
+        public bool Supports(BaseItem item)
         {
             return item is MusicArtist;
         }
 
-        public IEnumerable<ImageType> GetSupportedImages(IHasMetadata item)
+        public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
         {
             return new List<ImageType>
             {
@@ -76,7 +76,7 @@ namespace MediaBrowser.Providers.Music
             };
         }
 
-        public async Task<IEnumerable<RemoteImageInfo>> GetImages(IHasMetadata item, CancellationToken cancellationToken)
+        public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
         {
             var artist = (MusicArtist)item;
 
@@ -209,7 +209,6 @@ namespace MediaBrowser.Providers.Music
             });
         }
 
-        private readonly Task _cachedTask = Task.FromResult(true);
         internal Task EnsureArtistJson(string musicBrainzId, CancellationToken cancellationToken)
         {
             var jsonPath = GetArtistJsonPath(_config.ApplicationPaths, musicBrainzId);
@@ -220,7 +219,7 @@ namespace MediaBrowser.Providers.Music
             {
                 if ((DateTime.UtcNow - _fileSystem.GetLastWriteTimeUtc(fileInfo)).TotalDays <= 7)
                 {
-                    return _cachedTask;
+                    return Task.CompletedTask;
                 }
             }
 
