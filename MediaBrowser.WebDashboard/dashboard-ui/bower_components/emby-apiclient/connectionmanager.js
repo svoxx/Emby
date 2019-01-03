@@ -75,15 +75,6 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
         })
     }
 
-    function tryConnect(url, timeout) {
-        return url = getEmbyServerUrl(url, "system/info/public"), console.log("tryConnect url: " + url), ajax({
-            type: "GET",
-            url: url,
-            dataType: "json",
-            timeout: timeout || defaultTimeout
-        })
-    }
-
     function getConnectUrl(handler) {
         return "https://connect.emby.media/service/" + handler
     }
@@ -128,15 +119,15 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                         return s.Id === result.ServerId
                     }),
                     server = servers.length ? servers[0] : apiClient.serverInfo();
-                return !1 !== options.updateDateLastAccessed && (server.DateLastAccessed = (new Date).getTime()), server.Id = result.ServerId, saveCredentials ? (server.UserId = result.User.Id, server.AccessToken = result.AccessToken) : (server.UserId = null, server.AccessToken = null), credentialProvider.addOrUpdateServer(credentials.Servers, server), credentialProvider.credentials(credentials), apiClient.enableAutomaticBitrateDetection = options.enableAutomaticBitrateDetection, apiClient.serverInfo(server), afterConnected(apiClient, options), onLocalUserSignIn(server, server.LastConnectionMode, result.User)
+                return !1 !== options.updateDateLastAccessed && (server.DateLastAccessed = (new Date).getTime()), server.Id = result.ServerId, saveCredentials ? (server.UserId = result.User.Id, server.AccessToken = result.AccessToken) : (server.UserId = null, server.AccessToken = null), credentialProvider.addOrUpdateServer(credentials.Servers, server), credentialProvider.credentials(credentials), apiClient.enableAutomaticBitrateDetection = options.enableAutomaticBitrateDetection, apiClient.serverInfo(server), afterConnected(apiClient, options), onLocalUserSignIn(server, apiClient.serverAddress(), result.User)
             }
 
             function afterConnected(apiClient, options) {
                 options = options || {}, !1 !== options.reportCapabilities && apiClient.reportCapabilities(capabilities), apiClient.enableAutomaticBitrateDetection = options.enableAutomaticBitrateDetection, !1 !== options.enableWebSocket && (console.log("calling apiClient.ensureWebSocket"), apiClient.ensureWebSocket())
             }
 
-            function onLocalUserSignIn(server, connectionMode, user) {
-                return self._getOrAddApiClient(server, connectionMode), (self.onLocalUserSignedIn ? self.onLocalUserSignedIn.call(self, user) : Promise.resolve()).then(function() {
+            function onLocalUserSignIn(server, serverUrl, user) {
+                return self._getOrAddApiClient(server, serverUrl), (self.onLocalUserSignedIn ? self.onLocalUserSignedIn.call(self, user) : Promise.resolve()).then(function() {
                     events.trigger(self, "localusersignedin", [user])
                 })
             }
@@ -163,12 +154,11 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 })
             }
 
-            function addAuthenticationInfoFromConnect(server, connectionMode, credentials) {
+            function addAuthenticationInfoFromConnect(server, serverUrl, credentials) {
                 if (!server.ExchangeToken) throw new Error("server.ExchangeToken cannot be null");
                 if (!credentials.ConnectUserId) throw new Error("credentials.ConnectUserId cannot be null");
-                var url = getServerAddress(server, connectionMode);
-                url = getEmbyServerUrl(url, "Connect/Exchange?format=json&ConnectUserId=" + credentials.ConnectUserId);
-                var auth = 'MediaBrowser Client="' + appName + '", Device="' + deviceName + '", DeviceId="' + deviceId + '", Version="' + appVersion + '"';
+                var url = getEmbyServerUrl(serverUrl, "Connect/Exchange?format=json&ConnectUserId=" + credentials.ConnectUserId),
+                    auth = 'MediaBrowser Client="' + appName + '", Device="' + deviceName + '", DeviceId="' + deviceId + '", Version="' + appVersion + '"';
                 return ajax({
                     type: "GET",
                     url: url,
@@ -184,10 +174,10 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 })
             }
 
-            function validateAuthentication(server, connectionMode) {
+            function validateAuthentication(server, serverUrl) {
                 return ajax({
                     type: "GET",
-                    url: getEmbyServerUrl(getServerAddress(server, connectionMode), "System/Info"),
+                    url: getEmbyServerUrl(serverUrl, "System/Info"),
                     dataType: "json",
                     headers: {
                         "X-MediaBrowser-Token": server.AccessToken
@@ -300,49 +290,74 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 return null
             }
 
-            function testNextConnectionMode(tests, index, server, options, resolve) {
-                if (index >= tests.length) return console.log("Tested all connection modes. Failing server connection."), void resolveFailure(self, resolve);
-                var mode = tests[index],
-                    address = getServerAddress(server, mode),
-                    skipTest = !1,
-                    timeout = defaultTimeout;
-                if (mode === ConnectionMode.Local ? (!0, timeout = 8e3, stringEqualsIgnoreCase(address, server.ManualAddress) && (console.log("skipping LocalAddress test because it is the same as ManualAddress"), skipTest = !0)) : mode === ConnectionMode.Manual && stringEqualsIgnoreCase(address, server.LocalAddress) && (!0, timeout = 8e3), skipTest || !address) return console.log("skipping test at index " + index), void testNextConnectionMode(tests, index + 1, server, options, resolve);
-                console.log("testing connection mode " + mode + " with server " + server.Name), tryConnect(address, timeout).then(function(result) {
-                    1 === compareVersions(self.minServerVersion(), result.Version) ? (console.log("minServerVersion requirement not met. Server version: " + result.Version), resolve({
-                        State: "ServerUpdateNeeded",
-                        Servers: [server]
-                    })) : server.Id && result.Id !== server.Id ? (console.log("http request succeeded, but found a different server Id than what was expected"), resolveFailure(self, resolve)) : (console.log("calling onSuccessfulConnection with connection mode " + mode + " with server " + server.Name), onSuccessfulConnection(server, result, mode, options, resolve))
+            function getTryConnectPromise(url, connectionMode, state, resolve, reject) {
+                console.log("getTryConnectPromise " + url), ajax({
+                    url: getEmbyServerUrl(url, "system/info/public"),
+                    timeout: defaultTimeout,
+                    type: "GET",
+                    dataType: "json"
+                }).then(function(result) {
+                    state.resolved || (state.resolved = !0, console.log("Reconnect succeeded to " + url), resolve({
+                        url: url,
+                        connectionMode: connectionMode,
+                        data: result
+                    }))
                 }, function() {
-                    console.log("test failed for connection mode " + mode + " with server " + server.Name), testNextConnectionMode(tests, index + 1, server, options, resolve)
+                    state.resolved || (console.log("Reconnect failed to " + url), ++state.rejects >= state.numAddresses && reject())
                 })
             }
 
-            function onSuccessfulConnection(server, systemInfo, connectionMode, options, resolve) {
-                var credentials = credentialProvider.credentials();
-                options = options || {}, credentials.ConnectAccessToken && !1 !== options.enableAutoLogin ? ensureConnectUser(credentials).then(function() {
-                    server.ExchangeToken ? addAuthenticationInfoFromConnect(server, connectionMode, credentials).then(function() {
-                        afterConnectValidated(server, credentials, systemInfo, connectionMode, !0, options, resolve)
-                    }, function() {
-                        afterConnectValidated(server, credentials, systemInfo, connectionMode, !0, options, resolve)
-                    }) : afterConnectValidated(server, credentials, systemInfo, connectionMode, !0, options, resolve)
-                }) : afterConnectValidated(server, credentials, systemInfo, connectionMode, !0, options, resolve)
+            function tryReconnect(serverInfo) {
+                var addresses = [],
+                    addressesStrings = [];
+                return !serverInfo.manualAddressOnly && serverInfo.LocalAddress && -1 === addressesStrings.indexOf(serverInfo.LocalAddress) && (addresses.push({
+                    url: serverInfo.LocalAddress,
+                    mode: ConnectionMode.Local,
+                    timeout: 0
+                }), addressesStrings.push(addresses[addresses.length - 1].url)), serverInfo.ManualAddress && -1 === addressesStrings.indexOf(serverInfo.ManualAddress) && (addresses.push({
+                    url: serverInfo.ManualAddress,
+                    mode: ConnectionMode.Manual,
+                    timeout: 100
+                }), addressesStrings.push(addresses[addresses.length - 1].url)), !serverInfo.manualAddressOnly && serverInfo.RemoteAddress && -1 === addressesStrings.indexOf(serverInfo.RemoteAddress) && (addresses.push({
+                    url: serverInfo.RemoteAddress,
+                    mode: ConnectionMode.Remote,
+                    timeout: 200
+                }), addressesStrings.push(addresses[addresses.length - 1].url)), console.log("tryReconnect: " + addressesStrings.join("|")), new Promise(function(resolve, reject) {
+                    var state = {};
+                    state.numAddresses = addresses.length, state.rejects = 0, addresses.map(function(url) {
+                        setTimeout(function() {
+                            state.resolved || getTryConnectPromise(url.url, url.mode, state, resolve, reject)
+                        }, url.timeout)
+                    })
+                })
             }
 
-            function afterConnectValidated(server, credentials, systemInfo, connectionMode, verifyLocalAuthentication, options, resolve) {
+            function onSuccessfulConnection(server, systemInfo, connectionMode, serverUrl, options, resolve) {
+                var credentials = credentialProvider.credentials();
+                options = options || {}, credentials.ConnectAccessToken && !1 !== options.enableAutoLogin ? ensureConnectUser(credentials).then(function() {
+                    server.ExchangeToken ? addAuthenticationInfoFromConnect(server, serverUrl, credentials).then(function() {
+                        afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, !0, options, resolve)
+                    }, function() {
+                        afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, !0, options, resolve)
+                    }) : afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, !0, options, resolve)
+                }) : afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, !0, options, resolve)
+            }
+
+            function afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, verifyLocalAuthentication, options, resolve) {
                 if (options = options || {}, !1 === options.enableAutoLogin) server.UserId = null, server.AccessToken = null;
-                else if (verifyLocalAuthentication && server.AccessToken && !1 !== options.enableAutoLogin) return void validateAuthentication(server, connectionMode).then(function() {
-                    afterConnectValidated(server, credentials, systemInfo, connectionMode, !1, options, resolve)
+                else if (verifyLocalAuthentication && server.AccessToken && !1 !== options.enableAutoLogin) return void validateAuthentication(server, serverUrl).then(function() {
+                    afterConnectValidated(server, credentials, systemInfo, connectionMode, serverUrl, !1, options, resolve)
                 });
                 updateServerInfo(server, systemInfo), server.LastConnectionMode = connectionMode, !1 !== options.updateDateLastAccessed && (server.DateLastAccessed = (new Date).getTime()), credentialProvider.addOrUpdateServer(credentials.Servers, server), credentialProvider.credentials(credentials);
                 var result = {
                     Servers: []
                 };
-                result.ApiClient = self._getOrAddApiClient(server, connectionMode), result.ApiClient.setSystemInfo(systemInfo), result.State = server.AccessToken && !1 !== options.enableAutoLogin ? "SignedIn" : "ServerSignIn", result.Servers.push(server), result.ApiClient.enableAutomaticBitrateDetection = options.enableAutomaticBitrateDetection, result.ApiClient.updateServerInfo(server, connectionMode);
+                result.ApiClient = self._getOrAddApiClient(server, serverUrl), result.ApiClient.setSystemInfo(systemInfo), result.State = server.AccessToken && !1 !== options.enableAutoLogin ? "SignedIn" : "ServerSignIn", result.Servers.push(server), result.ApiClient.enableAutomaticBitrateDetection = options.enableAutomaticBitrateDetection, result.ApiClient.updateServerInfo(server, serverUrl);
                 var resolveActions = function() {
                     resolve(result), events.trigger(self, "connected", [result])
                 };
                 "SignedIn" === result.State ? (afterConnected(result.ApiClient, options), result.ApiClient.getCurrentUser().then(function(user) {
-                    onLocalUserSignIn(server, connectionMode, user).then(resolveActions, resolveActions)
+                    onLocalUserSignIn(server, serverUrl, user).then(resolveActions, resolveActions)
                 }, resolveActions)) : resolveActions()
             }
 
@@ -399,20 +414,13 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 return servers.sort(function(a, b) {
                     return (b.DateLastAccessed || 0) - (a.DateLastAccessed || 0)
                 }), servers.length ? servers[0] : null
-            }, self.getLastUsedApiClient = function() {
-                var servers = credentialProvider.credentials().Servers;
-                if (servers.sort(function(a, b) {
-                        return (b.DateLastAccessed || 0) - (a.DateLastAccessed || 0)
-                    }), !servers.length) return null;
-                var server = servers[0];
-                return self._getOrAddApiClient(server, server.LastConnectionMode)
             }, self.addApiClient = function(apiClient) {
                 self._apiClients.push(apiClient);
                 var existingServers = credentialProvider.credentials().Servers.filter(function(s) {
                         return stringEqualsIgnoreCase(s.ManualAddress, apiClient.serverAddress()) || stringEqualsIgnoreCase(s.LocalAddress, apiClient.serverAddress()) || stringEqualsIgnoreCase(s.RemoteAddress, apiClient.serverAddress())
                     }),
                     existingServer = existingServers.length ? existingServers[0] : apiClient.serverInfo();
-                if (existingServer.DateLastAccessed = (new Date).getTime(), existingServer.LastConnectionMode = ConnectionMode.Manual, existingServer.ManualAddress = apiClient.serverAddress(), apiClient.serverInfo(existingServer), apiClient.onAuthenticated = function(instance, result) {
+                if (existingServer.DateLastAccessed = (new Date).getTime(), existingServer.LastConnectionMode = ConnectionMode.Manual, existingServer.ManualAddress = apiClient.serverAddress(), apiClient.manualAddressOnly && (existingServer.manualAddressOnly = !0), apiClient.serverInfo(existingServer), apiClient.onAuthenticated = function(instance, result) {
                         return onAuthenticated(instance, result, {}, !0)
                     }, !existingServers.length) {
                     var credentials = credentialProvider.credentials();
@@ -423,15 +431,11 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 console.log("connection manager clearing data"), connectUser = null;
                 var credentials = credentialProvider.credentials();
                 credentials.ConnectAccessToken = null, credentials.ConnectUserId = null, credentials.Servers = [], credentialProvider.credentials(credentials)
-            }, self._getOrAddApiClient = function(server, connectionMode) {
+            }, self._getOrAddApiClient = function(server, serverUrl) {
                 var apiClient = self.getApiClient(server.Id);
-                if (!apiClient) {
-                    var url = getServerAddress(server, connectionMode);
-                    apiClient = new apiClientFactory(url, appName, appVersion, deviceName, deviceId, devicePixelRatio), self._apiClients.push(apiClient), apiClient.serverInfo(server), apiClient.onAuthenticated = function(instance, result) {
-                        return onAuthenticated(instance, result, {}, !0)
-                    }, events.trigger(self, "apiclientcreated", [apiClient])
-                }
-                return console.log("returning instance from getOrAddApiClient"), apiClient
+                return apiClient || (apiClient = new apiClientFactory(serverUrl, appName, appVersion, deviceName, deviceId, devicePixelRatio), self._apiClients.push(apiClient), apiClient.serverInfo(server), apiClient.onAuthenticated = function(instance, result) {
+                    return onAuthenticated(instance, result, {}, !0)
+                }, events.trigger(self, "apiclientcreated", [apiClient])), console.log("returning instance from getOrAddApiClient"), apiClient
             }, self.getOrCreateApiClient = function(serverId) {
                 var credentials = credentialProvider.credentials(),
                     servers = credentials.Servers.filter(function(s) {
@@ -439,7 +443,7 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                     });
                 if (!servers.length) throw new Error("Server not found: " + serverId);
                 var server = servers[0];
-                return self._getOrAddApiClient(server, server.LastConnectionMode)
+                return self._getOrAddApiClient(server, getServerAddress(server, server.LastConnectionMode))
             }, self.user = function(apiClient) {
                 return new Promise(function(resolve, reject) {
                     function onLocalUserDone(e) {
@@ -505,8 +509,16 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
                 })
             }, self.connectToServer = function(server, options) {
                 return console.log("begin connectToServer"), new Promise(function(resolve, reject) {
-                    var tests = [];
-                    server.LastConnectionMode, -1 === tests.indexOf(ConnectionMode.Manual) && tests.push(ConnectionMode.Manual), -1 === tests.indexOf(ConnectionMode.Local) && tests.push(ConnectionMode.Local), -1 === tests.indexOf(ConnectionMode.Remote) && tests.push(ConnectionMode.Remote), options = options || {}, console.log("beginning connection tests"), testNextConnectionMode(tests, 0, server, options, resolve)
+                    options = options || {}, tryReconnect(server).then(function(result) {
+                        var serverUrl = result.url,
+                            connectionMode = result.connectionMode;
+                        result = result.data, 1 === compareVersions(self.minServerVersion(), result.Version) ? (console.log("minServerVersion requirement not met. Server version: " + result.Version), resolve({
+                            State: "ServerUpdateNeeded",
+                            Servers: [server]
+                        })) : server.Id && result.Id !== server.Id ? (console.log("http request succeeded, but found a different server Id than what was expected"), resolveFailure(self, resolve)) : onSuccessfulConnection(server, result, connectionMode, serverUrl, options, resolve)
+                    }, function() {
+                        resolveFailure(self, resolve)
+                    })
                 })
             }, self.connectToAddress = function(address, options) {
                 function onFail() {
@@ -706,7 +718,7 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
     }, ConnectionManager.prototype.getApiClients = function() {
         for (var servers = this.getSavedServers(), i = 0, length = servers.length; i < length; i++) {
             var server = servers[i];
-            server.Id && this._getOrAddApiClient(server, server.LastConnectionMode)
+            server.Id && this._getOrAddApiClient(server, getServerAddress(server, server.LastConnectionMode))
         }
         return this._apiClients
     }, ConnectionManager.prototype.getApiClient = function(item) {
@@ -721,7 +733,12 @@ define(["events", "apiclient", "appStorage"], function(events, apiClientFactory,
         var serverId = msg.ServerId;
         if (serverId) {
             var apiClient = this.getApiClient(serverId);
-            apiClient && apiClient.handleMessageReceived(msg)
+            if (apiClient) {
+                if ("string" == typeof msg.Data) try {
+                    msg.Data = JSON.parse(msg.Data)
+                } catch (err) {}
+                apiClient.handleMessageReceived(msg)
+            }
         }
     }, ConnectionManager
 });
